@@ -23,4 +23,4 @@
 # Internet host table
 #
 ::1		localhost
-127.0.0.1	localhost loghost
+127.0.0.1	localhost loghost java.sun.com
