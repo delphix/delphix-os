@@ -1193,11 +1193,12 @@ again:
 	needagain = progress = B_FALSE;
 	for (fspair = nvlist_next_nvpair(sdd->fss, NULL); fspair;
 	    fspair = nvlist_next_nvpair(sdd->fss, fspair)) {
-		nvlist_t *fslist;
+		nvlist_t *fslist, *parent_nv;
 		char *fsname;
 		zfs_handle_t *zhp;
 		int err;
 		uint64_t origin_guid = 0;
+		uint64_t parent_guid = 0;
 
 		VERIFY(nvpair_value_nvlist(fspair, &fslist) == 0);
 		if (nvlist_lookup_boolean(fslist, "sent") == 0)
@@ -1205,13 +1206,23 @@ again:
 
 		VERIFY(nvlist_lookup_string(fslist, "name", &fsname) == 0);
 		(void) nvlist_lookup_uint64(fslist, "origin", &origin_guid);
+		(void) nvlist_lookup_uint64(fslist, "parentfromsnap",
+		    &parent_guid);
+
+		if (parent_guid != 0) {
+			parent_nv = fsavl_find(sdd->fsavl, parent_guid, NULL);
+			if (!nvlist_exists(parent_nv, "sent")) {
+				/* parent has not yet been sent; skip this */
+				needagain = B_TRUE;
+				continue;
+			}
+		}
 
 		if (origin_guid != 0) {
 			nvlist_t *origin_nv = fsavl_find(sdd->fsavl,
 			    origin_guid, NULL);
 			if (origin_nv != NULL &&
-			    nvlist_lookup_boolean(origin_nv,
-			    "sent") == ENOENT) {
+			    !nvlist_exists(origin_nv, "sent")) {
 				/*
 				 * origin has not been sent yet;
 				 * skip this clone.
