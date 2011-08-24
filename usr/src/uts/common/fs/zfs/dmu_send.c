@@ -48,6 +48,9 @@
 #include <sys/ddt.h>
 #include <sys/zfs_onexit.h>
 
+/* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
+int zfs_send_corrupt_data = B_FALSE;
+
 static char *dmu_recv_tag = "dmu_recv_tag";
 
 /*
@@ -369,8 +372,20 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp, arc_buf_t *pbuf,
 
 		if (dsl_read(NULL, spa, bp, pbuf,
 		    arc_getbuf_func, &abuf, ZIO_PRIORITY_ASYNC_READ,
-		    ZIO_FLAG_CANFAIL, &aflags, zb) != 0)
-			return (EIO);
+		    ZIO_FLAG_CANFAIL, &aflags, zb) != 0) {
+			if (zfs_send_corrupt_data) {
+				/* Send a block filled with 0x"zfs badd bloc" */
+				abuf = arc_buf_alloc(spa, blksz, &abuf,
+				    ARC_BUFC_DATA);
+				uint64_t *ptr;
+				for (ptr = abuf->b_data;
+				    (char *)ptr < (char *)abuf->b_data + blksz;
+				    ptr++)
+					*ptr = 0x2f5baddb10cULL;
+			} else {
+				return (EIO);
+			}
+		}
 
 		err = dump_data(ba, type, zb->zb_object, zb->zb_blkid * blksz,
 		    blksz, bp, abuf->b_data);
