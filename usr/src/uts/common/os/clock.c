@@ -292,7 +292,7 @@ static void lbolt_cyclic(void);
  * Tunable to keep lbolt in cyclic driven mode. This will prevent the system
  * from switching back to event driven, once it reaches cyclic mode.
  */
-static boolean_t lbolt_cyc_only = B_FALSE;
+static boolean_t lbolt_cyc_only = B_TRUE;
 
 /*
  * Cache aligned, per CPU structure with lbolt usage statistics.
@@ -971,7 +971,6 @@ clock_init(void)
 	/*
 	 * The lbolt cyclic will be reprogramed to fire at a nsec_per_tick
 	 * interval to satisfy performance needs of the DDI lbolt consumers.
-	 * It is off by default.
 	 */
 	lbolt_hdlr.cyh_func = (cyc_func_t)lbolt_cyclic;
 	lbolt_hdlr.cyh_level = CY_LOCK_LEVEL;
@@ -2573,9 +2572,6 @@ lbolt_cyclic_driven(void)
 /*
  * The lbolt_cyclic() routine will fire at a nsec_per_tick interval to satisfy
  * performance needs of ddi_get_lbolt() and ddi_get_lbolt64() consumers.
- * It is inactive by default, and will be activated when switching from event
- * to cyclic driven lbolt. The cyclic will turn itself off unless signaled
- * by lbolt_cyclic_driven().
  */
 static void
 lbolt_cyclic(void)
