@@ -23,6 +23,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #ifndef _SYS_ZFS_CONTEXT_H
 #define	_SYS_ZFS_CONTEXT_H
 
@@ -63,6 +67,7 @@ extern "C" {
 #include <sys/sysevent/dev.h>
 #include <sys/fm/util.h>
 #include <sys/sunddi.h>
+#include <sys/cyclic.h>
 
 #define	CPU_SEQID	(CPU->cpu_seqid)
 

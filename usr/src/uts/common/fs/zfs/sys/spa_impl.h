@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011 by Delphix. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_SPA_IMPL_H
@@ -218,6 +218,10 @@ struct spa {
 	int		spa_vdev_locks;		/* locks grabbed */
 	uint64_t	spa_creation_version;	/* version at pool creation */
 	uint64_t	spa_prev_software_version;
+	cyclic_id_t	spa_deadman_cycid;	/* cyclic id */
+	uint64_t	spa_deadman_calls;	/* number of deadman calls */
+	uint64_t	spa_sync_starttime;	/* starting time fo spa_sync */
+	uint64_t	spa_deadman_synctime;	/* deadman expiration timer */
 	/*
 	 * spa_refcnt & spa_config_lock must be the last elements
 	 * because refcount_t changes size based on compilation options.

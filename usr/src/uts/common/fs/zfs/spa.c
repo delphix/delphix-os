@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*
@@ -5497,6 +5498,10 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	tx = dmu_tx_create_assigned(dp, txg);
 
+	spa->spa_sync_starttime = gethrtime();
+	VERIFY(cyclic_reprogram(spa->spa_deadman_cycid,
+	    spa->spa_sync_starttime + spa->spa_deadman_synctime));
+
 	/*
 	 * If we are upgrading to SPA_VERSION_RAIDZ_DEFLATE this txg,
 	 * set spa_deflate if we have no raid-z vdevs.
@@ -5621,6 +5626,8 @@ spa_sync(spa_t *spa, uint64_t txg)
 		zio_resume_wait(spa);
 	}
 	dmu_tx_commit(tx);
+
+	VERIFY(cyclic_reprogram(spa->spa_deadman_cycid, CY_INFINITY));
 
 	/*
 	 * Clear the dirty config list.

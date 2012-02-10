@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #include <assert.h>
@@ -45,6 +46,7 @@ int aok;
 uint64_t physmem;
 vnode_t *rootdir = (vnode_t *)0xabcd1234;
 char hw_serial[HW_HOSTID_LEN];
+kmutex_t cpu_lock;
 
 struct utsname utsname = {
 	"userland", "libzpool", "1", "1", "na"
@@ -784,6 +786,26 @@ ddi_strtoull(const char *str, char **nptr, int base, u_longlong_t *result)
 	if (*result == 0)
 		return (errno);
 	return (0);
+}
+
+/* ARGSUSED */
+cyclic_id_t
+cyclic_add(cyc_handler_t *hdlr, cyc_time_t *when)
+{
+	return (1);
+}
+
+/* ARGSUSED */
+void
+cyclic_remove(cyclic_id_t id)
+{
+}
+
+/* ARGSUSED */
+int
+cyclic_reprogram(cyclic_id_t id, hrtime_t expiration)
+{
+	return (1);
 }
 
 /*

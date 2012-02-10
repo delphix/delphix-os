@@ -24,14 +24,35 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #include <sys/zio.h>
 #include <sys/spa.h>
 #include <sys/sunddi.h>
+#include <sys/x86_archext.h>
+
+extern int zfs_deadman_enabled;
 
 char *
 spa_get_bootprop(char *propname)
 {
 	char *value;
+
+	/*
+	 * Configure the default settings for the zfs deadman unless
+	 * overriden by /etc/system.
+	 */
+	if (zfs_deadman_enabled == -1) {
+		/*
+		 * Disable the zfs deadman logic on VMware deployments.
+		 */
+		if (get_hwenv() == HW_VMWARE)
+			zfs_deadman_enabled = 0;
+		else
+			zfs_deadman_enabled = 1;
+	}
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
 	    DDI_PROP_DONTPASS, propname, &value) != DDI_SUCCESS)
