@@ -77,7 +77,6 @@ struct prop_changelist {
 	uu_list_t		*cl_list;
 	boolean_t		cl_waslegacy;
 	boolean_t		cl_allchildren;
-	boolean_t		cl_alldependents;
 	int			cl_mflags;	/* Mount flags */
 	int			cl_gflags;	/* Gather request flags */
 	boolean_t		cl_haszonedchild;
@@ -427,7 +426,7 @@ change_one(zfs_handle_t *zhp, void *data)
 		return (0);
 	}
 
-	if (clp->cl_alldependents || clp->cl_allchildren ||
+	if (clp->cl_allchildren ||
 	    sourcetype == ZPROP_SRC_DEFAULT ||
 	    sourcetype == ZPROP_SRC_INHERITED ||
 	    (clp->cl_shareprop != ZPROP_INVAL &&
@@ -467,13 +466,11 @@ change_one(zfs_handle_t *zhp, void *data)
 			 * This is necessary when the original mountpoint
 			 * is legacy or none.
 			 */
-			ASSERT(!clp->cl_alldependents);
 			verify(uu_list_insert_before(clp->cl_list,
 			    uu_list_first(clp->cl_list), cn) == 0);
 		}
 
-		if (!clp->cl_alldependents)
-			return (zfs_iter_children(zhp, change_one, data));
+		return (zfs_iter_children(zhp, change_one, data));
 	} else {
 		zfs_close(zhp);
 	}
@@ -588,21 +585,17 @@ changelist_gather(zfs_handle_t *zhp, zfs_prop_t prop, int gather_flags,
 	 * If this is a rename or the 'zoned' property, we pretend we're
 	 * changing the mountpoint and flag it so we can catch all children in
 	 * change_one().
-	 *
-	 * Flag cl_alldependents to catch all children plus the dependents
-	 * (clones) that are not in the hierarchy.
 	 */
-	if (prop == ZFS_PROP_NAME) {
-		clp->cl_prop = ZFS_PROP_MOUNTPOINT;
-		clp->cl_alldependents = B_TRUE;
-	} else if (prop == ZFS_PROP_ZONED) {
-		clp->cl_prop = ZFS_PROP_MOUNTPOINT;
+	switch (prop) {
+	case ZFS_PROP_NAME:
+	case ZFS_PROP_ZONED:
 		clp->cl_allchildren = B_TRUE;
-	} else if (prop == ZFS_PROP_CANMOUNT) {
+		/* FALLTHROUGH */
+	case ZFS_PROP_CANMOUNT:
+	case ZFS_PROP_VOLSIZE:
 		clp->cl_prop = ZFS_PROP_MOUNTPOINT;
-	} else if (prop == ZFS_PROP_VOLSIZE) {
-		clp->cl_prop = ZFS_PROP_MOUNTPOINT;
-	} else {
+		break;
+	default:
 		clp->cl_prop = prop;
 	}
 	clp->cl_realprop = prop;
@@ -621,12 +614,7 @@ changelist_gather(zfs_handle_t *zhp, zfs_prop_t prop, int gather_flags,
 	else if (clp->cl_prop == ZFS_PROP_SHARESMB)
 		clp->cl_shareprop = ZFS_PROP_SHARENFS;
 
-	if (clp->cl_alldependents) {
-		if (zfs_iter_dependents(zhp, B_TRUE, change_one, clp) != 0) {
-			changelist_free(clp);
-			return (NULL);
-		}
-	} else if (zfs_iter_children(zhp, change_one, clp) != 0) {
+	if (zfs_iter_children(zhp, change_one, clp) != 0) {
 		changelist_free(clp);
 		return (NULL);
 	}

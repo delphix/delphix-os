@@ -58,13 +58,13 @@ zfs \- configures ZFS file systems
 
 .LP
 .nf
-\fBzfs\fR \fBrename\fR \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+\fBzfs\fR \fBrename\fR [\fB-f\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
      \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
 .fi
 
 .LP
 .nf
-\fBzfs\fR \fBrename\fR [\fB-p\fR] \fIfilesystem\fR|\fIvolume\fR \fIfilesystem\fR|\fIvolume\fR
+\fBzfs\fR \fBrename\fR [\fB-fp\fR] \fIfilesystem\fR|\fIvolume\fR \fIfilesystem\fR|\fIvolume\fR
 .fi
 
 .LP
@@ -1978,7 +1978,7 @@ any conflicting snapshots.
 .sp
 .ne 2
 .na
-\fB\fBzfs rename\fR \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR\fR
+\fB\fBzfs rename\fR [\fB-f\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR\fR
 .ad
 .br
 .na
@@ -1986,7 +1986,7 @@ any conflicting snapshots.
 .ad
 .br
 .na
-\fB\fBzfs rename\fR [\fB-p\fR] \fIfilesystem\fR|\fIvolume\fR
+\fB\fBzfs rename\fR [\fB-fp\fR] \fIfilesystem\fR|\fIvolume\fR
 \fIfilesystem\fR|\fIvolume\fR\fR
 .ad
 .sp .6
@@ -2007,6 +2007,16 @@ case they are unmounted and remounted at the new mount point.
 Creates all the nonexistent parent datasets. Datasets created in this manner
 are automatically mounted according to the \fBmountpoint\fR property inherited
 from their parent.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-f\fR\fR
+.ad
+.sp .6
+.RS 4n
+Force unmount any filesystems that need to be unmounted in the process.
 .RE
 
 .RE
