@@ -129,6 +129,7 @@ extern void ndmp_server_md5_digest(unsigned char *, const char *,
 extern const char *ndmp_server_remote_addr(struct ndmp_session *);
 extern int ndmp_server_add_fs(struct ndmp_session *, ndmp_fs_info_v3 *);
 extern u_longlong_t ndmp_server_bytes_processed(struct ndmp_session *);
+extern int ndmp_server_data_error(struct ndmp_session *);
 
 /* Client configuration */
 typedef struct ndmp_client_conf {

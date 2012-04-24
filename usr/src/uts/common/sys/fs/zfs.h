@@ -51,6 +51,16 @@ typedef enum {
 	ZFS_TYPE_POOL		= 0x8
 } zfs_type_t;
 
+typedef enum dmu_objset_type {
+	DMU_OST_NONE,
+	DMU_OST_META,
+	DMU_OST_ZFS,
+	DMU_OST_ZVOL,
+	DMU_OST_OTHER,			/* For testing only! */
+	DMU_OST_ANY,			/* Be careful! */
+	DMU_OST_NUMTYPES
+} dmu_objset_type_t;
+
 #define	ZFS_TYPE_DATASET	\
 	(ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME | ZFS_TYPE_SNAPSHOT)
 
@@ -515,6 +525,7 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_MISSING_DEVICES	"missing_vdevs"	/* not stored on disk */
 #define	ZPOOL_CONFIG_LOAD_INFO		"load_info"	/* not stored on disk */
 #define	ZPOOL_CONFIG_UNSUP_FEAT		"unsup_feat"	/* not stored on disk */
+#define	ZPOOL_CONFIG_ENABLED_FEAT	"enabled_feat"	/* not stored on disk */
 #define	ZPOOL_CONFIG_CAN_RDONLY		"can_rdonly"	/* not stored on disk */
 #define	ZPOOL_CONFIG_FEATURES_FOR_READ	"features_for_read"
 #define	ZPOOL_CONFIG_FEATURE_STATS	"feature_stats"	/* not stored on disk */
@@ -803,12 +814,13 @@ typedef enum zfs_ioc {
 	ZFS_IOC_OBJ_TO_STATS,
 	ZFS_IOC_SPACE_WRITTEN,
 	ZFS_IOC_SPACE_SNAPS,
-	ZFS_IOC_DESTROY_SNAPS_NVL,
+	ZFS_IOC_DESTROY_SNAPS,
 	ZFS_IOC_POOL_REGUID,
 	ZFS_IOC_POOL_REOPEN,
 	ZFS_IOC_LOG_HISTORY,
 	ZFS_IOC_SEND_NEW,
 	ZFS_IOC_SEND_SPACE,
+	ZFS_IOC_CLONE,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

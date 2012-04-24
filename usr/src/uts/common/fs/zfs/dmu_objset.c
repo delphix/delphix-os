@@ -701,30 +701,30 @@ dmu_objset_create_sync(void *arg1, void *arg2, dmu_tx_t *tx)
 	struct oscarg *oa = arg2;
 	uint64_t obj;
 	dsl_dataset_t *ds;
+	blkptr_t *bp;
 
 	ASSERT(dmu_tx_is_syncing(tx));
 
 	obj = dsl_dataset_create_sync(dd, oa->lastname,
 	    oa->clone_origin, oa->flags, oa->cr, tx);
+
 	VERIFY3U(0, ==, dsl_dataset_hold_obj(dd->dd_pool, obj, FTAG, &ds));
-
-	if (oa->clone_origin == NULL) {
-		blkptr_t *bp;
-		objset_t *os;
-
-		bp = dsl_dataset_get_blkptr(ds);
-		ASSERT(BP_IS_HOLE(bp));
-
-		os = dmu_objset_create_impl(spa, ds, bp, oa->type, tx);
+	bp = dsl_dataset_get_blkptr(ds);
+	if (BP_IS_HOLE(bp)) {
+		objset_t *os =
+		    dmu_objset_create_impl(spa, ds, bp, oa->type, tx);
 
 		if (oa->userfunc)
 			oa->userfunc(os, oa->userarg, oa->cr, tx);
+	}
+
+	if (oa->clone_origin == NULL) {
 		spa_history_log_internal_ds(ds, "create", tx, "");
 	} else {
 		char *namebuf = kmem_alloc(MAXNAMELEN, KM_SLEEP);
 		dsl_dataset_name(oa->clone_origin, namebuf);
 		spa_history_log_internal_ds(ds, "clone", tx,
-		    "origin = %s (%llu)", namebuf, oa->clone_origin->ds_object);
+		    "origin=%s (%llu)", namebuf, oa->clone_origin->ds_object);
 		kmem_free(namebuf, MAXNAMELEN);
 	}
 	dsl_dataset_rele(ds, FTAG);

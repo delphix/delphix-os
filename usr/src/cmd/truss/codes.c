@@ -1250,7 +1250,7 @@ const struct ioc {
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_SPACE_WRITTEN,	"ZFS_IOC_SPACE_WRITTEN",
 		"zfs_cmd_t" },
-	{ (uint_t)ZFS_IOC_DESTROY_SNAPS_NVL,	"ZFS_IOC_DESTROY_SNAPS_NVL",
+	{ (uint_t)ZFS_IOC_DESTROY_SNAPS,	"ZFS_IOC_DESTROY_SNAPS",
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_POOL_REGUID,		"ZFS_IOC_POOL_REGUID",
 		"zfs_cmd_t" },

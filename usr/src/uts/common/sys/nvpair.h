@@ -315,6 +315,7 @@ void fnvlist_add_nvlist_array(nvlist_t *, const char *, nvlist_t **, uint_t);
 void fnvlist_remove(nvlist_t *, const char *);
 void fnvlist_remove_nvpair(nvlist_t *, nvpair_t *);
 
+nvpair_t *fnvlist_lookup_nvpair(nvlist_t *nvl, const char *name);
 boolean_t fnvlist_lookup_boolean(nvlist_t *nvl, const char *name);
 boolean_t fnvlist_lookup_boolean_value(nvlist_t *nvl, const char *name);
 uchar_t fnvlist_lookup_byte(nvlist_t *nvl, const char *name);

@@ -288,6 +288,14 @@ fnvlist_remove_nvpair(nvlist_t *nvl, nvpair_t *pair)
 	VERIFY3U(nvlist_remove_nvpair(nvl, pair), ==, 0);
 }
 
+nvpair_t *
+fnvlist_lookup_nvpair(nvlist_t *nvl, const char *name)
+{
+	nvpair_t *rv;
+	VERIFY3U(nvlist_lookup_nvpair(nvl, name, &rv), ==, 0);
+	return (rv);
+}
+
 /* returns B_TRUE if the entry exists */
 boolean_t
 fnvlist_lookup_boolean(nvlist_t *nvl, const char *name)

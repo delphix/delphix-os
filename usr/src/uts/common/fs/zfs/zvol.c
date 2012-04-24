@@ -136,7 +136,7 @@ typedef struct zvol_state {
 int zvol_maxphys = DMU_MAX_ACCESS/2;
 
 extern int zfs_set_prop_nvlist(const char *, zprop_source_t,
-    nvlist_t *, nvlist_t **);
+    nvlist_t *, nvlist_t *);
 static int zvol_remove_zv(zvol_state_t *);
 static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
 static int zvol_dumpify(zvol_state_t *zv);

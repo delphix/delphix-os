@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright (c) 2011 by Delphix.  All rights reserved. */
+/* Copyright (c) 2012 by Delphix. All rights reserved. */
 
 #ifndef _NDMPD_H
 #define	_NDMPD_H
@@ -345,6 +345,8 @@ typedef struct ndmp_session_data_desc {
 	u_longlong_t dd_position;
 	u_longlong_t dd_discard_length;
 	ndmp_addr_v4 dd_data_addr_v4;
+
+	int dd_errno; /* errno result from reading/writing to socket */
 } ndmp_session_data_desc_t;
 
 typedef struct ndmp_session_notify_state {

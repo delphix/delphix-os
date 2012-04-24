@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright (c) 2011 by Delphix. All rights reserved. */
+/* Copyright (c) 2012 by Delphix. All rights reserved. */
 
 #include "ndmp_impl.h"
 
@@ -398,6 +398,11 @@ ndmp_server_read(ndmp_session_t *session, void *buf, ssize_t length)
 {
 	int ret;
 
+	/*
+	 * Clear data error state.
+	 */
+	session->ns_data.dd_errno = 0;
+
 	if (session->ns_data.dd_data_addr.addr_type == NDMP_ADDR_LOCAL)
 		ret = ndmp_local_read_v3(session, buf, length);
 	else
@@ -549,6 +554,11 @@ ndmp_server_write(ndmp_session_t *session, const void *data, ulong_t length)
 	int ret;
 
 	/*
+	 * Clear data error state.
+	 */
+	session->ns_data.dd_errno = 0;
+
+	/*
 	 * Write the data to the tape if the mover is local, otherwise, write
 	 * the data to the data connection.
 	 */
@@ -659,4 +669,10 @@ u_longlong_t
 ndmp_server_bytes_processed(ndmp_session_t *session)
 {
 	return (session->ns_data.dd_bytes_processed);
+}
+
+int
+ndmp_server_data_error(ndmp_session_t *session)
+{
+	return (session->ns_data.dd_errno);
 }

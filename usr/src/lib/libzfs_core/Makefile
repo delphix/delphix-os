@@ -27,7 +27,7 @@
 
 include		../Makefile.lib
 
-HDRS=		libzfs.h
+HDRS=		libzfs_core.h
 
 HDRDIR=		common
 
@@ -41,7 +41,7 @@ install :=	TARGET= install
 lint :=		TARGET= lint
 
 MSGFILES =	`$(GREP) -l gettext $(HDRDIR)/*.[ch]`
-POFILE =	libzfs.po
+POFILE =	libzfs_core.po
 
 .KEEP_STATE:
 

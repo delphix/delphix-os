@@ -907,7 +907,8 @@ dsl_dataset_create_sync(dsl_dir_t *pdd, const char *lastname,
  * The snapshots must all be in the same pool.
  */
 int
-dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
+dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer,
+    nvlist_t *errlist)
 {
 	int err;
 	dsl_sync_task_t *dst;
@@ -927,7 +928,6 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 	for (pair = nvlist_next_nvpair(snaps, NULL); pair != NULL;
 	    pair = nvlist_next_nvpair(snaps, pair)) {
 		dsl_dataset_t *ds;
-		int err;
 
 		err = dsl_dataset_own(nvpair_name(pair), B_TRUE, dstg, &ds);
 		if (err == 0) {
@@ -943,7 +943,7 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 		} else if (err == ENOENT) {
 			err = 0;
 		} else {
-			(void) strcpy(failed, nvpair_name(pair));
+			fnvlist_add_int32(errlist, nvpair_name(pair), err);
 			break;
 		}
 	}
@@ -957,10 +957,12 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 		dsl_dataset_t *ds = dsda->ds;
 
 		/*
-		 * Return the file system name that triggered the error
+		 * Return the snapshots that triggered the error.
 		 */
-		if (dst->dst_err) {
-			dsl_dataset_name(ds, failed);
+		if (dst->dst_err != 0) {
+			char name[ZFS_MAXNAMELEN];
+			dsl_dataset_name(ds, name);
+			fnvlist_add_int32(errlist, name, dst->dst_err);
 		}
 		ASSERT3P(dsda->rm_origin, ==, NULL);
 		dsl_dataset_disown(ds, dstg);

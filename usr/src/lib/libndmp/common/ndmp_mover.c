@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright (c) 2012 by Delphix.  All rights reserved. */
+/* Copyright (c) 2012 by Delphix. All rights reserved. */
 
 #include "ndmp_impl.h"
 
@@ -782,6 +782,7 @@ ndmp_remote_write(ndmp_session_t *session, char *data, ulong_t length)
 
 		if ((n = write(session->ns_data.dd_sock, &data[count],
 		    length - count)) < 0) {
+			session->ns_data.dd_errno = errno;
 			ndmp_log(session, LOG_ERR,
 			    "failed to write to socket %d: %s",
 			    session->ns_data.dd_sock, strerror(errno));
@@ -895,7 +896,8 @@ ndmp_mover_connect(ndmp_session_t *session, ndmp_mover_mode mover_mode)
 			 * data socket to receive the recovery data.
 			 */
 			if (sin.sin_addr.s_addr == 0 && sin.sin_port == 0) {
-				ndmp_debug(session, "setting data socket to mover socket");
+				ndmp_debug(session,
+				    "setting data socket to mover socket");
 				session->ns_data.dd_sock =
 				    session->ns_mover.md_sock;
 				return (NDMP_NO_ERR);

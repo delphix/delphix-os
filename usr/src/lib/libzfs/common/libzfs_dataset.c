@@ -2912,12 +2912,12 @@ int
 zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
     nvlist_t *props)
 {
-	zfs_cmd_t zc = { 0 };
 	int ret;
 	uint64_t size = 0;
 	uint64_t blocksize = zfs_prop_default_numeric(ZFS_PROP_VOLBLOCKSIZE);
 	char errbuf[1024];
 	uint64_t zoned;
+	dmu_objset_type_t ost;
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot create '%s'"), path);
@@ -2937,17 +2937,16 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	 * will return ENOENT, not EEXIST.  To prevent this from happening, we
 	 * first try to see if the dataset exists.
 	 */
-	(void) strlcpy(zc.zc_name, path, sizeof (zc.zc_name));
-	if (zfs_dataset_exists(hdl, zc.zc_name, ZFS_TYPE_DATASET)) {
+	if (zfs_dataset_exists(hdl, path, ZFS_TYPE_DATASET)) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "dataset already exists"));
 		return (zfs_error(hdl, EZFS_EXISTS, errbuf));
 	}
 
 	if (type == ZFS_TYPE_VOLUME)
-		zc.zc_objset_type = DMU_OST_ZVOL;
+		ost = DMU_OST_ZVOL;
 	else
-		zc.zc_objset_type = DMU_OST_ZFS;
+		ost = DMU_OST_ZFS;
 
 	if (props && (props = zfs_valid_proplist(hdl, type, props,
 	    zoned, NULL, errbuf)) == 0)
@@ -2999,14 +2998,9 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 		}
 	}
 
-	if (props && zcmd_write_src_nvlist(hdl, &zc, props) != 0)
-		return (-1);
-	nvlist_free(props);
-
 	/* create the dataset */
-	ret = zfs_ioctl(hdl, ZFS_IOC_CREATE, &zc);
-
-	zcmd_free_nvlists(&zc);
+	ret = lzc_create(path, ost, props);
+	nvlist_free(props);
 
 	/* check for failure */
 	if (ret != 0) {
@@ -3144,33 +3138,35 @@ int
 zfs_destroy_snaps_nvl(zfs_handle_t *zhp, nvlist_t *snaps, boolean_t defer)
 {
 	int ret;
-	zfs_cmd_t zc = { 0 };
+	nvlist_t *errlist;
 
-	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
-	if (zcmd_write_src_nvlist(zhp->zfs_hdl, &zc, snaps) != 0)
-		return (-1);
-	zc.zc_defer_destroy = defer;
+	ret = lzc_destroy_snaps(snaps, defer, &errlist);
 
-	ret = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_DESTROY_SNAPS_NVL, &zc);
 	if (ret != 0) {
-		char errbuf[1024];
+		for (nvpair_t *pair = nvlist_next_nvpair(errlist, NULL);
+		    pair != NULL; pair = nvlist_next_nvpair(errlist, pair)) {
+			char errbuf[1024];
+			(void) snprintf(errbuf, sizeof (errbuf),
+			    dgettext(TEXT_DOMAIN, "cannot destroy snapshot %s"),
+			    nvpair_name(pair));
 
-		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
-		    "cannot destroy snapshots in %s"), zc.zc_name);
-
-		switch (errno) {
-		case EEXIST:
-			zfs_error_aux(zhp->zfs_hdl, dgettext(TEXT_DOMAIN,
-			    "snapshot is cloned"));
-			return (zfs_error(zhp->zfs_hdl, EZFS_EXISTS, errbuf));
-
-		default:
-			return (zfs_standard_error(zhp->zfs_hdl, errno,
-			    errbuf));
+			switch (fnvpair_value_int32(pair)) {
+			case EEXIST:
+				zfs_error_aux(zhp->zfs_hdl,
+				    dgettext(TEXT_DOMAIN,
+				    "snapshot is cloned"));
+				ret = zfs_error(zhp->zfs_hdl, EZFS_EXISTS,
+				    errbuf);
+				break;
+			default:
+				ret = zfs_standard_error(zhp->zfs_hdl, errno,
+				    errbuf);
+				break;
+			}
 		}
 	}
 
-	return (0);
+	return (ret);
 }
 
 /*
@@ -3179,12 +3175,10 @@ zfs_destroy_snaps_nvl(zfs_handle_t *zhp, nvlist_t *snaps, boolean_t defer)
 int
 zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 {
-	zfs_cmd_t zc = { 0 };
 	char parent[ZFS_MAXNAMELEN];
 	int ret;
 	char errbuf[1024];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	zfs_type_t type;
 	uint64_t zoned;
 
 	assert(zhp->zfs_type == ZFS_TYPE_SNAPSHOT);
@@ -3203,32 +3197,21 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 	(void) parent_name(target, parent, sizeof (parent));
 
 	/* do the clone */
-	if (ZFS_IS_VOLUME(zhp)) {
-		zc.zc_objset_type = DMU_OST_ZVOL;
-		type = ZFS_TYPE_VOLUME;
-	} else {
-		zc.zc_objset_type = DMU_OST_ZFS;
-		type = ZFS_TYPE_FILESYSTEM;
-	}
 
 	if (props) {
+		zfs_type_t type;
+		if (ZFS_IS_VOLUME(zhp)) {
+			type = ZFS_TYPE_VOLUME;
+		} else {
+			type = ZFS_TYPE_FILESYSTEM;
+		}
 		if ((props = zfs_valid_proplist(hdl, type, props, zoned,
 		    zhp, errbuf)) == NULL)
 			return (-1);
-
-		if (zcmd_write_src_nvlist(hdl, &zc, props) != 0) {
-			nvlist_free(props);
-			return (-1);
-		}
-
-		nvlist_free(props);
 	}
 
-	(void) strlcpy(zc.zc_name, target, sizeof (zc.zc_name));
-	(void) strlcpy(zc.zc_value, zhp->zfs_name, sizeof (zc.zc_value));
-	ret = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_CREATE, &zc);
-
-	zcmd_free_nvlists(&zc);
+	ret = lzc_clone(target, zhp->zfs_name, props);
+	nvlist_free(props);
 
 	if (ret != 0) {
 		switch (errno) {
@@ -3376,7 +3359,7 @@ zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props)
 		return (-1);
 	}
 
-	ret = zfs2_snapshot(snaps, props, &errors);
+	ret = lzc_snapshot(snaps, props, &errors);
 
 	if (ret != 0) {
 		boolean_t printed = B_FALSE;

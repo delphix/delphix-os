@@ -77,6 +77,7 @@ SYMBOL_VERSION ILLUMOS_0.1 {	# Illumos additions
     fnvlist_add_nvlist_array;
     fnvlist_remove;
     fnvlist_remove_nvpair;
+    fnvlist_lookup_nvpair;
     fnvlist_lookup_boolean;
     fnvlist_lookup_boolean_value;
     fnvlist_lookup_byte;
