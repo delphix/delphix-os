@@ -1434,12 +1434,17 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 		    NULL, ZIO_FLAG_MUSTSUCCEED);
 		err = bpobj_iterate(&dp->dp_free_bpobj,
 		    dsl_scan_free_block_cb, scn, tx);
+		VERIFY3U(0, ==, zio_wait(scn->scn_zio_root));
+
 		if (err == 0 && spa_feature_is_active(spa,
 		    &spa_feature_table[SPA_FEATURE_ASYNC_DESTROY])) {
 			scn->scn_is_bptree = B_TRUE;
+			scn->scn_zio_root = zio_root(dp->dp_spa, NULL,
+			    NULL, ZIO_FLAG_MUSTSUCCEED);
 			err = bptree_iterate(dp->dp_meta_objset,
 			    dp->dp_bptree_obj, B_TRUE, dsl_scan_free_block_cb,
 			    scn, tx);
+			VERIFY3U(0, ==, zio_wait(scn->scn_zio_root));
 			if (err != 0)
 				return;
 
@@ -1455,7 +1460,6 @@ dsl_scan_sync(dsl_pool_t *dp, dmu_tx_t *tx)
 			    dp->dp_bptree_obj, tx));
 			dp->dp_bptree_obj = 0;
 		}
-		VERIFY3U(0, ==, zio_wait(scn->scn_zio_root));
 		if (scn->scn_visited_this_txg) {
 			zfs_dbgmsg("freed %llu blocks in %llums from "
 			    "free_bpobj/bptree txg %llu",
