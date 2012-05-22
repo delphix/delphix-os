@@ -518,11 +518,10 @@ dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
 }
 
 /*
- * Check if user has requested permission.  If descendent is set, must have
- * descendent perms.
+ * Check if user has requested permission.
  */
 int
-dsl_deleg_access_impl(dsl_dataset_t *ds, boolean_t descendent, const char *perm,
+dsl_deleg_access_impl(dsl_dataset_t *ds, const char *perm,
     cred_t *cr)
 {
 	dsl_dir_t *dd;
@@ -544,7 +543,7 @@ dsl_deleg_access_impl(dsl_dataset_t *ds, boolean_t descendent, const char *perm,
 	    SPA_VERSION_DELEGATED_PERMS)
 		return (EPERM);
 
-	if (dsl_dataset_is_snapshot(ds) || descendent) {
+	if (dsl_dataset_is_snapshot(ds)) {
 		/*
 		 * Snapshots are treated as descendents only,
 		 * local permissions do not apply.
@@ -637,7 +636,7 @@ dsl_deleg_access(const char *dsname, const char *perm, cred_t *cr)
 	if (error)
 		return (error);
 
-	error = dsl_deleg_access_impl(ds, B_FALSE, perm, cr);
+	error = dsl_deleg_access_impl(ds, perm, cr);
 	dsl_dataset_rele(ds, FTAG);
 
 	return (error);

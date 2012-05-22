@@ -55,7 +55,7 @@
 #include <time.h>
 
 #include <libzfs.h>
-#include <libzfs2.h>
+#include <libzfs_core.h>
 #include <zfs_prop.h>
 #include <zfs_deleg.h>
 #include <libuutil.h>
@@ -1037,7 +1037,7 @@ destroy_print_cb(zfs_handle_t *zhp, void *arg)
 	} else if (cb->cb_firstsnap != NULL) {
 		/* end of this range */
 		uint64_t used = 0;
-		err = zfs2_snaprange_space(cb->cb_firstsnap,
+		err = lzc_snaprange_space(cb->cb_firstsnap,
 		    cb->cb_prevsnap, &used);
 		cb->cb_snapused += used;
 		free(cb->cb_firstsnap);
@@ -1059,7 +1059,7 @@ destroy_print_snapshots(zfs_handle_t *fs_zhp, destroy_cbdata_t *cb)
 	if (cb->cb_firstsnap != NULL) {
 		uint64_t used = 0;
 		if (err == 0) {
-			err = zfs2_snaprange_space(cb->cb_firstsnap,
+			err = lzc_snaprange_space(cb->cb_firstsnap,
 			    cb->cb_prevsnap, &used);
 		}
 		cb->cb_snapused += used;

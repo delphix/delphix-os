@@ -36,7 +36,7 @@
 #include <libuutil.h>
 #include <libzfs.h>
 #include <libshare.h>
-#include <libzfs2.h>
+#include <libzfs_core.h>
 
 #include <fm/libtopo.h>
 

@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright (c) 2012 by Delphix.  All rights reserved. */
+/* Copyright (c) 2012 by Delphix. All rights reserved. */
 
 #include "ndmp_impl.h"
 
@@ -793,6 +793,7 @@ discard_data_v3(ndmp_session_t *session, ulong_t length)
 	/* Read and discard the data. */
 	n = read(session->ns_data.dd_sock, buf, toread);
 	if (n < 0) {
+		session->ns_data.dd_errno = errno;
 		ndmp_log(session, LOG_ERR, "failed to read from session: %s",
 		    strerror(errno));
 		n = -1;
@@ -895,6 +896,7 @@ ndmp_remote_read_v3(ndmp_session_t *session, char *data, ssize_t length)
 
 		if ((n = read(session->ns_data.dd_sock, &data[count],
 		    len)) < 0) {
+			session->ns_data.dd_errno = errno;
 			ndmp_log(session, LOG_ERR,
 			    "failed to read from data session: %s",
 			    strerror(errno));

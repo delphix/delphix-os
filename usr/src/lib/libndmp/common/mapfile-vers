@@ -80,6 +80,7 @@ SYMBOL_VERSION DLPXprivate_1.1 {
 	ndmp_server_add_fs;
 	ndmp_server_bytes_processed;
 	ndmp_server_create;
+	ndmp_server_data_error;
 	ndmp_server_destroy;
 	ndmp_server_done;
 	ndmp_server_env_name;

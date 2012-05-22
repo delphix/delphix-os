@@ -907,7 +907,8 @@ dsl_dataset_create_sync(dsl_dir_t *pdd, const char *lastname,
  * The snapshots must all be in the same pool.
  */
 int
-dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
+dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer,
+    nvlist_t *errlist)
 {
 	int err;
 	dsl_sync_task_t *dst;
@@ -927,7 +928,6 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 	for (pair = nvlist_next_nvpair(snaps, NULL); pair != NULL;
 	    pair = nvlist_next_nvpair(snaps, pair)) {
 		dsl_dataset_t *ds;
-		int err;
 
 		err = dsl_dataset_own(nvpair_name(pair), B_TRUE, dstg, &ds);
 		if (err == 0) {
@@ -943,7 +943,7 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 		} else if (err == ENOENT) {
 			err = 0;
 		} else {
-			(void) strcpy(failed, nvpair_name(pair));
+			fnvlist_add_int32(errlist, nvpair_name(pair), err);
 			break;
 		}
 	}
@@ -957,10 +957,12 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 		dsl_dataset_t *ds = dsda->ds;
 
 		/*
-		 * Return the file system name that triggered the error
+		 * Return the snapshots that triggered the error.
 		 */
-		if (dst->dst_err) {
-			dsl_dataset_name(ds, failed);
+		if (dst->dst_err != 0) {
+			char name[ZFS_MAXNAMELEN];
+			dsl_dataset_name(ds, name);
+			fnvlist_add_int32(errlist, name, dst->dst_err);
 		}
 		ASSERT3P(dsda->rm_origin, ==, NULL);
 		dsl_dataset_disown(ds, dstg);
@@ -2240,7 +2242,20 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 {
 	uint64_t refd, avail, uobjs, aobjs, ratio;
 
-	dsl_dir_stats(ds->ds_dir, nv);
+	ratio = ds->ds_phys->ds_compressed_bytes == 0 ? 100 :
+	    (ds->ds_phys->ds_uncompressed_bytes * 100 /
+	    ds->ds_phys->ds_compressed_bytes);
+
+	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_REFRATIO, ratio);
+
+	if (dsl_dataset_is_snapshot(ds)) {
+		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_COMPRESSRATIO, ratio);
+		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_USED,
+		    ds->ds_phys->ds_unique_bytes);
+		get_clones_stat(ds, nv);
+	} else {
+		dsl_dir_stats(ds->ds_dir, nv);
+	}
 
 	dsl_dataset_space(ds, &refd, &avail, &uobjs, &aobjs);
 	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_AVAILABLE, avail);
@@ -2285,22 +2300,6 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		}
 	}
 
-	ratio = ds->ds_phys->ds_compressed_bytes == 0 ? 100 :
-	    (ds->ds_phys->ds_uncompressed_bytes * 100 /
-	    ds->ds_phys->ds_compressed_bytes);
-	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_REFRATIO, ratio);
-
-	if (ds->ds_phys->ds_next_snap_obj) {
-		/*
-		 * This is a snapshot; override the dd's space used with
-		 * our unique space and compression ratio.
-		 */
-		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_USED,
-		    ds->ds_phys->ds_unique_bytes);
-		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_COMPRESSRATIO, ratio);
-
-		get_clones_stat(ds, nv);
-	}
 }
 
 void
@@ -2309,27 +2308,25 @@ dsl_dataset_fast_stat(dsl_dataset_t *ds, dmu_objset_stats_t *stat)
 	stat->dds_creation_txg = ds->ds_phys->ds_creation_txg;
 	stat->dds_inconsistent = ds->ds_phys->ds_flags & DS_FLAG_INCONSISTENT;
 	stat->dds_guid = ds->ds_phys->ds_guid;
-	if (ds->ds_phys->ds_next_snap_obj) {
+	stat->dds_origin[0] = '\0';
+	if (dsl_dataset_is_snapshot(ds)) {
 		stat->dds_is_snapshot = B_TRUE;
 		stat->dds_num_clones = ds->ds_phys->ds_num_children - 1;
 	} else {
 		stat->dds_is_snapshot = B_FALSE;
 		stat->dds_num_clones = 0;
-	}
 
-	/* clone origin is really a dsl_dir thing... */
-	rw_enter(&ds->ds_dir->dd_pool->dp_config_rwlock, RW_READER);
-	if (dsl_dir_is_clone(ds->ds_dir)) {
-		dsl_dataset_t *ods;
+		rw_enter(&ds->ds_dir->dd_pool->dp_config_rwlock, RW_READER);
+		if (dsl_dir_is_clone(ds->ds_dir)) {
+			dsl_dataset_t *ods;
 
-		VERIFY(0 == dsl_dataset_get_ref(ds->ds_dir->dd_pool,
-		    ds->ds_dir->dd_phys->dd_origin_obj, FTAG, &ods));
-		dsl_dataset_name(ods, stat->dds_origin);
-		dsl_dataset_drop_ref(ods, FTAG);
-	} else {
-		stat->dds_origin[0] = '\0';
+			VERIFY(0 == dsl_dataset_get_ref(ds->ds_dir->dd_pool,
+			    ds->ds_dir->dd_phys->dd_origin_obj, FTAG, &ods));
+			dsl_dataset_name(ods, stat->dds_origin);
+			dsl_dataset_drop_ref(ods, FTAG);
+		}
+		rw_exit(&ds->ds_dir->dd_pool->dp_config_rwlock);
 	}
-	rw_exit(&ds->ds_dir->dd_pool->dp_config_rwlock);
 }
 
 uint64_t

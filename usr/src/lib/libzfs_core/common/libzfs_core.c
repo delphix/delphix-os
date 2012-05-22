@@ -24,49 +24,52 @@
  */
 
 /*
- * LibZFS2 is intended to replace most functionality in libzfs (1).
+ * LibZFS_Core (lzc) is intended to replace most functionality in libzfs.
  * It has the following characteristics:
  *
- *  - Thread Safe.  libzfs2 is accessible concurrently from multiple
+ *  - Thread Safe.  libzfs_core is accessible concurrently from multiple
  *  threads.  This is accomplished primarily by avoiding global data
  *  (e.g. caching).  Since it's thread-safe, there is no reason for a
- *  process to have multiple libzfs "instances".  Therefore, we store our
- *  few pieces of data (e.g. the file descriptor) in global variables.
- *  The fd is reference-counted so that the libzfs2 library can be "initialized"
- *  multiple times (e.g. by different consumers within the same process).
+ *  process to have multiple libzfs "instances".  Therefore, we store
+ *  our few pieces of data (e.g. the file descriptor) in global
+ *  variables.  The fd is reference-counted so that the libzfs_core
+ *  library can be "initialized" multiple times (e.g. by different
+ *  consumers within the same process).
  *
- *  - Committed Interface.  The libzfs2 interface will be committed, therefore
- *  consumers can compile against it and be confident that their code will
- *  continue to work on future releases of this code.  Currently, the interface
- *  is Evolving (not Committed), but we intend to commit to it once it is more
- *  complete and we determine that it meets the needs of all consumers.
+ *  - Committed Interface.  The libzfs_core interface will be committed,
+ *  therefore consumers can compile against it and be confident that
+ *  their code will continue to work on future releases of this code.
+ *  Currently, the interface is Evolving (not Committed), but we intend
+ *  to commit to it once it is more complete and we determine that it
+ *  meets the needs of all consumers.
  *
- *  - Programatic Error Handling.  libzfs2 communicates errors with
+ *  - Programatic Error Handling.  libzfs_core communicates errors with
  *  defined error numbers, and doesn't print anything to stdout/stderr.
  *
- *  - Thin Layer.  libzfs2 is a thin layer, marshaling arguments
+ *  - Thin Layer.  libzfs_core is a thin layer, marshaling arguments
  *  to/from the kernel ioctls.  There is generally a 1:1 correspondence
- *  between libzfs2 functions and ioctls to /dev/zfs.
+ *  between libzfs_core functions and ioctls to /dev/zfs.
  *
- *  - Clear Atomicity.
- *  Because libzfs2 functions are generally 1:1 with kernel ioctls, and kernel
- *  ioctls are general atomic, each libzfs2 function is atomic.
- *  For example, creating multiple snapshots with a single call to
- *  zfs2_snapshot() is atomic -- it can't fail with only some of the requested
- *  snapshots created, even in the event of power loss or system crash.
+ *  - Clear Atomicity.  Because libzfs_core functions are generally 1:1
+ *  with kernel ioctls, and kernel ioctls are general atomic, each
+ *  libzfs_core function is atomic.  For example, creating multiple
+ *  snapshots with a single call to zfs2_snapshot() is atomic -- it
+ *  can't fail with only some of the requested snapshots created, even
+ *  in the event of power loss or system crash.
  *
- *  - Continued libzfs1 Support.  Some higher-level operations (e.g.
+ *  - Continued libzfs Support.  Some higher-level operations (e.g.
  *  support for "zfs send -R") are too complicated to fit the scope of
- *  libzfs2.  This functionality will continue to live in libzfs1.  Where
- *  appropriate, libzfs1 will use the underlying atomic operations of libzfs2.
- *  For example, libzfs1 may implement "zfs send -R | zfs receive" by
- *  using individual "send one snapshot", rename, destroy, and "receive one
- *  snapshot" operations in libzfs2.  /sbin/zfs and /zbin/zpool will link with
- *  both libzfs1 and libzfs2.  Other consumers should aim to use only libzfs2,
+ *  libzfs_core.  This functionality will continue to live in libzfs.
+ *  Where appropriate, libzfs will use the underlying atomic operations
+ *  of libzfs_core.  For example, libzfs may implement "zfs send -R |
+ *  zfs receive" by using individual "send one snapshot", rename,
+ *  destroy, and "receive one snapshot" operations in libzfs_core.
+ *  /sbin/zfs and /zbin/zpool will link with both libzfs and
+ *  libzfs_core.  Other consumers should aim to use only libzfs_core,
  *  since that will be the supported, stable interface going forwards.
  */
 
-#include <libzfs2.h>
+#include <libzfs_core.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -85,7 +88,7 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_refcount;
 
 int
-libzfs2_init(void)
+libzfs_core_init(void)
 {
 	(void) pthread_mutex_lock(&g_lock);
 	if (g_refcount == 0) {
@@ -101,7 +104,7 @@ libzfs2_init(void)
 }
 
 void
-libzfs2_fini(void)
+libzfs_core_fini(void)
 {
 	(void) pthread_mutex_lock(&g_lock);
 	ASSERT3S(g_refcount, >, 0);
@@ -112,7 +115,7 @@ libzfs2_fini(void)
 }
 
 static int
-libzfs2_ioctl(zfs_ioc_t ioc, const char *name,
+lzc_ioctl(zfs_ioc_t ioc, const char *name,
     nvlist_t *source, nvlist_t **resultp)
 {
 	zfs_cmd_t zc = { 0 };
@@ -166,6 +169,33 @@ out:
 	return (error);
 }
 
+int
+lzc_create(const char *fsname, dmu_objset_type_t type, nvlist_t *props)
+{
+	int error;
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_int32(args, "type", type);
+	if (props != NULL)
+		fnvlist_add_nvlist(args, "props", props);
+	error = lzc_ioctl(ZFS_IOC_CREATE, fsname, args, NULL);
+	nvlist_free(args);
+	return (error);
+}
+
+int
+lzc_clone(const char *fsname, const char *origin,
+    nvlist_t *props)
+{
+	int error;
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_string(args, "origin", origin);
+	if (props != NULL)
+		fnvlist_add_nvlist(args, "props", props);
+	error = lzc_ioctl(ZFS_IOC_CLONE, fsname, args, NULL);
+	nvlist_free(args);
+	return (error);
+}
+
 /*
  * Creates snapshots.
  *
@@ -176,13 +206,13 @@ out:
  * are supported.  { user:prop_name -> string value }
  *
  * The returned results nvlist will have an entry for each snapshot that failed.
- * The value will be the error code.
+ * The value will be the (int32) error code.
  *
  * The return value will be 0 if all snapshots were created, otherwise it will
  * be the errno of a (undetermined) snapshot that failed.
  */
 int
-zfs2_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **resultp)
+lzc_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **errlist)
 {
 	nvpair_t *elem;
 	nvlist_t *args;
@@ -201,14 +231,64 @@ zfs2_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t **resultp)
 	if (props != NULL)
 		fnvlist_add_nvlist(args, "props", props);
 
-	error = libzfs2_ioctl(ZFS_IOC_SNAPSHOT, pool, args, resultp);
+	error = lzc_ioctl(ZFS_IOC_SNAPSHOT, pool, args, errlist);
 	nvlist_free(args);
 
 	return (error);
 }
 
+/*
+ * Destroys snapshots.
+ *
+ * The keys in the snaps nvlist are the snapshots to be destroyed.
+ * They must all be in the same pool.
+ *
+ * Snapshots that do not exist will be silently ignored.
+ *
+ * If 'defer' is not set, and a snapshot has user holds or clones, the destroy operation will fail
+ * and none of the snapshots will be destroyed.
+ *
+ * If 'defer' is set, and a snapshot has user holds or clones, it will be
+ * marked for deferred destruction, and will be destroyed when the last hold
+ * or clone is removed/destroyed.
+ *
+ * The return value will be 0 if all snapshots were destroyed (or marked for
+ * later destruction if 'defer' is set) or didn't exist to begin with.
+ *
+ * Otherwise the return value will be the errno of a (undetermined) snapshot
+ * that failed, no snapshots will be destroyed, and the errlist will have an
+ * entry for each snapshot that failed.  The value in the errlist will be
+ * the (int32) error code.
+ */
 int
-zfs2_snaprange_space(const char *firstsnap, const char *lastsnap,
+lzc_destroy_snaps(nvlist_t *snaps, boolean_t defer, nvlist_t **errlist)
+{
+	nvpair_t *elem;
+	nvlist_t *args;
+	int error;
+	char pool[MAXNAMELEN];
+
+	/* determine the pool name */
+	elem = nvlist_next_nvpair(snaps, NULL);
+	if (elem == NULL)
+		return (0);
+	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
+	pool[strcspn(pool, "/@")] = '\0';
+
+	args = fnvlist_alloc();
+	fnvlist_add_nvlist(args, "snaps", snaps);
+	if (defer)
+		fnvlist_add_boolean(args, "defer");
+
+	error = lzc_ioctl(ZFS_IOC_DESTROY_SNAPS, pool, args, errlist);
+	nvlist_free(args);
+
+	return (error);
+
+}
+
+int
+lzc_snaprange_space(const char *firstsnap, const char *lastsnap,
     uint64_t *usedp)
 {
 	nvlist_t *args;
@@ -227,7 +307,7 @@ zfs2_snaprange_space(const char *firstsnap, const char *lastsnap,
 	args = fnvlist_alloc();
 	fnvlist_add_string(args, "firstsnap", firstsnap);
 
-	err = libzfs2_ioctl(ZFS_IOC_SPACE_SNAPS, lastsnap, args, &result);
+	err = lzc_ioctl(ZFS_IOC_SPACE_SNAPS, lastsnap, args, &result);
 	nvlist_free(args);
 	if (err == 0)
 		*usedp = fnvlist_lookup_uint64(result, "used");
@@ -237,11 +317,11 @@ zfs2_snaprange_space(const char *firstsnap, const char *lastsnap,
 }
 
 boolean_t
-zfs2_exists(const char *dataset)
+lzc_exists(const char *dataset)
 {
 	/*
 	 * The objset_stats ioctl is still legacy, so we need to construct our
-	 * own zfs_cmd_t rather than using libzfs2_ioctl().
+	 * own zfs_cmd_t rather than using zfsc_ioctl().
 	 */
 	zfs_cmd_t zc = { 0 };
 
@@ -253,7 +333,7 @@ zfs2_exists(const char *dataset)
  * If fromsnap is NULL, a full (non-incremental) stream will be sent.
  */
 int
-zfs2_send(const char *snapname, const char *fromsnap, int fd)
+lzc_send(const char *snapname, const char *fromsnap, int fd)
 {
 	nvlist_t *args;
 	int err;
@@ -262,7 +342,7 @@ zfs2_send(const char *snapname, const char *fromsnap, int fd)
 	fnvlist_add_int32(args, "fd", fd);
 	if (fromsnap != NULL)
 		fnvlist_add_string(args, "fromsnap", fromsnap);
-	err = libzfs2_ioctl(ZFS_IOC_SEND_NEW, snapname, args, NULL);
+	err = lzc_ioctl(ZFS_IOC_SEND_NEW, snapname, args, NULL);
 	nvlist_free(args);
 	return (err);
 }
@@ -271,7 +351,7 @@ zfs2_send(const char *snapname, const char *fromsnap, int fd)
  * If fromsnap is NULL, a full (non-incremental) stream will be estimated.
  */
 int
-zfs2_send_space(const char *snapname, const char *fromsnap, uint64_t *spacep)
+lzc_send_space(const char *snapname, const char *fromsnap, uint64_t *spacep)
 {
 	nvlist_t *args;
 	nvlist_t *result;
@@ -280,7 +360,7 @@ zfs2_send_space(const char *snapname, const char *fromsnap, uint64_t *spacep)
 	args = fnvlist_alloc();
 	if (fromsnap != NULL)
 		fnvlist_add_string(args, "fromsnap", fromsnap);
-	err = libzfs2_ioctl(ZFS_IOC_SEND_SPACE, snapname, args, &result);
+	err = lzc_ioctl(ZFS_IOC_SEND_SPACE, snapname, args, &result);
 	nvlist_free(args);
 	if (err == 0)
 		*spacep = fnvlist_lookup_uint64(result, "space");
@@ -321,12 +401,12 @@ recv_read(int fd, void *buf, int ilen)
  * (those with DMU_BACKUP_FEATURE_DEDUP).
  */
 int
-zfs2_receive(const char *snapname, nvlist_t *props, const char *origin,
+lzc_receive(const char *snapname, nvlist_t *props, const char *origin,
     boolean_t force, int fd)
 {
 	/*
 	 * The receive ioctl is still legacy, so we need to construct our own
-	 * zfs_cmd_t rather than using libzfs2_ioctl().
+	 * zfs_cmd_t rather than using zfsc_ioctl().
 	 */
 	zfs_cmd_t zc = { 0 };
 	char *atp;
@@ -345,7 +425,7 @@ zfs2_receive(const char *snapname, nvlist_t *props, const char *origin,
 	*atp = '\0';
 
 	/* if the fs does not exist, try its parent. */
-	if (!zfs2_exists(zc.zc_name)) {
+	if (!lzc_exists(zc.zc_name)) {
 		char *slashp = strrchr(zc.zc_name, '/');
 		if (slashp == NULL)
 			return (ENOENT);
