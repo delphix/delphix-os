@@ -21,6 +21,7 @@
  CDDL HEADER END
 
 	Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+	Copyright (c) 2012 by Delphix. All rights reserved.
 
 	NOTE:  This service manifest is not editable; its contents will
 	be overwritten by package or patch operations, including
@@ -95,7 +96,7 @@
 	    <propval name='grace_period' type='integer' value='90'/>
 	    <propval name='lockd_listen_backlog' type='integer' value='32'/>
 	    <propval name='lockd_retransmit_timeout' type='integer' value='5'/>
-	    <propval name='lockd_servers' type='integer' value='20'/>
+	    <propval name='lockd_servers' type='integer' value='256'/>
 	  </property_group>
 	</instance>
 	<stability value='Stable' />
