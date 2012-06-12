@@ -1416,8 +1416,7 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	nvlist_t *nvl = NULL, *realprops;
 	zfs_prop_t prop;
-	boolean_t do_prefix;
-	uint64_t idx;
+	boolean_t do_prefix = B_TRUE;
 	int added_resv;
 
 	(void) snprintf(errbuf, sizeof (errbuf),
@@ -1456,12 +1455,17 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 	}
 
 	/*
-	 * If the dataset's canmount property is being set to noauto,
-	 * then we want to prevent unmounting & remounting it.
+	 * We don't want to unmount & remount the dataset when changing
+	 * its canmount property to 'on' or 'noauto'.  We only use
+	 * the changelist logic to unmount when setting canmount=off.
 	 */
-	do_prefix = !((prop == ZFS_PROP_CANMOUNT) &&
-	    (zprop_string_to_index(prop, propval, &idx,
-	    ZFS_TYPE_DATASET) == 0) && (idx == ZFS_CANMOUNT_NOAUTO));
+	if (prop == ZFS_PROP_CANMOUNT) {
+		uint64_t idx;
+		int err = zprop_string_to_index(prop, propval, &idx,
+		    ZFS_TYPE_DATASET);
+		if (err == 0 && idx != ZFS_CANMOUNT_OFF)
+			do_prefix = B_FALSE;
+	}
 
 	if (do_prefix && (ret = changelist_prefix(cl)) != 0)
 		goto error;

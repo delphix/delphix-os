@@ -3188,7 +3188,7 @@ zfs_ioc_snapshot(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 		/*
 		 * The snap must be in the specified pool.
 		 */
-		if (strncmp(name, name, poollen) != 0 ||
+		if (strncmp(name, poolname, poollen) != 0 ||
 		    (name[poollen] != '/' && name[poollen] != '@'))
 			return (EXDEV);
 
@@ -3302,7 +3302,7 @@ zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 		/*
 		 * The snap must be in the specified pool.
 		 */
-		if (strncmp(name, name, poollen) != 0 ||
+		if (strncmp(name, poolname, poollen) != 0 ||
 		    (name[poollen] != '/' && name[poollen] != '@'))
 			return (EXDEV);
 
