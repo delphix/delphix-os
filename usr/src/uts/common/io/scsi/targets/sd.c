@@ -303,6 +303,15 @@ static char	sd_log_buf[1024];
 static kmutex_t	sd_log_mutex;
 
 /*
+ * Older versions of VMware have had issues where SCSI MODE SENSE 6 Page 0x3
+ * ioctls fail with BUSY instead of CHECK_CONDITION, which leads to problems
+ * where the devive is unavailable for long periods of time. Set this in
+ * /etc/system if pfexec zpool status causes disks that are otherwise idle
+ * to appear 100% busy.
+ */
+int bypass_mode_sense_for_geometry;
+
+/*
  * Structs and globals for recording attached lun information.
  * This maintains a chain. Each node in the chain represents a SCSI controller.
  * The structure records the number of luns attached to each target connected
@@ -2477,6 +2486,9 @@ _init(void)
 #endif /* !XPV_HVM_DRIVER */
 		return (err);
 	}
+
+	if (bypass_mode_sense_for_geometry)
+		scsi_log(NULL, sd_label, CE_NOTE, "Geometry bypass enabled\n");
 
 	return (err);
 }
@@ -4978,6 +4990,20 @@ sd_get_physical_geometry(struct sd_lun *un, cmlb_geom_t *pgeom_p,
 	 */
 	if (ISCD(un))
 		return (ret);
+
+	/*
+	 * If we're bypassing the MODE SENSE inquiry page 3 (to work around a
+	 * VMware emulation issue) we replicate the expected behavior of the
+	 * command returning with CHECK_CONDITION and a sense key of
+	 * ILLEGAL_REQUEST. This leads to a device assesment of
+	 * SD_FMT_IGNORE_COMPROMISE.
+	 */
+	if (bypass_mode_sense_for_geometry) {
+		ssc = sd_ssc_init(un);
+		sd_ssc_assessment(ssc, SD_FMT_IGNORE_COMPROMISE);
+		sd_ssc_fini(ssc);
+		return (EIO);
+	}
 
 	cdbsize = (un->un_f_cfg_is_atapi == TRUE) ? CDB_GROUP2 : CDB_GROUP0;
 
