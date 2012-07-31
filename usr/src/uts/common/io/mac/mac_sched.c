@@ -24,6 +24,7 @@
  */
 /*
  * Copyright 2011 Joyent, Inc.  All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -1688,20 +1689,12 @@ again:
 	 * flow's bandwidth and other resources contraints.
 	 */
 	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS) {
-		mac_direct_rx_t		proc;
-		void			*arg1;
-		mac_resource_handle_t	arg2;
-
 		/*
 		 * This is the case when a Rx is directly
 		 * assigned and we have a fully classified
 		 * protocol chain. We can deal with it in
 		 * one shot.
 		 */
-		proc = srs_rx->sr_func;
-		arg1 = srs_rx->sr_arg1;
-		arg2 = srs_rx->sr_arg2;
-
 		mac_srs->srs_state |= SRS_CLIENT_PROC;
 		mutex_exit(&mac_srs->srs_lock);
 		if (tid != 0) {
@@ -1709,7 +1702,7 @@ again:
 			tid = 0;
 		}
 
-		proc(arg1, arg2, head, NULL);
+		mac_rx_deliver(srs_rx->sr_mcip, NULL, head, NULL);
 		/*
 		 * Decrement the size and count here itelf
 		 * since the packet has been processed.
@@ -1966,20 +1959,12 @@ again:
 	 * flow's bandwidth and other resources contraints.
 	 */
 	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS) {
-		mac_direct_rx_t		proc;
-		void			*arg1;
-		mac_resource_handle_t	arg2;
-
 		/*
 		 * This is the case when a Rx is directly
 		 * assigned and we have a fully classified
 		 * protocol chain. We can deal with it in
 		 * one shot.
 		 */
-		proc = srs_rx->sr_func;
-		arg1 = srs_rx->sr_arg1;
-		arg2 = srs_rx->sr_arg2;
-
 		mac_srs->srs_state |= SRS_CLIENT_PROC;
 		mutex_exit(&mac_srs->srs_lock);
 		if (tid != 0) {
@@ -1987,7 +1972,7 @@ again:
 			tid = 0;
 		}
 
-		proc(arg1, arg2, head, NULL);
+		mac_rx_deliver(srs_rx->sr_mcip, NULL, head, NULL);
 		/*
 		 * Decrement the size and count here itelf
 		 * since the packet has been processed.
@@ -2489,7 +2474,7 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mac_tx_cookie_t cookie = NULL;
 	mac_srs_tx_t *srs_tx = &mac_srs->srs_tx;
 	boolean_t wakeup_worker = B_TRUE;
-	uint32_t tx_mode = srs_tx->st_mode;
+	mac_tx_srs_mode_t tx_mode = srs_tx->st_mode;
 	int cnt, sz;
 	mblk_t *tail;
 
@@ -2713,7 +2698,7 @@ mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		mutex_exit(&mac_srs->srs_lock);
 	}
 
-	mp_chain = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+	mp_chain = mac_tx_send(srs_tx->st_mcip, srs_tx->st_ring,
 	    mp_chain, &stats);
 
 	/*
@@ -2778,7 +2763,7 @@ mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mac_srs->srs_state |= SRS_PROC;
 	mutex_exit(&mac_srs->srs_lock);
 
-	mp_chain = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+	mp_chain = mac_tx_send(srs_tx->st_mcip, srs_tx->st_ring,
 	    mp_chain, &stats);
 
 	mutex_enter(&mac_srs->srs_lock);
@@ -2987,7 +2972,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	} else {
 		mac_tx_stats_t		stats;
 
-		mp_chain = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+		mp_chain = mac_tx_send(srs_tx->st_mcip, srs_tx->st_ring,
 		    mp_chain, &stats);
 
 		if (mp_chain != NULL) {
@@ -3070,7 +3055,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
 	mblk_t			*head, *tail;
 	size_t			sz;
-	uint32_t		tx_mode;
+	mac_tx_srs_mode_t	tx_mode;
 	uint_t			saved_pkt_count;
 	mac_tx_stats_t		stats;
 	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
@@ -3093,7 +3078,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			mac_srs->srs_count = 0;
 			mutex_exit(&mac_srs->srs_lock);
 
-			head = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+			head = mac_tx_send(srs_tx->st_mcip, srs_tx->st_ring,
 			    head, &stats);
 
 			mutex_enter(&mac_srs->srs_lock);
@@ -3153,7 +3138,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			tail->b_next = NULL;
 			mutex_exit(&mac_srs->srs_lock);
 
-			head = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+			head = mac_tx_send(srs_tx->st_mcip, srs_tx->st_ring,
 			    head, &stats);
 
 			mutex_enter(&mac_srs->srs_lock);
@@ -3341,10 +3326,9 @@ mac_tx_classify(mac_impl_t *mip, mblk_t *mp)
 }
 
 mblk_t *
-mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
+mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
     mac_tx_stats_t *stats)
 {
-	mac_client_impl_t *src_mcip = (mac_client_impl_t *)mch;
 	mac_impl_t *mip = src_mcip->mci_mip;
 	uint_t obytes = 0, opackets = 0, oerrors = 0;
 	mblk_t *mp = NULL, *next;
@@ -3355,7 +3339,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 		vid_check = MAC_VID_CHECK_NEEDED(src_mcip);
 		add_tag = MAC_TAG_NEEDED(src_mcip);
 		if (add_tag)
-			vid = mac_client_vid(mch);
+			vid = mac_client_vid((mac_client_handle_t)src_mcip);
 	} else {
 		ASSERT(mip->mi_nclients == 1);
 		vid_check = add_tag = B_FALSE;
@@ -3378,7 +3362,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 			    msgdsize(mp));
 
 			CHECK_VID_AND_ADD_TAG(mp);
-			MAC_TX(mip, ring, mp, src_mcip);
+			MAC_TX(mip, (mac_ring_handle_t)ring, mp, src_mcip);
 
 			/*
 			 * If the driver is out of descriptors and does a
@@ -3514,7 +3498,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 			 * Unknown destination, send via the underlying
 			 * NIC.
 			 */
-			MAC_TX(mip, ring, mp, src_mcip);
+			MAC_TX(mip, (mac_ring_handle_t)ring, mp, src_mcip);
 			if (mp != NULL) {
 				/*
 				 * Adjust for the last packet that
@@ -3545,14 +3529,12 @@ boolean_t
 mac_tx_srs_ring_present(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 {
 	int i;
-	mac_soft_ring_t *soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_tx.st_ring == tx_ring)
 		return (B_TRUE);
 
 	for (i = 0; i < srs->srs_tx_ring_count; i++) {
-		soft_ring =  srs->srs_tx_soft_rings[i];
-		if (soft_ring->s_ring_tx_arg2 == tx_ring)
+		if (srs->srs_tx_soft_rings[i]->s_ring_tx_ring == tx_ring)
 			return (B_TRUE);
 	}
 
@@ -3570,12 +3552,12 @@ mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 	int		i;
 	mac_soft_ring_t	*soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_tx.st_ring == tx_ring)
 		return (NULL);
 
 	for (i = 0; i < srs->srs_tx_ring_count; i++) {
 		soft_ring =  srs->srs_tx_soft_rings[i];
-		if (soft_ring->s_ring_tx_arg2 == tx_ring)
+		if (soft_ring->s_ring_tx_ring == tx_ring)
 			return (soft_ring);
 	}
 
@@ -3590,7 +3572,7 @@ mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
  * state field.
  */
 void
-mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
+mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_t *ring)
 {
 	int i;
 	mac_soft_ring_t *sringp;
@@ -3603,7 +3585,7 @@ mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
 	 * with the SRS.
 	 */
 	if (!MAC_TX_SOFT_RINGS(mac_srs)) {
-		if (srs_tx->st_arg2 == ring &&
+		if (srs_tx->st_ring == ring &&
 		    mac_srs->srs_state & SRS_TX_BLOCKED) {
 			mac_srs->srs_state &= ~SRS_TX_BLOCKED;
 			srs_tx->st_stat.mts_unblockcnt++;
@@ -3626,7 +3608,7 @@ mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
 	for (i = 0; i < mac_srs->srs_tx_ring_count; i++) {
 		sringp = mac_srs->srs_tx_soft_rings[i];
 		mutex_enter(&sringp->s_ring_lock);
-		if (sringp->s_ring_tx_arg2 == ring) {
+		if (sringp->s_ring_tx_ring == ring) {
 			if (sringp->s_ring_state & S_RING_BLOCK) {
 				sringp->s_ring_state &= ~S_RING_BLOCK;
 				sringp->s_st_stat.mts_unblockcnt++;
@@ -3722,8 +3704,8 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
     mblk_t *mp_chain, mblk_t *tail, int cnt, size_t sz)
 {
 	mac_direct_rx_t		proc;
-	void			*arg1;
-	mac_resource_handle_t	arg2;
+	void			*arg;
+	mac_resource_handle_t	resource;
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
 
 	ASSERT(ringp != NULL);
@@ -3744,8 +3726,8 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
 			return;
 		}
 		proc = ringp->s_ring_rx_func;
-		arg1 = ringp->s_ring_rx_arg1;
-		arg2 = ringp->s_ring_rx_arg2;
+		arg = ringp->s_ring_rx_arg;
+		resource = ringp->s_ring_rx_resource;
 		/*
 		 * See if anything is already queued. If we are the
 		 * first packet, do inline processing else queue the
@@ -3766,7 +3748,7 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
 			 */
 			ASSERT(mp_chain->b_next == NULL);
 
-			(*proc)(arg1, arg2, mp_chain, NULL);
+			(*proc)(arg, resource, mp_chain, NULL);
 
 			ASSERT(MUTEX_NOT_HELD(&ringp->s_ring_lock));
 			/*
@@ -4008,8 +3990,8 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 			mutex_exit(&ringp->s_ring_lock);
 		}
 
-		mp_chain = mac_tx_send(ringp->s_ring_tx_arg1,
-		    ringp->s_ring_tx_arg2, mp_chain, &stats);
+		mp_chain = mac_tx_send(ringp->s_ring_mcip,
+		    ringp->s_ring_tx_ring, mp_chain, &stats);
 
 		/*
 		 * Multiple threads could be here sending packets.

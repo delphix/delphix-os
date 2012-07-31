@@ -703,7 +703,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		 * mac_srs_tx_t.
 		 */
 		if (srs.srs_tx_ring_count == 0) {
-			m_ringp = srs.srs_tx.st_arg2;
+			m_ringp = srs.srs_tx.st_ring;
 			if (m_ringp != NULL) {
 				(void) mdb_vread(&m_ring, sizeof (m_ring),
 				    (uintptr_t)m_ringp);
@@ -723,7 +723,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		    s_ringp = s_ring.s_ring_next, i++) {
 			(void) mdb_vread(&s_ring, sizeof (s_ring),
 			    (uintptr_t)s_ringp);
-			m_ringp = s_ring.s_ring_tx_arg2;
+			m_ringp = s_ring.s_ring_tx_ring;
 			(void) mdb_vread(&m_ring, sizeof (m_ring),
 			    (uintptr_t)m_ringp);
 			if (first) {

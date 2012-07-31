@@ -22,6 +22,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 /*
  * General Soft rings - Simulating Rx rings in S/W.
@@ -148,11 +151,11 @@ mac_soft_ring_worker_wakeup(mac_soft_ring_t *ringp)
 mac_soft_ring_t *
 mac_soft_ring_create(int id, clock_t wait, uint16_t type,
     pri_t pri, mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
-    processorid_t cpuid, mac_direct_rx_t rx_func, void *x_arg1,
-    mac_resource_handle_t x_arg2)
+    processorid_t cpuid, mac_direct_rx_t rx_func,
+    mac_resource_handle_t rx_resource, mac_ring_t *tx_ring)
 {
-	mac_soft_ring_t 	*ringp;
-	char 			name[S_RING_NAMELEN];
+	mac_soft_ring_t		*ringp;
+	char			name[S_RING_NAMELEN];
 
 	bzero(name, 64);
 	ringp = kmem_cache_alloc(mac_soft_ring_cache, KM_SLEEP);
@@ -199,9 +202,9 @@ mac_soft_ring_create(int id, clock_t wait, uint16_t type,
 	ringp->s_ring_worker = thread_create(NULL, 0,
 	    mac_soft_ring_worker, ringp, 0, &p0, TS_RUN, pri);
 	if (type & ST_RING_TX) {
+		ASSERT(rx_func == NULL && rx_resource == NULL);
 		ringp->s_ring_drain_func = mac_tx_soft_ring_drain;
-		ringp->s_ring_tx_arg1 = x_arg1;
-		ringp->s_ring_tx_arg2 = x_arg2;
+		ringp->s_ring_tx_ring = tx_ring;
 		ringp->s_ring_tx_max_q_cnt = mac_tx_soft_ring_max_q_cnt;
 		ringp->s_ring_tx_hiwat =
 		    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
@@ -209,16 +212,15 @@ mac_soft_ring_create(int id, clock_t wait, uint16_t type,
 		if (mcip->mci_state_flags & MCIS_IS_AGGR) {
 			mac_srs_tx_t *tx = &mac_srs->srs_tx;
 
-			ASSERT(tx->st_soft_rings[
-			    ((mac_ring_t *)x_arg2)->mr_index] == NULL);
-			tx->st_soft_rings[((mac_ring_t *)x_arg2)->mr_index] =
-			    ringp;
+			ASSERT(tx->st_soft_rings[tx_ring->mr_index] == NULL);
+			tx->st_soft_rings[tx_ring->mr_index] = ringp;
 		}
 	} else {
+		ASSERT(tx_ring == NULL);
 		ringp->s_ring_drain_func = mac_rx_soft_ring_drain;
 		ringp->s_ring_rx_func = rx_func;
-		ringp->s_ring_rx_arg1 = x_arg1;
-		ringp->s_ring_rx_arg2 = x_arg2;
+		ringp->s_ring_rx_arg = mcip;
+		ringp->s_ring_rx_resource = rx_resource;
 		if (mac_srs->srs_state & SRS_SOFTRING_QUEUE)
 			ringp->s_ring_type |= ST_RING_WORKER_ONLY;
 	}
@@ -242,7 +244,7 @@ mac_soft_ring_free(mac_soft_ring_t *softring)
 	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE | S_RING_PROC)) ==
 	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE));
 	mac_pkt_drop(NULL, NULL, softring->s_ring_first, B_FALSE);
-	softring->s_ring_tx_arg2 = NULL;
+	softring->s_ring_tx_ring = NULL;
 	mac_soft_ring_stat_delete(softring);
 	mac_callback_free(softring->s_ring_notify_cb_list);
 	kmem_cache_free(mac_soft_ring_cache, softring);
@@ -343,17 +345,17 @@ mac_soft_ring_fire(void *arg)
  * Called when worker thread model (ST_RING_WORKER_ONLY) of processing
  * incoming packets is used. s_ring_first contain the queued packets.
  * s_ring_rx_func contains the upper level (client) routine where the
- * packets are destined and s_ring_rx_arg1/s_ring_rx_arg2 are the
- * cookie meant for the client.
+ * packets are destined and s_ring_rx_resource is the cookie meant for
+ * the client.
  */
 /* ARGSUSED */
 static void
 mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 {
 	mblk_t		*mp;
-	void		*arg1;
-	mac_resource_handle_t arg2;
-	timeout_id_t 	tid;
+	void		*arg;
+	mac_resource_handle_t resource;
+	timeout_id_t	tid;
 	mac_direct_rx_t	proc;
 	size_t		sz;
 	int		cnt;
@@ -369,8 +371,8 @@ mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 	ringp->s_ring_state |= S_RING_PROC;
 
 	proc = ringp->s_ring_rx_func;
-	arg1 = ringp->s_ring_rx_arg1;
-	arg2 = ringp->s_ring_rx_arg2;
+	arg = ringp->s_ring_rx_arg;
+	resource = ringp->s_ring_rx_resource;
 
 	while ((ringp->s_ring_first != NULL) &&
 	    !(ringp->s_ring_state & S_RING_PAUSE)) {
@@ -388,7 +390,7 @@ mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 			tid = 0;
 		}
 
-		(*proc)(arg1, arg2, mp, NULL);
+		(*proc)(arg, resource, mp, NULL);
 
 		/*
 		 * If we have a soft ring set which is doing
@@ -598,7 +600,7 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, int bytes_to_pickup)
  * Callers need to make sure they don't need any DLS layer processing
  */
 void
-mac_soft_ring_dls_bypass(void *arg, mac_direct_rx_t rx_func, void *rx_arg1)
+mac_soft_ring_dls_bypass(void *arg, mac_direct_rx_t rx_func, void *rx_arg)
 {
 	mac_soft_ring_t		*softring = arg;
 	mac_soft_ring_set_t	*srs;
@@ -607,7 +609,7 @@ mac_soft_ring_dls_bypass(void *arg, mac_direct_rx_t rx_func, void *rx_arg1)
 
 	mutex_enter(&softring->s_ring_lock);
 	softring->s_ring_rx_func = rx_func;
-	softring->s_ring_rx_arg1 = rx_arg1;
+	softring->s_ring_rx_arg = rx_arg;
 	mutex_exit(&softring->s_ring_lock);
 
 	srs = softring->s_ring_set;
@@ -647,10 +649,10 @@ mac_soft_ring_signal(mac_soft_ring_t *softring, uint_t sr_flag)
 static void
 mac_tx_soft_ring_drain(mac_soft_ring_t *ringp)
 {
-	mblk_t 			*mp;
-	void 			*arg1;
-	void 			*arg2;
-	mblk_t 			*tail;
+	mblk_t			*mp;
+	mac_client_impl_t	*mcip;
+	mac_ring_t		*tx_ring;
+	mblk_t			*tail;
 	uint_t			saved_pkt_count, saved_size;
 	mac_tx_stats_t		stats;
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
@@ -661,8 +663,8 @@ mac_tx_soft_ring_drain(mac_soft_ring_t *ringp)
 	ASSERT(!(ringp->s_ring_state & S_RING_PROC));
 
 	ringp->s_ring_state |= S_RING_PROC;
-	arg1 = ringp->s_ring_tx_arg1;
-	arg2 = ringp->s_ring_tx_arg2;
+	mcip = ringp->s_ring_mcip;
+	tx_ring = ringp->s_ring_tx_ring;
 
 	while (ringp->s_ring_first != NULL) {
 		mp = ringp->s_ring_first;
@@ -675,7 +677,7 @@ mac_tx_soft_ring_drain(mac_soft_ring_t *ringp)
 		ringp->s_ring_size = 0;
 		mutex_exit(&ringp->s_ring_lock);
 
-		mp = mac_tx_send(arg1, arg2, mp, &stats);
+		mp = mac_tx_send(mcip, tx_ring, mp, &stats);
 
 		mutex_enter(&ringp->s_ring_lock);
 		if (mp != NULL) {

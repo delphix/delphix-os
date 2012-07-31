@@ -22,6 +22,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 /*
  * MAC Services Module
@@ -1046,7 +1049,7 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 
 	if (is_tx_srs) {
 		mac_srs_tx_t	*srs_tx = &mac_srs->srs_tx;
-		mac_ring_t	*ring = srs_tx->st_arg2;
+		mac_ring_t	*ring = srs_tx->st_ring;
 
 		if (ring != NULL) {
 			(void) snprintf(statname, sizeof (statname),
@@ -1093,7 +1096,7 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 {
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
 	flow_entry_t		*flent = ringp->s_ring_mcip->mci_flent;
-	mac_ring_t		*ring = (mac_ring_t *)ringp->s_ring_tx_arg2;
+	mac_ring_t		*ring = ringp->s_ring_tx_ring;
 	boolean_t		is_tx_srs;
 	char			statname[MAXNAMELEN];
 

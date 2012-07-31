@@ -22,6 +22,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 #include <sys/types.h>
 #include <sys/sysmacros.h>
@@ -246,7 +249,8 @@ mac_bcast_send(void *arg1, void *arg2, mblk_t *mp_chain, boolean_t is_loopback)
 		MCIP_STAT_UPDATE(src_mcip, brdcstxmt, 1);
 		MCIP_STAT_UPDATE(src_mcip, brdcstxmtbytes, msgdsize(mp_chain));
 
-		MAC_TX(mip, mip->mi_default_tx_ring, mp_chain, src_mcip);
+		MAC_TX(mip, (mac_ring_handle_t)mip->mi_default_tx_ring,
+		    mp_chain, src_mcip);
 		if (mp_chain != NULL)
 			freemsgchain(mp_chain);
 	} else {

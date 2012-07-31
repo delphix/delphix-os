@@ -23,6 +23,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 #ifndef	_MAC_FLOW_IMPL_H
 #define	_MAC_FLOW_IMPL_H
@@ -227,6 +230,10 @@ typedef struct mac_bw_ctl_s {
 	clock_t		mac_bw_curr_time;
 } mac_bw_ctl_t;
 
+struct mac_group_s;
+struct mac_soft_ring_set_s;
+struct mac_client_impl_s;
+
 struct flow_entry_s {					/* Protected by */
 	struct flow_entry_s	*fe_next;		/* ft_lock */
 
@@ -273,21 +280,22 @@ struct flow_entry_s {					/* Protected by */
 	 * be changed.
 	 */
 	flow_fn_t		fe_cb_fn;		/* fe_lock */
-	void 			*fe_cb_arg1;		/* fe_lock */
+	void			*fe_cb_arg1;		/* fe_lock */
 	void			*fe_cb_arg2;		/* fe_lock */
 
 	void			*fe_client_cookie;	/* WO */
-	void			*fe_rx_ring_group;	/* SL */
-	void			*fe_rx_srs[MAX_RINGS_PER_GROUP]; /* fe_lock */
+	struct mac_group_s	*fe_rx_ring_group;	/* SL */
+	struct mac_soft_ring_set_s *fe_rx_srs[MAX_RINGS_PER_GROUP];
+							/* fe_lock */
 	int			fe_rx_srs_cnt;		/* fe_lock */
-	void			*fe_tx_ring_group;
-	void			*fe_tx_srs;		/* WO */
+	struct mac_group_s	*fe_tx_ring_group;
+	struct mac_soft_ring_set_s *fe_tx_srs;		/* WO */
 	int			fe_tx_ring_cnt;
 
 	/*
 	 * This is a unicast flow, and is a mac_client_impl_t
 	 */
-	void			*fe_mcip; 		/* WO */
+	struct mac_client_impl_s *fe_mcip;		/* WO */
 
 	/*
 	 * Used by mci_flent_list of mac_client_impl_t to track flows sharing

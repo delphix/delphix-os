@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -780,7 +781,7 @@ mac_tx_update(mac_handle_t mh)
 void
 mac_tx_ring_update(mac_handle_t mh, mac_ring_handle_t rh)
 {
-	i_mac_tx_srs_notify((mac_impl_t *)mh, rh);
+	i_mac_tx_srs_notify((mac_impl_t *)mh, (mac_ring_t *)rh);
 }
 
 /* LINK STATE */

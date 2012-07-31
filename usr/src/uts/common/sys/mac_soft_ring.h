@@ -23,6 +23,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 #ifndef	_SYS_MAC_SOFT_RING_H
 #define	_SYS_MAC_SOFT_RING_H
@@ -55,6 +58,27 @@ typedef void (*mac_soft_ring_drain_func_t)(mac_soft_ring_t *);
 typedef mac_tx_cookie_t (*mac_tx_func_t)(mac_soft_ring_set_t *, mblk_t *,
     uintptr_t, uint16_t, mblk_t **);
 
+/*
+ * soft ring set (SRS) Tx modes
+ */
+typedef enum {
+	SRS_TX_DEFAULT = 0,
+	SRS_TX_SERIALIZE,
+	SRS_TX_FANOUT,
+	SRS_TX_BW,
+	SRS_TX_BW_FANOUT,
+	SRS_TX_AGGR,
+	SRS_TX_BW_AGGR
+} mac_tx_srs_mode_t;
+
+/*
+ * SRS fanout states
+ */
+typedef enum {
+	SRS_FANOUT_UNINIT = 0,
+	SRS_FANOUT_INIT,
+	SRS_FANOUT_REINIT
+} mac_srs_fanout_state_t;
 
 /* Tx notify callback */
 typedef struct mac_tx_notify_cb_s {
@@ -74,8 +98,8 @@ struct mac_soft_ring_s {
 	mblk_t		*s_ring_last;	/* last mblk chain or NULL */
 
 	mac_direct_rx_t	s_ring_rx_func;
-	void		*s_ring_rx_arg1;
-	mac_resource_handle_t  s_ring_rx_arg2;
+	void		*s_ring_rx_arg;
+	mac_resource_handle_t s_ring_rx_resource;
 
 	/*
 	 * Threshold after which packets get dropped.
@@ -89,8 +113,7 @@ struct mac_soft_ring_s {
 	boolean_t	s_ring_tx_woken_up;
 	uint32_t	s_ring_hiwat_cnt;	/* times blocked for Tx descs */
 
-	void		*s_ring_tx_arg1;
-	void		*s_ring_tx_arg2;
+	mac_ring_t	*s_ring_tx_ring;
 
 	/* Tx notify callback */
 	mac_cb_info_t	s_ring_notify_cb_info;		/* cb list info */
@@ -128,10 +151,10 @@ typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *, uint_t);
 /* Transmit side Soft Ring Set */
 typedef struct mac_srs_tx_s {
 	/* Members for Tx size processing */
-	uint32_t	st_mode;
+	mac_tx_srs_mode_t st_mode;
 	mac_tx_func_t	st_func;
-	void		*st_arg1;
-	void		*st_arg2;
+	mac_client_impl_t *st_mcip;
+	mac_ring_t	*st_ring;
 	mac_group_t	*st_group;	/* TX group for share */
 	boolean_t	st_woken_up;
 
@@ -172,17 +195,7 @@ typedef struct mac_srs_tx_s {
 
 /* Receive side Soft Ring Set */
 typedef struct mac_srs_rx_s {
-	/*
-	 * Upcall Function for fanout, Rx processing etc. Perhaps
-	 * the same 3 members below can be used for Tx
-	 * processing, but looking around, mac_rx_func_t has
-	 * proliferated too much into various files at different
-	 * places. I am leaving the consolidation battle for
-	 * another day.
-	 */
-	mac_direct_rx_t		sr_func;	/* srs_lock */
-	void			*sr_arg1;	/* srs_lock */
-	mac_resource_handle_t 	sr_arg2;	/* srs_lock */
+	mac_client_impl_t	*sr_mcip;	/* never changes */
 	mac_rx_func_t		sr_lower_proc;	/* Atomically changed */
 	uint32_t		sr_poll_pkt_cnt;
 	uint32_t		sr_poll_thres;
@@ -360,7 +373,7 @@ struct mac_soft_ring_set_s {
 	 * of the SRS
 	 */
 	struct mac_client_impl_s *srs_mcip;	/* back ptr to mac client */
-	void			*srs_flent;	/* back ptr to flent */
+	struct flow_entry_s	 *srs_flent;	/* back ptr to flent */
 	mac_ring_t		*srs_ring;	/*  Ring Descriptor */
 
 	/* Teardown, disable control ops */
@@ -374,7 +387,7 @@ struct mac_soft_ring_set_s {
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
 	processorid_t	srs_poll_cpuid;		/* processor to bind to */
 	processorid_t	srs_poll_cpuid_save;	/* saved cpuid during offline */
-	uint_t		srs_fanout_state;
+	mac_srs_fanout_state_t srs_fanout_state;
 	mac_cpus_t	srs_cpu;
 
 	mac_srs_rx_t	srs_rx;
@@ -494,28 +507,6 @@ struct mac_soft_ring_set_s {
 #define	SRS_QUIESCED_PERMANENT(srs)	(srs->srs_state & SRS_QUIESCE_PERM)
 
 /*
- * soft ring set (SRS) Tx modes
- */
-typedef enum {
-	SRS_TX_DEFAULT = 0,
-	SRS_TX_SERIALIZE,
-	SRS_TX_FANOUT,
-	SRS_TX_BW,
-	SRS_TX_BW_FANOUT,
-	SRS_TX_AGGR,
-	SRS_TX_BW_AGGR
-} mac_tx_srs_mode_t;
-
-/*
- * SRS fanout states
- */
-typedef enum {
-	SRS_FANOUT_UNINIT = 0,
-	SRS_FANOUT_INIT,
-	SRS_FANOUT_REINIT
-} mac_srs_fanout_state_t;
-
-/*
  * Structure for dls statistics
  */
 struct dls_kstats {
@@ -633,8 +624,7 @@ extern struct dls_kstats dls_kstat;
 extern void mac_soft_ring_init(void);
 extern void mac_soft_ring_finish(void);
 extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
-    mac_resource_props_t *, mac_direct_rx_t, void *, mac_resource_handle_t,
-    cpupart_t *);
+    mac_resource_props_t *, mac_direct_rx_t, void *, cpupart_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
 extern void mac_soft_ring_blank(void *, time_t, uint_t, int);
@@ -644,15 +634,13 @@ extern void mac_soft_ring_dls_bypass(void *, mac_direct_rx_t, void *);
 
 /* Rx SRS */
 extern mac_soft_ring_set_t *mac_srs_create(struct mac_client_impl_s *,
-    flow_entry_t *, uint32_t, mac_direct_rx_t, void *, mac_resource_handle_t,
-    mac_ring_t *);
+    flow_entry_t *, uint32_t, mac_ring_t *);
 extern void mac_srs_free(mac_soft_ring_set_t *);
 extern void mac_srs_signal(mac_soft_ring_set_t *, uint_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);
 extern void mac_rx_srs_retarget_intr(mac_soft_ring_set_t *, processorid_t);
 extern void mac_tx_srs_retarget_intr(mac_soft_ring_set_t *);
 
-extern void mac_srs_change_upcall(void *, mac_direct_rx_t, void *);
 extern void mac_srs_quiesce_initiate(mac_soft_ring_set_t *);
 extern void mac_srs_client_poll_enable(struct mac_client_impl_s *,
     mac_soft_ring_set_t *);
@@ -669,10 +657,10 @@ extern void mac_rx_srs_subflow_process(void *, mac_resource_handle_t, mblk_t *,
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
 
 /* Tx SRS, Tx softring */
-extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_handle_t);
+extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_t *);
 extern void mac_tx_srs_setup(struct mac_client_impl_s *, flow_entry_t *);
 extern mac_tx_func_t mac_tx_get_func(uint32_t);
-extern mblk_t *mac_tx_send(mac_client_handle_t, mac_ring_handle_t, mblk_t *,
+extern mblk_t *mac_tx_send(struct mac_client_impl_s *, mac_ring_t *, mblk_t *,
     mac_tx_stats_t *);
 extern boolean_t mac_tx_srs_ring_present(mac_soft_ring_set_t *, mac_ring_t *);
 extern mac_soft_ring_t *mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *,
@@ -695,7 +683,7 @@ extern void mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
 extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, uint16_t,
     pri_t, mac_client_impl_t *, mac_soft_ring_set_t *,
-    processorid_t, mac_direct_rx_t, void *, mac_resource_handle_t);
+    processorid_t, mac_direct_rx_t, mac_resource_handle_t, mac_ring_t *);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 	extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 extern void mac_soft_ring_free(mac_soft_ring_t *);

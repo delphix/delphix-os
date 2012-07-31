@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*
@@ -1460,15 +1461,8 @@ mac_hwrings_rx_process(void *arg, mac_resource_handle_t srs,
 {
 	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
-	mac_direct_rx_t		proc;
-	void			*arg1;
-	mac_resource_handle_t	arg2;
 
-	proc = srs_rx->sr_func;
-	arg1 = srs_rx->sr_arg1;
-	arg2 = mac_srs->srs_mrh;
-
-	proc(arg1, arg2, mp_chain, NULL);
+	mac_rx_deliver(srs_rx->sr_mcip, mac_srs->srs_mrh, mp_chain, NULL);
 }
 
 /*
@@ -2056,11 +2050,10 @@ mac_srs_perm_quiesce(mac_client_handle_t mch, boolean_t on)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	flow_entry_t		*flent = mcip->mci_flent;
-	mac_impl_t		*mip = mcip->mci_mip;
 	mac_soft_ring_set_t	*mac_srs;
 	int			i;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	if (flent == NULL)
 		return;
@@ -2080,9 +2073,8 @@ void
 mac_rx_client_quiesce(mac_client_handle_t mch)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
-	mac_impl_t		*mip = mcip->mci_mip;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	if (MCIP_DATAPATH_SETUP(mcip)) {
 		(void) mac_rx_classify_flow_quiesce(mcip->mci_flent,
@@ -2096,9 +2088,8 @@ void
 mac_rx_client_restart(mac_client_handle_t mch)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
-	mac_impl_t		*mip = mcip->mci_mip;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	if (MCIP_DATAPATH_SETUP(mcip)) {
 		(void) mac_rx_classify_flow_restart(mcip->mci_flent, NULL);
@@ -2115,10 +2106,7 @@ mac_rx_client_restart(mac_client_handle_t mch)
 void
 mac_tx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 {
-	mac_client_impl_t	*mcip = srs->srs_mcip;
-
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
-
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)srs->srs_mcip->mci_mip));
 	ASSERT(srs->srs_type & SRST_TX);
 	ASSERT(srs_quiesce_flag == SRS_CONDEMNED ||
 	    srs_quiesce_flag == SRS_QUIESCE);
@@ -2459,15 +2447,13 @@ mac_rx_flow(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 static int
 mac_tx_flow_srs_wakeup(flow_entry_t *flent, void *arg)
 {
-	mac_ring_handle_t ring = arg;
-
 	if (flent->fe_tx_srs)
-		mac_tx_srs_wakeup(flent->fe_tx_srs, ring);
+		mac_tx_srs_wakeup(flent->fe_tx_srs, arg);
 	return (0);
 }
 
 void
-i_mac_tx_srs_notify(mac_impl_t *mip, mac_ring_handle_t ring)
+i_mac_tx_srs_notify(mac_impl_t *mip, mac_ring_t *ring)
 {
 	mac_client_impl_t	*cclient;
 	mac_soft_ring_set_t	*mac_srs;
@@ -4040,7 +4026,7 @@ bail:
 			while ((ring->mr_index != 0) && (ring->mr_next != NULL))
 				ring = ring->mr_next;
 			ASSERT(ring->mr_index == 0);
-			mip->mi_default_tx_ring = (mac_ring_handle_t)ring;
+			mip->mi_default_tx_ring = ring;
 		}
 		if (mip->mi_tx_group_type == MAC_GROUP_TYPE_DYNAMIC)
 			mip->mi_txrings_avail = group->mrg_cur_count - 1;
@@ -4240,6 +4226,99 @@ mac_find_ring(mac_group_handle_t gh, int index)
 
 	return ((mac_ring_handle_t)ring);
 }
+
+static void
+i_mac_tx_srs_add_ring(mac_soft_ring_set_t *tx_srs, mac_ring_t *tx_ring)
+{
+	mac_srs_tx_t	*tx = &tx_srs->srs_tx;
+	mac_ring_t	*first_ring = tx->st_ring;
+	boolean_t	is_aggr;
+
+	is_aggr = (tx_ring->mr_mip->mi_state_flags & MIS_IS_AGGR);
+	if (tx->st_mode == SRS_TX_BW || tx->st_mode == SRS_TX_SERIALIZE ||
+	    tx->st_mode == SRS_TX_DEFAULT) {
+		/* We are  growing from 1 to multiple rings. */
+		ASSERT(tx->st_ring != NULL);
+		tx->st_ring = NULL;
+		mac_tx_srs_stat_recreate(tx_srs, B_TRUE);
+		mac_tx_srs_add_ring(tx_srs, first_ring);
+		if (tx_srs->srs_type & SRST_BW_CONTROL) {
+			tx->st_mode = is_aggr ?
+			    SRS_TX_BW_AGGR : SRS_TX_BW_FANOUT;
+		} else {
+			tx->st_mode = is_aggr ? SRS_TX_AGGR : SRS_TX_FANOUT;
+		}
+		tx->st_func = mac_tx_get_func(tx->st_mode);
+	}
+	mac_tx_srs_add_ring(tx_srs, tx_ring);
+}
+
+static void
+i_mac_tx_srs_rem_ring(mac_soft_ring_set_t *tx_srs, mac_ring_t *tx_ring,
+    boolean_t driver_call)
+{
+	mac_impl_t	*mip = tx_ring->mr_mip;
+	mac_group_t	*group = (mac_group_t *)tx_ring->mr_gh;
+	mac_group_t	*defgrp = MAC_DEFAULT_TX_GROUP(mip);
+	mac_client_impl_t *mcip = tx_srs->srs_mcip;
+	mac_ring_t	*last_ring;
+	mac_srs_tx_t	*tx = &tx_srs->srs_tx;
+	uint_t		ring_info;
+
+	ASSERT(mac_tx_srs_ring_present(tx_srs, tx_ring));
+	ASSERT(tx->st_mode == SRS_TX_AGGR || tx->st_mode == SRS_TX_BW_AGGR ||
+	    tx->st_mode == SRS_TX_FANOUT || tx->st_mode == SRS_TX_BW_FANOUT);
+
+	/*
+	 * If we are here when removing rings from the default group,
+	 * mac_reserve_tx_ring would have already deleted the ring from the
+	 * MAC clients in the group.
+	 */
+	if (driver_call || group != defgrp) {
+		mac_tx_invoke_callbacks(mcip,
+		    (mac_tx_cookie_t)mac_tx_srs_get_soft_ring(tx_srs, tx_ring));
+		mac_tx_srs_del_ring(tx_srs, tx_ring);
+	}
+
+	if (group->mrg_cur_count == 2) {
+		/* We are shrinking from multiple to 1 ring. */
+		last_ring = (tx_ring->mr_next == NULL) ?
+		    group->mrg_rings : tx_ring->mr_next;
+		mac_tx_invoke_callbacks(mcip,
+		    (mac_tx_cookie_t)mac_tx_srs_get_soft_ring(tx_srs,
+		    last_ring));
+		mac_tx_srs_del_ring(tx_srs, last_ring);
+		if (last_ring->mr_state != MR_INUSE)
+			(void) mac_start_ring(last_ring);
+		tx->st_ring = last_ring;
+		mac_tx_srs_stat_recreate(tx_srs, B_FALSE);
+		ring_info = mac_hwring_getinfo((mac_ring_handle_t)last_ring);
+		if (tx_srs->srs_type & SRST_BW_CONTROL) {
+			tx->st_mode = SRS_TX_BW;
+		} else if (mac_tx_serialize ||
+		    (ring_info & MAC_RING_TX_SERIALIZE)) {
+			tx->st_mode = SRS_TX_SERIALIZE;
+		} else {
+			tx->st_mode = SRS_TX_DEFAULT;
+		}
+		tx->st_func = mac_tx_get_func(tx->st_mode);
+	}
+}
+
+static int
+i_mac_tx_subflow_add_ring(flow_entry_t *flent, void *arg)
+{
+	i_mac_tx_srs_add_ring(flent->fe_tx_srs, arg);
+	return (0);
+}
+
+static int
+i_mac_tx_subflow_rem_ring(flow_entry_t *flent, void *arg)
+{
+	i_mac_tx_srs_rem_ring(flent->fe_tx_srs, arg, B_TRUE);
+	return (0);
+}
+
 /*
  * Add a ring to an existing group.
  *
@@ -4306,7 +4385,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 
 	/*
 	 * At this point the ring should not be in use, and it should be
-	 * of the right for the target group.
+	 * of the right type for the target group.
 	 */
 	ASSERT(ring->mr_state < MR_INUSE);
 	ASSERT(ring->mr_srs == NULL);
@@ -4384,7 +4463,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 				mac_rx_srs_group_setup(mcip, flent, SRST_LINK);
 				mac_fanout_setup(mcip, flent,
 				    MCIP_RESOURCE_PROPS(mcip), mac_rx_deliver,
-				    mcip, NULL, NULL);
+				    mcip, NULL);
 			} else {
 				ring->mr_classify_type = MAC_SW_CLASSIFIER;
 			}
@@ -4395,7 +4474,6 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 		mac_grp_client_t	*mgcp = group->mrg_clients;
 		mac_client_impl_t	*mcip;
 		mac_soft_ring_set_t	*mac_srs;
-		mac_srs_tx_t		*tx;
 
 		if (MAC_GROUP_NO_CLIENT(group)) {
 			if (ring->mr_state == MR_INUSE)
@@ -4409,37 +4487,19 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 		 * clients SRS.
 		 */
 		while (mgcp != NULL) {
-			boolean_t	is_aggr;
-
 			mcip = mgcp->mgc_client;
 			flent = mcip->mci_flent;
-			is_aggr = (mcip->mci_state_flags & MCIS_IS_AGGR);
 			mac_srs = MCIP_TX_SRS(mcip);
-			tx = &mac_srs->srs_tx;
 			mac_tx_client_quiesce((mac_client_handle_t)mcip);
+			i_mac_tx_srs_add_ring(mac_srs, ring);
 			/*
-			 * If we are  growing from 1 to multiple rings.
+			 * If the client has subflows, each subflow needs
+			 * to be modified.
 			 */
-			if (tx->st_mode == SRS_TX_BW ||
-			    tx->st_mode == SRS_TX_SERIALIZE ||
-			    tx->st_mode == SRS_TX_DEFAULT) {
-				mac_ring_t	*tx_ring = tx->st_arg2;
-
-				tx->st_arg2 = NULL;
-				mac_tx_srs_stat_recreate(mac_srs, B_TRUE);
-				mac_tx_srs_add_ring(mac_srs, tx_ring);
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
-					tx->st_mode = is_aggr ? SRS_TX_BW_AGGR :
-					    SRS_TX_BW_FANOUT;
-				} else {
-					tx->st_mode = is_aggr ? SRS_TX_AGGR :
-					    SRS_TX_FANOUT;
-				}
-				tx->st_func = mac_tx_get_func(tx->st_mode);
-			}
-			mac_tx_srs_add_ring(mac_srs, ring);
+			(void) mac_flow_walk(mcip->mci_subflow_tab,
+			    i_mac_tx_subflow_add_ring, ring);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-			    mac_rx_deliver, mcip, NULL, NULL);
+			    mac_rx_deliver, mcip, NULL);
 			mac_tx_client_restart((mac_client_handle_t)mcip);
 			mgcp = mgcp->mgc_next;
 		}
@@ -4459,7 +4519,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 	if (mip->mi_state_flags & MIS_IS_AGGR &&
 	    mip->mi_default_tx_ring == NULL &&
 	    ring->mr_type == MAC_RING_TYPE_TX) {
-		mip->mi_default_tx_ring = (mac_ring_handle_t)ring;
+		mip->mi_default_tx_ring = ring;
 	}
 
 	MAC_RING_UNMARK(ring, MR_INCIPIENT);
@@ -4467,7 +4527,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 }
 
 /*
- * Remove a ring from it's current group. MAC internal function for dynamic
+ * Remove a ring from its current group. MAC internal function for dynamic
  * grouping.
  *
  * The caller needs to call mac_perim_enter() before calling this function.
@@ -4512,10 +4572,9 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 		mac_grp_client_t	*mgcp;
 		mac_client_impl_t	*mcip;
 		mac_soft_ring_set_t	*mac_srs;
-		mac_srs_tx_t		*tx;
-		mac_ring_t		*rem_ring;
-		mac_group_t		*defgrp;
-		uint_t			ring_info = 0;
+
+		group_type = mip->mi_tx_group_type;
+		cap_rings = &mip->mi_tx_rings_cap;
 
 		/*
 		 * For TX this function is invoked in three
@@ -4537,110 +4596,39 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 		 * rings are already quiesced.
 		 */
 		if (driver_call) {
-			mac_client_impl_t *mcip;
-			mac_soft_ring_set_t *mac_srs;
-			mac_soft_ring_t *sringp;
-			mac_srs_tx_t *srs_tx;
-
 			if (mip->mi_state_flags & MIS_IS_AGGR &&
-			    mip->mi_default_tx_ring ==
-			    (mac_ring_handle_t)ring) {
+			    mip->mi_default_tx_ring == ring) {
 				/* pick a new default Tx ring */
 				mip->mi_default_tx_ring =
 				    (group->mrg_rings != ring) ?
-				    (mac_ring_handle_t)group->mrg_rings :
-				    (mac_ring_handle_t)(ring->mr_next);
+				    group->mrg_rings : ring->mr_next;
 			}
 			/* Presently only aggr case comes here */
 			if (group->mrg_state != MAC_GROUP_STATE_RESERVED)
 				break;
-
-			mcip = MAC_GROUP_ONLY_CLIENT(group);
-			ASSERT(mcip != NULL);
-			ASSERT(mcip->mci_state_flags & MCIS_IS_AGGR);
-			mac_srs = MCIP_TX_SRS(mcip);
-			ASSERT(mac_srs->srs_tx.st_mode == SRS_TX_AGGR ||
-			    mac_srs->srs_tx.st_mode == SRS_TX_BW_AGGR);
-			srs_tx = &mac_srs->srs_tx;
-			/*
-			 * Wakeup any callers blocked on this
-			 * Tx ring due to flow control.
-			 */
-			sringp = srs_tx->st_soft_rings[ring->mr_index];
-			ASSERT(sringp != NULL);
-			mac_tx_invoke_callbacks(mcip, (mac_tx_cookie_t)sringp);
-			mac_tx_client_quiesce((mac_client_handle_t)mcip);
-			mac_tx_srs_del_ring(mac_srs, ring);
-			mac_tx_client_restart((mac_client_handle_t)mcip);
-			break;
 		}
-		ASSERT(ring != (mac_ring_t *)mip->mi_default_tx_ring);
-		group_type = mip->mi_tx_group_type;
-		cap_rings = &mip->mi_tx_rings_cap;
-		/*
-		 * See if we need to take it out of the MAC clients using
-		 * this group
-		 */
-		if (MAC_GROUP_NO_CLIENT(group))
-			break;
-		mgcp = group->mrg_clients;
-		defgrp = MAC_DEFAULT_TX_GROUP(mip);
-		while (mgcp != NULL) {
+
+		for (mgcp = group->mrg_clients; mgcp != NULL;
+		    mgcp = mgcp->mgc_next) {
 			mcip = mgcp->mgc_client;
 			mac_srs = MCIP_TX_SRS(mcip);
-			tx = &mac_srs->srs_tx;
+
+			ASSERT(!driver_call || mgcp->mgc_next == NULL);
+			ASSERT(!driver_call ||
+			    mcip->mci_state_flags & MCIS_IS_AGGR);
+			ASSERT(ring != (mac_ring_t *)mip->mi_default_tx_ring);
+
 			mac_tx_client_quiesce((mac_client_handle_t)mcip);
+			i_mac_tx_srs_rem_ring(mac_srs, ring, driver_call);
 			/*
-			 * If we are here when removing rings from the
-			 * defgroup, mac_reserve_tx_ring would have
-			 * already deleted the ring from the MAC
-			 * clients in the group.
+			 * If the client has subflows, each subflow needs
+			 * to be modified.
 			 */
-			if (group != defgrp) {
-				mac_tx_invoke_callbacks(mcip,
-				    (mac_tx_cookie_t)
-				    mac_tx_srs_get_soft_ring(mac_srs, ring));
-				mac_tx_srs_del_ring(mac_srs, ring);
-			}
-			/*
-			 * Additionally, if  we are left with only
-			 * one ring in the group after this, we need
-			 * to modify the mode etc. to. (We haven't
-			 * yet taken the ring out, so we check with 2).
-			 */
-			if (group->mrg_cur_count == 2) {
-				if (ring->mr_next == NULL)
-					rem_ring = group->mrg_rings;
-				else
-					rem_ring = ring->mr_next;
-				mac_tx_invoke_callbacks(mcip,
-				    (mac_tx_cookie_t)
-				    mac_tx_srs_get_soft_ring(mac_srs,
-				    rem_ring));
-				mac_tx_srs_del_ring(mac_srs, rem_ring);
-				if (rem_ring->mr_state != MR_INUSE) {
-					(void) mac_start_ring(rem_ring);
-				}
-				tx->st_arg2 = (void *)rem_ring;
-				mac_tx_srs_stat_recreate(mac_srs, B_FALSE);
-				ring_info = mac_hwring_getinfo(
-				    (mac_ring_handle_t)rem_ring);
-				/*
-				 * We are  shrinking from multiple
-				 * to 1 ring.
-				 */
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
-					tx->st_mode = SRS_TX_BW;
-				} else if (mac_tx_serialize ||
-				    (ring_info & MAC_RING_TX_SERIALIZE)) {
-					tx->st_mode = SRS_TX_SERIALIZE;
-				} else {
-					tx->st_mode = SRS_TX_DEFAULT;
-				}
-				tx->st_func = mac_tx_get_func(tx->st_mode);
+			if (driver_call) {
+				(void) mac_flow_walk(mcip->mci_subflow_tab,
+				    i_mac_tx_subflow_rem_ring, ring);
 			}
 			mac_tx_client_restart((mac_client_handle_t)mcip);
-			mgcp = mgcp->mgc_next;
 		}
 		break;
 	}
@@ -5925,7 +5913,7 @@ mac_reclaim_ring_from_grp(mac_impl_t *mip, mac_ring_type_t ring_type,
 				break;
 		}
 		ASSERT(tring != NULL);
-		mip->mi_default_tx_ring = (mac_ring_handle_t)tring;
+		mip->mi_default_tx_ring = tring;
 		return (0);
 	}
 	/*
@@ -6722,8 +6710,7 @@ mac_rx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	if (tgrp->mrg_state == MAC_GROUP_STATE_RESERVED) {
 		mac_rx_srs_group_setup(mcip, mcip->mci_flent, SRST_LINK);
 		mac_fanout_setup(mcip, mcip->mci_flent,
-		    MCIP_RESOURCE_PROPS(mcip), mac_rx_deliver, mcip, NULL,
-		    NULL);
+		    MCIP_RESOURCE_PROPS(mcip), mac_rx_deliver, mcip, NULL);
 		mac_rx_group_unmark(tgrp, MR_INCIPIENT);
 	} else {
 		mac_rx_switch_grp_to_sw(tgrp);
@@ -6973,8 +6960,8 @@ mac_release_tx_group(mac_client_impl_t *mcip, mac_group_t *grp)
 				mac_tx_srs_del_ring(srs, ring);
 			}
 		} else {
-			ASSERT(srs->srs_tx.st_arg2 != NULL);
-			srs->srs_tx.st_arg2 = NULL;
+			ASSERT(srs->srs_tx.st_ring != NULL);
+			srs->srs_tx.st_ring = NULL;
 			mac_srs_stat_delete(srs);
 		}
 	}
@@ -7008,7 +6995,7 @@ mac_tx_dismantle_soft_rings(mac_group_t *fgrp, flow_entry_t *flent)
 	/* Single ring case we haven't created any soft rings */
 	if (tx->st_mode == SRS_TX_BW || tx->st_mode == SRS_TX_SERIALIZE ||
 	    tx->st_mode == SRS_TX_DEFAULT) {
-		tx->st_arg2 = NULL;
+		tx->st_ring = NULL;
 		mac_srs_stat_delete(tx_srs);
 	/* Fanout case, where we have to dismantle the soft rings */
 	} else {
@@ -7020,7 +7007,7 @@ mac_tx_dismantle_soft_rings(mac_group_t *fgrp, flow_entry_t *flent)
 			    ring));
 			mac_tx_srs_del_ring(tx_srs, ring);
 		}
-		ASSERT(tx->st_arg2 == NULL);
+		ASSERT(tx->st_ring == NULL);
 	}
 }
 
@@ -7075,7 +7062,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 				    SRST_LINK);
 				mac_fanout_setup(gmcip, gflent,
 				    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-				    gmcip, NULL, NULL);
+				    gmcip, NULL);
 
 				mac_tx_client_restart(
 				    (mac_client_handle_t)gmcip);
@@ -7136,7 +7123,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 			mac_tx_srs_group_setup(gmcip, gflent, SRST_LINK);
 			mac_fanout_setup(gmcip, gflent,
 			    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-			    gmcip, NULL, NULL);
+			    gmcip, NULL);
 
 			mac_tx_client_restart((mac_client_handle_t)gmcip);
 		}
@@ -7153,7 +7140,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 
 	mac_tx_srs_group_setup(mcip, flent, SRST_LINK);
 	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-	    mac_rx_deliver, mcip, NULL, NULL);
+	    mac_rx_deliver, mcip, NULL);
 }
 
 /*
@@ -7658,7 +7645,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				pool_lock();
 				cpupart = mac_pset_find(mrp, &use_default);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, NULL, cpupart);
+				    mac_rx_deliver, mcip, cpupart);
 				mac_set_pool_effective(use_default, cpupart,
 				    mrp, emrp);
 				pool_unlock();
@@ -7676,7 +7663,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				emrp->mrp_mask &= ~MRP_POOL;
 				bzero(emrp->mrp_pool, MAXPATHLEN);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, NULL, NULL);
+				    mac_rx_deliver, mcip, NULL);
 			}
 			mac_update_resources(mrp, MCIP_RESOURCE_PROPS(mcip),
 			    B_FALSE);

@@ -23,6 +23,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 #include <sys/strsun.h>
 #include <sys/sdt.h>
@@ -759,20 +762,19 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		    !(changed_mask & MRP_CPUS) &&
 		    !(mcip_mrp->mrp_mask & MRP_CPUS_USERSPEC)) {
 			mac_fanout_setup(mcip, flent, mcip_mrp,
-			    mac_rx_deliver, mcip, NULL, NULL);
+			    mac_rx_deliver, mcip, NULL);
 		}
 	}
 	if (mrp->mrp_mask & MRP_PRIORITY)
 		mac_flow_update_priority(mcip, flent);
 
 	if (changed_mask & MRP_CPUS)
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
-		    NULL);
+		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL);
 
 	if (mrp->mrp_mask & MRP_POOL) {
 		pool_lock();
 		cpupart = mac_pset_find(mrp, &use_default);
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
+		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip,
 		    cpupart);
 		mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 		pool_unlock();

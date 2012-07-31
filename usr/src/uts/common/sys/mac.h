@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_MAC_H
@@ -434,8 +435,6 @@ typedef void			(*mac_resource_quiesce_t)(void *, void *);
 typedef void			(*mac_resource_restart_t)(void *, void *);
 typedef int			(*mac_resource_modify_t)(void *, void *,
 				    mac_resource_t *);
-typedef	void			(*mac_change_upcall_t)(void *, mac_direct_rx_t,
-    void *);
 
 /*
  * MAC-Type plugin interfaces

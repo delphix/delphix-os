@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*
@@ -634,6 +635,7 @@ aggr_rem_pseudo_rx_ring(aggr_pseudo_rx_group_t *rx_grp, mac_ring_handle_t hw_rh)
 		mac_group_rem_ring(rx_grp->arg_gh, ring->arr_rh);
 
 		ring->arr_flags &= ~MAC_PSEUDO_RING_INUSE;
+		ring->arr_rh = NULL;
 		ring->arr_hw_rh = NULL;
 		ring->arr_port = NULL;
 		rx_grp->arg_ring_cnt--;
@@ -839,6 +841,7 @@ aggr_rem_pseudo_tx_ring(aggr_pseudo_tx_group_t *tx_grp,
 		mac_group_rem_ring(tx_grp->atg_gh, pseudo_hw_rh);
 		ring->atr_flags &= ~MAC_PSEUDO_RING_INUSE;
 		mac_hwring_teardown(ring->atr_hw_rh);
+		ring->atr_rh = NULL;
 		ring->atr_hw_rh = NULL;
 		ring->atr_port = NULL;
 		tx_grp->atg_ring_cnt--;

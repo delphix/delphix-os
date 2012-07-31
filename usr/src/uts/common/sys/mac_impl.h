@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_MAC_IMPL_H
@@ -292,11 +293,11 @@ struct mac_group_s {
 	mac_ring_handle_t mrh = rh;					\
 	mac_impl_t *mimpl = (mac_impl_t *)mhp;				\
 	/*								\
-	 * Send packets through a selected tx ring, or through the 	\
+	 * Send packets through a selected tx ring, or through the	\
 	 * default handler if there is no selected ring.		\
 	 */								\
 	if (mrh == NULL)						\
-		mrh = mimpl->mi_default_tx_ring;			\
+		mrh = (mac_ring_handle_t)mimpl->mi_default_tx_ring;	\
 	if (mrh == NULL) {						\
 		rest = mimpl->mi_tx(mimpl->mi_driver, mp);		\
 	} else {							\
@@ -314,18 +315,18 @@ struct mac_group_s {
 #define	MAC_TX(mip, rh, mp, src_mcip) {					\
 	mac_ring_handle_t	rhandle = (rh);				\
 	/*								\
-	 * If there is a bound Hybrid I/O share, send packets through 	\
+	 * If there is a bound Hybrid I/O share, send packets through	\
 	 * the default tx ring. (When there's a bound Hybrid I/O share,	\
-	 * the tx rings of this client are mapped in the guest domain 	\
+	 * the tx rings of this client are mapped in the guest domain	\
 	 * and not accessible from here.)				\
 	 */								\
 	_NOTE(CONSTANTCONDITION)					\
 	if ((src_mcip)->mci_state_flags & MCIS_SHARE_BOUND)		\
-		rhandle = (mip)->mi_default_tx_ring;			\
+		rhandle = (mac_ring_handle_t)(mip)->mi_default_tx_ring;	\
 	if (mip->mi_promisc_list != NULL)				\
 		mac_promisc_dispatch(mip, mp, src_mcip);		\
 	/*								\
-	 * Grab the proper transmit pointer and handle. Special 	\
+	 * Grab the proper transmit pointer and handle. Special		\
 	 * optimization: we can test mi_bridge_link itself atomically,	\
 	 * and if that indicates no bridge send packets through tx ring.\
 	 */								\
@@ -465,7 +466,7 @@ struct mac_impl_s {
 	uint_t			mi_txhwclnt_avail;
 	uint_t			mi_txhwclnt_used;
 
-	mac_ring_handle_t	mi_default_tx_ring;
+	mac_ring_t		*mi_default_tx_ring;
 
 	/*
 	 * MAC address list. SL protected.
@@ -828,7 +829,7 @@ extern void i_mac_share_free(mac_client_impl_t *);
 extern void i_mac_perim_enter(mac_impl_t *);
 extern void i_mac_perim_exit(mac_impl_t *);
 extern int i_mac_perim_enter_nowait(mac_impl_t *);
-extern void i_mac_tx_srs_notify(mac_impl_t *, mac_ring_handle_t);
+extern void i_mac_tx_srs_notify(mac_impl_t *, mac_ring_t *);
 extern int mac_hold(const char *, mac_impl_t **);
 extern void mac_rele(mac_impl_t *);
 extern int i_mac_disable(mac_impl_t *);
