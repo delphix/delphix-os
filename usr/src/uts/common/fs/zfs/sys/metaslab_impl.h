@@ -21,7 +21,10 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright (c) 2011 by Delphix. All rights reserved.
+ */
+
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_METASLAB_IMPL_H
@@ -77,6 +80,7 @@ struct metaslab {
 	space_map_t	ms_freemap[TXG_SIZE];	/* freed this txg	*/
 	space_map_t	ms_defermap[TXG_DEFER_SIZE]; /* deferred frees	*/
 	space_map_t	ms_map;		/* in-core free space map	*/
+	int64_t		ms_alloc_delta;	/* fix up accounting in the smo */
 	int64_t		ms_deferspace;	/* sum of ms_defermap[] space	*/
 	uint64_t	ms_weight;	/* weight vs. others in group	*/
 	metaslab_group_t *ms_group;	/* metaslab group		*/

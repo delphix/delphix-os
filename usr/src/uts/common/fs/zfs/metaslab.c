@@ -875,13 +875,52 @@ metaslab_activate(metaslab_t *msp, uint64_t activation_weight)
 	if ((msp->ms_weight & METASLAB_ACTIVE_MASK) == 0) {
 		space_map_load_wait(sm);
 		if (!sm->sm_loaded) {
-			int error = space_map_load(sm, sm_ops, SM_FREE,
-			    &msp->ms_smo,
+			space_map_obj_t *smo = &msp->ms_smo;
+
+			int error = space_map_load(sm, sm_ops, SM_FREE, smo,
 			    spa_meta_objset(msp->ms_group->mg_vd->vdev_spa));
 			if (error)  {
+				ASSERT(!sm->sm_condense);
 				metaslab_group_sort(msp->ms_group, msp, 0);
 				return (error);
 			}
+
+			/*
+			 * The space_map has indicated that it needs
+			 * to be condensed. Determine the amount of
+			 * space that we might need to reclaim. We must
+			 * do this here in order to ensure that we
+			 * provide accurate accounting.
+			 */
+			if (sm->sm_condense) {
+				uint64_t alloc = sm->sm_size - sm->sm_space;
+
+				VERIFY3U(msp->ms_alloc_delta, ==, 0);
+
+				/*
+				 * As a result of a previous bug we
+				 * may find that the smo object's accounting
+				 * does not match the sum of the space_map
+				 * entries. That particular bug could result
+				 * in an accounting discrepancy between the
+				 * entries in the space map and smo_alloc,
+				 * which is a summary of the entries. If
+				 * we have encountered that discrepancy then
+				 * space_map_load() will have requested that we
+				 * condense the space_map. As a result we
+				 * must calculate the amount of space that
+				 * might need to be subtracted from smo_alloc
+				 * to have it agree with the space_map entries.
+				 * This will only be non-zero if we've
+				 * encountered corruption to the smo object
+				 * and should always be greater than or equal
+				 * to 0. Any adjustment to smo_alloc must
+				 * be made in syncing context.
+				 */
+				msp->ms_alloc_delta = smo->smo_alloc - alloc;
+				VERIFY3S(msp->ms_alloc_delta, >=, 0);
+			}
+
 			for (int t = 0; t < TXG_DEFER_SIZE; t++)
 				space_map_walk(&msp->ms_defermap[t],
 				    space_map_claim, sm);
@@ -968,8 +1007,9 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 
 	space_map_walk(freemap, space_map_add, freed_map);
 
-	if (sm->sm_loaded && spa_sync_pass(spa) == 1 && smo->smo_objsize >=
-	    2 * sizeof (uint64_t) * avl_numnodes(&sm->sm_root)) {
+	if ((sm->sm_loaded && spa_sync_pass(spa) == 1 && smo->smo_objsize >=
+	    2 * sizeof (uint64_t) * avl_numnodes(&sm->sm_root)) ||
+	    sm->sm_condense) {
 		/*
 		 * The in-core space map representation is twice as compact
 		 * as the on-disk one, so it's time to condense the latter
@@ -997,6 +1037,17 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 		for (int t = 1; t < TXG_CONCURRENT_STATES; t++)
 			space_map_walk(&msp->ms_allocmap[(txg + t) & TXG_MASK],
 			    space_map_remove, allocmap);
+
+		if (sm->sm_condense) {
+			ASSERT(sm->sm_loaded);
+			zfs_dbgmsg("condensing space_map[%llu] %p, "
+			    "metaslab %p, txg %llu, delta %lld",
+			    sm->sm_start, sm, msp, txg, msp->ms_alloc_delta);
+
+			smo->smo_alloc -= msp->ms_alloc_delta;
+			msp->ms_alloc_delta = 0;
+			sm->sm_condense = B_FALSE;
+		}
 
 		mutex_exit(&msp->ms_lock);
 		space_map_truncate(smo, mos, tx);
@@ -1099,8 +1150,10 @@ metaslab_sync_done(metaslab_t *msp, uint64_t txg)
 			if (msp->ms_allocmap[(txg + t) & TXG_MASK].sm_space)
 				evictable = 0;
 
-		if (evictable && !metaslab_debug)
+		if (evictable && !metaslab_debug) {
+			ASSERT3U(msp->ms_alloc_delta, ==, 0);
 			space_map_unload(sm);
+		}
 	}
 
 	metaslab_group_sort(mg, msp, metaslab_weight(msp));

@@ -23,6 +23,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #ifndef _SYS_SPACE_MAP_H
 #define	_SYS_SPACE_MAP_H
 
@@ -41,9 +45,10 @@ typedef struct space_map {
 	uint64_t	sm_start;	/* start of map */
 	uint64_t	sm_size;	/* size of map */
 	uint8_t		sm_shift;	/* unit shift */
-	uint8_t		sm_pad[3];	/* unused */
+	uint8_t		sm_pad[2];	/* unused */
 	uint8_t		sm_loaded;	/* map loaded? */
 	uint8_t		sm_loading;	/* map loading? */
+	uint8_t		sm_condense;	/* condense map? */
 	kcondvar_t	sm_load_cv;	/* map load completion */
 	space_map_ops_t	*sm_ops;	/* space map block picker ops vector */
 	avl_tree_t	*sm_pp_root;	/* picker-private AVL tree */

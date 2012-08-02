@@ -23,6 +23,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
 #include <sys/dmu.h>
@@ -331,7 +335,29 @@ space_map_load(space_map_t *sm, space_map_ops_t *ops, uint8_t maptype,
 	}
 
 	if (error == 0) {
-		VERIFY3U(sm->sm_space, ==, space);
+		/*
+		 * As a result of a previous bug, it was possible to
+		 * create extra free records in the space_map that were not
+		 * accounted for in the space map object. We detect that
+		 * condition here by checking to see if the free space
+		 * from the space_map entries is larger than the free
+		 * space reported by the space map object. If we encounter
+		 * this condition then force the space_map to condense the
+		 * next time it syncs out. The associated metaslab is
+		 * responsible for tracking any adjustments that should be
+		 * made to the space map object.
+		 */
+		if (maptype == SM_FREE && sm->sm_space > space) {
+			uint64_t alloc = sm->sm_size - sm->sm_space;
+
+			zfs_dbgmsg("space_map_load [%llu]: sm_space %llu, "
+			    "space %llu, smo_alloc %llu, "
+			    "adjusted smo_alloc %llu", sm->sm_start,
+			    sm->sm_space, space, smo->smo_alloc, alloc);
+			sm->sm_condense = B_TRUE;
+		} else {
+			VERIFY3U(sm->sm_space, ==, space);
+		}
 
 		sm->sm_loaded = B_TRUE;
 		sm->sm_ops = ops;
@@ -406,7 +432,7 @@ space_map_sync(space_map_t *sm, uint8_t maptype,
 	spa_t *spa = dmu_objset_spa(os);
 	void *cookie = NULL;
 	space_seg_t *ss;
-	uint64_t bufsize, start, size, run_len;
+	uint64_t bufsize, start, size, run_len, delta, sm_space;
 	uint64_t *entry, *entry_map, *entry_map_end;
 
 	ASSERT(MUTEX_HELD(sm->sm_lock));
@@ -435,11 +461,13 @@ space_map_sync(space_map_t *sm, uint8_t maptype,
 	    SM_DEBUG_SYNCPASS_ENCODE(spa_sync_pass(spa)) |
 	    SM_DEBUG_TXG_ENCODE(dmu_tx_get_txg(tx));
 
+	delta = 0;
+	sm_space = sm->sm_space;
 	while ((ss = avl_destroy_nodes(&sm->sm_root, &cookie)) != NULL) {
 		size = ss->ss_end - ss->ss_start;
 		start = (ss->ss_start - sm->sm_start) >> sm->sm_shift;
 
-		sm->sm_space -= size;
+		delta += size;
 		size >>= sm->sm_shift;
 
 		while (size) {
@@ -472,8 +500,14 @@ space_map_sync(space_map_t *sm, uint8_t maptype,
 		mutex_enter(sm->sm_lock);
 		smo->smo_objsize += size;
 	}
+	/*
+	 * Ensure that the space_map's accounting wasn't changed
+	 * while we were in the middle of writing it out.
+	 */
+	VERIFY3U(sm->sm_space, ==, sm_space);
 
 	zio_buf_free(entry_map, bufsize);
+	sm->sm_space -= delta;
 
 	VERIFY3U(sm->sm_space, ==, 0);
 }
