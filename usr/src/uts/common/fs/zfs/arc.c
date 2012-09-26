@@ -1685,7 +1685,6 @@ boolean_t
 arc_buf_eviction_needed(arc_buf_t *buf)
 {
 	arc_buf_hdr_t *hdr;
-	kmutex_t *hash_lock;
 	boolean_t evict_needed = B_FALSE;
 
 	if (zfs_disable_dup_eviction)
@@ -1711,15 +1710,9 @@ arc_buf_eviction_needed(arc_buf_t *buf)
 		return (B_TRUE);
 	}
 
-	hash_lock = HDR_LOCK(hdr);
-	mutex_enter(hash_lock);
-	hdr = buf->b_hdr;
-	ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
-
 	if (hdr->b_datacnt > 1 && hdr->b_type == ARC_BUFC_DATA)
 		evict_needed = B_TRUE;
 
-	mutex_exit(hash_lock);
 	mutex_exit(&buf->b_evict_lock);
 	return (evict_needed);
 }
