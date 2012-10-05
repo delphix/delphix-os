@@ -427,7 +427,7 @@ nlm_do_lock(nlm4_lockargs *argp, nlm4_res *resp, struct svc_req *sr,
 	 */
 	nvp = nlm_fh_to_vhold(host, &argp->alock.fh);
 	if (nvp == NULL) {
-		resp->stat.stat = nlm4_stale_fh;
+		status = nlm4_stale_fh;
 		goto doreply;
 	}
 
@@ -436,7 +436,7 @@ nlm_do_lock(nlm4_lockargs *argp, nlm4_res *resp, struct svc_req *sr,
 	 */
 	if (argp->alock.l_len != 0 && argp->alock.l_offset + argp->alock.l_len
 	    <= argp->alock.l_offset) {
-		resp->stat.stat = nlm4_failed;
+		status = nlm4_failed;
 		goto doreply;
 	}
 
