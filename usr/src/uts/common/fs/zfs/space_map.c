@@ -33,6 +33,23 @@
 #include <sys/zio.h>
 #include <sys/space_map.h>
 
+static kmem_cache_t *space_seg_cache;
+
+void
+space_map_init(void)
+{
+	ASSERT(space_seg_cache == NULL);
+	space_seg_cache = kmem_cache_create("space_seg_cache",
+	    sizeof (space_seg_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+void
+space_map_fini(void)
+{
+	kmem_cache_destroy(space_seg_cache);
+	space_seg_cache = NULL;
+}
+
 /*
  * Space map routines.
  * NOTE: caller is responsible for all locking.
@@ -125,7 +142,7 @@ space_map_add(space_map_t *sm, uint64_t start, uint64_t size)
 			avl_remove(sm->sm_pp_root, ss_after);
 		}
 		ss_after->ss_start = ss_before->ss_start;
-		kmem_free(ss_before, sizeof (*ss_before));
+		kmem_cache_free(space_seg_cache, ss_before);
 		ss = ss_after;
 	} else if (merge_before) {
 		ss_before->ss_end = end;
@@ -138,7 +155,7 @@ space_map_add(space_map_t *sm, uint64_t start, uint64_t size)
 			avl_remove(sm->sm_pp_root, ss_after);
 		ss = ss_after;
 	} else {
-		ss = kmem_alloc(sizeof (*ss), KM_SLEEP);
+		ss = kmem_cache_alloc(space_seg_cache, KM_SLEEP);
 		ss->ss_start = start;
 		ss->ss_end = end;
 		avl_insert(&sm->sm_root, ss, where);
@@ -185,7 +202,7 @@ space_map_remove(space_map_t *sm, uint64_t start, uint64_t size)
 		avl_remove(sm->sm_pp_root, ss);
 
 	if (left_over && right_over) {
-		newseg = kmem_alloc(sizeof (*newseg), KM_SLEEP);
+		newseg = kmem_cache_alloc(space_seg_cache, KM_SLEEP);
 		newseg->ss_start = end;
 		newseg->ss_end = ss->ss_end;
 		ss->ss_end = start;
@@ -198,7 +215,7 @@ space_map_remove(space_map_t *sm, uint64_t start, uint64_t size)
 		ss->ss_start = end;
 	} else {
 		avl_remove(&sm->sm_root, ss);
-		kmem_free(ss, sizeof (*ss));
+		kmem_cache_free(space_seg_cache, ss);
 		ss = NULL;
 	}
 
@@ -238,7 +255,7 @@ space_map_vacate(space_map_t *sm, space_map_func_t *func, space_map_t *mdest)
 	while ((ss = avl_destroy_nodes(&sm->sm_root, &cookie)) != NULL) {
 		if (func != NULL)
 			func(mdest, ss->ss_start, ss->ss_end - ss->ss_start);
-		kmem_free(ss, sizeof (*ss));
+		kmem_cache_free(space_seg_cache, ss);
 	}
 	sm->sm_space = 0;
 }
@@ -467,7 +484,7 @@ space_map_sync(space_map_t *sm, uint8_t maptype,
 			start += run_len;
 			size -= run_len;
 		}
-		kmem_free(ss, sizeof (*ss));
+		kmem_cache_free(space_seg_cache, ss);
 	}
 
 	if (entry != entry_map) {
