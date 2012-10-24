@@ -35,6 +35,7 @@ ulwp_t *panic_thread;
 
 static mutex_t assert_lock = DEFAULTMUTEX;
 static ulwp_t *assert_thread = NULL;
+int aok = 0;
 
 /*
  * Called from __assert() to set panicstr and panic_thread.
@@ -394,6 +395,9 @@ __assfail(const char *assertion, const char *filename, int line_num)
 	char buf[800];	/* no assert() message in the library is this long */
 	ulwp_t *self;
 	lwpid_t lwpid;
+
+	if (aok)
+		return;
 
 	/* avoid recursion deadlock */
 	if ((self = __curthread()) != NULL) {

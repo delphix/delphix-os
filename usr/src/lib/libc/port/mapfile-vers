@@ -90,6 +90,11 @@ $if _x86 && _ELF64
 $add amd64
 $endif
 
+SYMBOL_VERSION ILLUMOS_0.4 {	# Illumos additions
+    global:
+        aok;
+} ILLUMOS_0.3;
+
 SYMBOL_VERSION ILLUMOS_0.3 {	# Illumos additions
     protected:
         assfail3;
