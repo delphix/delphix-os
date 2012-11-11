@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*
@@ -49,6 +50,7 @@
 #include <sys/tiuser.h>
 #include <sys/statvfs.h>
 #include <sys/stream.h>
+#include <sys/strsun.h>
 #include <sys/strsubr.h>
 #include <sys/stropts.h>
 #include <sys/timod.h>
@@ -3308,6 +3310,51 @@ uio_to_mblk(uio_t *uiop)
 	return (mp);
 }
 
+/*
+ * Allocate memory to hold data for a read request of len bytes.
+ *
+ * We don't allocate buffers greater than kmem_max_cached in size to avoid
+ * allocating memory from the kmem_oversized arena.  If we allocate oversized
+ * buffers, we incur heavy cross-call activity when freeing these large buffers
+ * in the TCP receive path.
+ */
+mblk_t *
+rfs_read_alloc(uint_t len, struct iovec **iov, int *iovcnt)
+{
+	struct iovec *iovarr;
+	mblk_t *mp, **mpp = &mp;
+	size_t mpsize;
+	uint_t remain = len;
+	int i, err = 0;
+
+	*iovcnt = len / kmem_max_cached;
+	if (len % kmem_max_cached != 0)
+		(*iovcnt)++;
+
+	iovarr = kmem_alloc(*iovcnt * sizeof (struct iovec), KM_SLEEP);
+	*iov = iovarr;
+
+	for (i = 0; i < *iovcnt; remain -= mpsize, i++) {
+		ASSERT(remain <= len);
+		/*
+		 * We roundup the size we allocate to a multiple of
+		 * BYTES_PER_XDR_UNIT (4 bytes) so that the call to
+		 * xdrmblk_putmblk() never fails.
+		 */
+		mpsize = MIN(kmem_max_cached, remain);
+		*mpp = allocb_wait(RNDUP(mpsize), BPRI_MED, STR_NOSIG, &err);
+		ASSERT(*mpp != NULL);
+		ASSERT(err == 0);
+
+		iovarr[i].iov_base = (caddr_t)(*mpp)->b_rptr;
+		iovarr[i].iov_len = mpsize;
+		(*mpp)->b_wptr += mpsize;
+		mpp = &(*mpp)->b_cont;
+	}
+	ASSERT(msgsize(mp) == len);
+	return (mp);
+}
+
 void
 rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 {
@@ -3317,9 +3364,21 @@ rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 
 	rndup = BYTES_PER_XDR_UNIT - (len % BYTES_PER_XDR_UNIT);
 
-	/* single mblk_t non copy-reduction case */
+	/*
+	 * Get to the last mblk in the chain.  We'll either pad the last mblk
+	 * in the chain with null bytes (if buffers were not loaned), or
+	 * tack on a round-up mblk to the end of the chain (if buffers were
+	 * loaned).
+	 */
+	while (mp->b_cont != NULL)
+		mp = mp->b_cont;
+
+	/*
+	 * Non copy-reduction case.  This function assumes that blocks were
+	 * allocated in multiples of BYTES_PER_XDR_UNIT bytes, which makes this
+	 * padding safe without bounds checking.
+	 */
 	if (!buf_loaned) {
-		mp->b_wptr += len;
 		if (rndup != BYTES_PER_XDR_UNIT) {
 			for (i = 0; i < rndup; i++)
 				*mp->b_wptr++ = '\0';
@@ -3331,9 +3390,6 @@ rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 	if (rndup == BYTES_PER_XDR_UNIT)
 		return;
 
-	while (mp->b_cont)
-		mp = mp->b_cont;
-
 	/*
 	 * In case of copy-reduction mblks, the size of the mblks
 	 * are fixed and are of the size of the loaned buffers.
@@ -3341,7 +3397,6 @@ rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 	 * buffers. This is sub-optimal, but not expected to
 	 * happen in regular common workloads.
 	 */
-
 	rmp = allocb_wait(rndup, BPRI_MED, STR_NOSIG, &alloc_err);
 	ASSERT(rmp != NULL);
 	ASSERT(alloc_err == 0);
