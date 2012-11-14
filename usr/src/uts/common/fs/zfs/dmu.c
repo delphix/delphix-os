@@ -1566,7 +1566,8 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 	enum zio_checksum checksum = os->os_checksum;
 	enum zio_compress compress = os->os_compress;
 	enum zio_checksum dedup_checksum = os->os_dedup_checksum;
-	boolean_t dedup, nopwrite;
+	boolean_t dedup = B_FALSE;
+	boolean_t nopwrite = B_FALSE;
 	boolean_t dedup_verify = os->os_dedup_verify;
 	int copies = os->os_copies;
 
@@ -1595,9 +1596,6 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		if (zio_checksum_table[checksum].ci_correctable < 1 ||
 		    zio_checksum_table[checksum].ci_eck)
 			checksum = ZIO_CHECKSUM_FLETCHER_4;
-
-		dedup = B_FALSE;
-		nopwrite = B_FALSE;
 	} else if (wp & WP_NOFILL) {
 		ASSERT(level == 0);
 
@@ -1610,8 +1608,6 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 */
 		compress = ZIO_COMPRESS_OFF;
 		checksum = ZIO_CHECKSUM_OFF;
-		dedup = B_FALSE;
-		nopwrite = B_FALSE;
 	} else {
 		compress = zio_compress_select(dn->dn_compress, compress);
 
