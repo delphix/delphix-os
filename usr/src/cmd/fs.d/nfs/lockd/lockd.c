@@ -146,7 +146,7 @@ main(int ac, char *av[])
 	struct protob *protobp;
 	NETSELPDECL(providerp);
 	sigset_t sgset;
-	int c, pid, ret, val;
+	int i, c, pid, ret, val;
 	int pipe_fd = -1;
 	struct sigaction act;
 
@@ -328,11 +328,9 @@ main(int ac, char *av[])
 		exit(1);
 	}
 
-#ifndef DEBUG
-	/* Deamon-ize, if not debug. */
+	/* Daemonize, if not debug. */
 	if (lmargs.debug == 0)
 		pipe_fd = daemonize_init();
-#endif
 
 	openlog(MyName, LOG_PID | LOG_NDELAY, LOG_DAEMON);
 
@@ -361,7 +359,10 @@ main(int ac, char *av[])
 	(void) sigfillset(&sgset);
 	(void) thr_sigsetmask(SIG_BLOCK, &sgset, NULL);
 
-	/* Any need to svc_unreg()? */
+	/* Unregister any previous versions. */
+	for (i = NLM_VERS; i < NLM4_VERS; i++) {
+		svc_unreg(NLM_PROG, i);
+	}
 
 	/*
 	 * Set up kernel RPC thread pool for the NLM server.
@@ -424,10 +425,8 @@ main(int ac, char *av[])
 	/*
 	 * lockd is up and running as far as we are concerned.
 	 */
-#ifndef DEBUG
 	if (lmargs.debug == 0)
 		daemonize_fini(pipe_fd);
-#endif
 
 	/*
 	 * Get rid of unneeded privileges.

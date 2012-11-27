@@ -129,7 +129,7 @@ nlm_test_1_svc(struct nlm_testargs *argp, nlm_testres *resp,
 
 	if (!nlm_valid_nlm_lock(&argp->alock))
 	{
-		resp->cookie = argp->cookie;
+ 		nlm_copy_netobj(&resp->cookie, &argp->cookie);
 		resp->stat.stat = nlm_denied;
 		return (TRUE);
 	}
@@ -168,7 +168,7 @@ nlm_lock_1_svc(nlm_lockargs *argp, nlm_res *resp,
 
 	if (!nlm_valid_nlm_lock(&argp->alock))
 	{
-		resp->cookie = argp->cookie;
+ 		nlm_copy_netobj(&resp->cookie, &argp->cookie);
 		resp->stat.stat = nlm_denied;
 		return (TRUE);
 	}
@@ -234,7 +234,7 @@ nlm_cancel_1_svc(struct nlm_cancargs *argp, nlm_res *resp,
 
 	if (!nlm_valid_nlm_lock(&argp->alock))
 	{
-		resp->cookie = argp->cookie;
+ 		nlm_copy_netobj(&resp->cookie, &argp->cookie);
 		resp->stat.stat = nlm_denied;
 		return (TRUE);
 	}
@@ -262,7 +262,7 @@ nlm_unlock_1_svc(struct nlm_unlockargs *argp, nlm_res *resp,
 
 	if (!nlm_valid_nlm_lock(&argp->alock))
 	{
-		resp->cookie = argp->cookie;
+ 		nlm_copy_netobj(&resp->cookie, &argp->cookie);
 		resp->stat.stat = nlm_denied;
 		return (TRUE);
 	}
@@ -288,7 +288,7 @@ nlm_granted_1_svc(struct nlm_testargs *argp, nlm_res *resp,
 
 	if (!nlm_valid_nlm_lock(&argp->alock))
 	{
-		resp->cookie = argp->cookie;
+ 		nlm_copy_netobj(&resp->cookie, &argp->cookie);
 		resp->stat.stat = nlm_denied;
 		return (TRUE);
 	}
