@@ -3316,7 +3316,10 @@ uio_to_mblk(uio_t *uiop)
  * We don't allocate buffers greater than kmem_max_cached in size to avoid
  * allocating memory from the kmem_oversized arena.  If we allocate oversized
  * buffers, we incur heavy cross-call activity when freeing these large buffers
- * in the TCP receive path.
+ * in the TCP receive path. Note that we can't set b_wptr here since the
+ * length of the data returned may differ from the length requested when
+ * reading the end of a file; we set b_wptr in rfs_rndup_mblks() once the
+ * length of the read is known.
  */
 mblk_t *
 rfs_read_alloc(uint_t len, struct iovec **iov, int *iovcnt)
@@ -3327,9 +3330,7 @@ rfs_read_alloc(uint_t len, struct iovec **iov, int *iovcnt)
 	uint_t remain = len;
 	int i, err = 0;
 
-	*iovcnt = len / kmem_max_cached;
-	if (len % kmem_max_cached != 0)
-		(*iovcnt)++;
+	*iovcnt = howmany(len, kmem_max_cached);
 
 	iovarr = kmem_alloc(*iovcnt * sizeof (struct iovec), KM_SLEEP);
 	*iov = iovarr;
@@ -3348,30 +3349,20 @@ rfs_read_alloc(uint_t len, struct iovec **iov, int *iovcnt)
 
 		iovarr[i].iov_base = (caddr_t)(*mpp)->b_rptr;
 		iovarr[i].iov_len = mpsize;
-		(*mpp)->b_wptr += mpsize;
 		mpp = &(*mpp)->b_cont;
 	}
-	ASSERT(msgsize(mp) == len);
 	return (mp);
 }
 
 void
 rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 {
-	int i, rndup;
+	int i;
 	int alloc_err = 0;
 	mblk_t *rmp;
+	uint_t mpsize, remainder;
 
-	rndup = BYTES_PER_XDR_UNIT - (len % BYTES_PER_XDR_UNIT);
-
-	/*
-	 * Get to the last mblk in the chain.  We'll either pad the last mblk
-	 * in the chain with null bytes (if buffers were not loaned), or
-	 * tack on a round-up mblk to the end of the chain (if buffers were
-	 * loaned).
-	 */
-	while (mp->b_cont != NULL)
-		mp = mp->b_cont;
+	remainder = P2NPHASE(len, BYTES_PER_XDR_UNIT);
 
 	/*
 	 * Non copy-reduction case.  This function assumes that blocks were
@@ -3379,29 +3370,48 @@ rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 	 * padding safe without bounds checking.
 	 */
 	if (!buf_loaned) {
-		if (rndup != BYTES_PER_XDR_UNIT) {
-			for (i = 0; i < rndup; i++)
-				*mp->b_wptr++ = '\0';
+		/*
+		 * Set the size of each mblk in the chain until we've consumed
+		 * the specified length for all but the last one.
+		 */
+		while ((mpsize = MBLKSIZE(mp)) < len) {
+			ASSERT(mpsize % BYTES_PER_XDR_UNIT == 0);
+			mp->b_wptr += mpsize;
+			len -= mpsize;
+			mp = mp->b_cont;
+			ASSERT(mp != NULL);
 		}
+
+		ASSERT(len + remainder <= mpsize);
+		mp->b_wptr += len;
+		for (i = 0; i < remainder; i++)
+			*mp->b_wptr++ = '\0';
 		return;
 	}
 
-	/* no need for extra rndup */
-	if (rndup == BYTES_PER_XDR_UNIT)
+	/*
+	 * No remainder mblk required.
+	 */
+	if (remainder == 0)
 		return;
 
 	/*
-	 * In case of copy-reduction mblks, the size of the mblks
-	 * are fixed and are of the size of the loaned buffers.
-	 * Allocate a roundup mblk and chain it to the data
-	 * buffers. This is sub-optimal, but not expected to
-	 * happen in regular common workloads.
+	 * Get to the last mblk in the chain.
 	 */
-	rmp = allocb_wait(rndup, BPRI_MED, STR_NOSIG, &alloc_err);
+	while (mp->b_cont != NULL)
+		mp = mp->b_cont;
+
+	/*
+	 * In case of copy-reduction mblks, the size of the mblks are fixed
+	 * and are of the size of the loaned buffers.  Allocate a remainder
+	 * mblk and chain it to the data buffers. This is sub-optimal, but not
+	 * expected to happen commonly.
+	 */
+	rmp = allocb_wait(remainder, BPRI_MED, STR_NOSIG, &alloc_err);
 	ASSERT(rmp != NULL);
 	ASSERT(alloc_err == 0);
 
-	for (i = 0; i < rndup; i++)
+	for (i = 0; i < remainder; i++)
 		*rmp->b_wptr++ = '\0';
 
 	rmp->b_datap->db_type = M_DATA;
