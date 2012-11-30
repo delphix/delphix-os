@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -2331,10 +2332,11 @@ typedef struct nfs_xuio {
 	frtn_t nu_frtn;
 } nfs_xuio_t;
 
-xuio_t *rfs_setup_xuio(vnode_t *);
-mblk_t *uio_to_mblk(uio_t *);
-void rfs_rndup_mblks(mblk_t *, uint_t, int);
-void rfs_free_xuio(void *);
+extern xuio_t *rfs_setup_xuio(vnode_t *);
+extern mblk_t *uio_to_mblk(uio_t *);
+extern mblk_t *rfs_read_alloc(uint_t, struct iovec **, int *);
+extern void rfs_rndup_mblks(mblk_t *, uint_t, int);
+extern void rfs_free_xuio(void *);
 
 #endif	/* _KERNEL */
 
