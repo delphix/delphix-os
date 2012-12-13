@@ -206,6 +206,7 @@ static void nlm_kmem_reclaim(void *);
 static void nlm_pool_shutdown(void);
 static void nlm_suspend_zone(struct nlm_globals *);
 static void nlm_resume_zone(struct nlm_globals *);
+static void nlm_nsm_clnt_init(struct nlm_nsm *);
 
 /*
  * NLM thread functions
@@ -830,9 +831,10 @@ nlm_nsm_simu_crash(struct nlm_nsm *nsm)
 {
 	enum clnt_stat stat;
 
-	sema_v(&nsm->ns_sem);
-	stat = sm_simu_crash_1(NULL, NULL, nsm->ns_handle);
 	sema_p(&nsm->ns_sem);
+	nlm_nsm_clnt_init(nsm);
+	stat = sm_simu_crash_1(NULL, NULL, nsm->ns_handle);
+	sema_v(&nsm->ns_sem);
 
 	return (stat);
 }
@@ -847,15 +849,13 @@ nlm_nsm_stat(struct nlm_nsm *nsm, int32_t *out_stat)
 	args.mon_name = uts_nodename();
 	bzero(&res, sizeof (res));
 
-	sema_v(&nsm->ns_sem);
-	stat = sm_stat_1(&args, &res, nsm->ns_handle);
-	if (stat != RPC_SUCCESS) {
-		sema_p(&nsm->ns_sem);
-		return (stat);
-	}
-
 	sema_p(&nsm->ns_sem);
-	*out_stat = res.state;
+	nlm_nsm_clnt_init(nsm);
+	stat = sm_stat_1(&args, &res, nsm->ns_handle);
+	sema_v(&nsm->ns_sem);
+
+	if (stat == RPC_SUCCESS)
+		*out_stat = res.state;
 
 	return (stat);
 }
@@ -877,9 +877,10 @@ nlm_nsm_mon(struct nlm_nsm *nsm, char *hostname, uint16_t priv)
 	args.mon_id.my_id.my_proc = NLM_SM_NOTIFY1;
 	bcopy(&priv, args.priv, sizeof (priv));
 
-	sema_v(&nsm->ns_sem);
-	stat = sm_mon_1(&args, &res, nsm->ns_handle);
 	sema_p(&nsm->ns_sem);
+	nlm_nsm_clnt_init(nsm);
+	stat = sm_mon_1(&args, &res, nsm->ns_handle);
+	sema_v(&nsm->ns_sem);
 
 	return (stat);
 }
@@ -900,9 +901,10 @@ nlm_nsm_unmon(struct nlm_nsm *nsm, char *hostname)
 	args.my_id.my_vers = NLM_SM;
 	args.my_id.my_proc = NLM_SM_NOTIFY1;
 
-	sema_v(&nsm->ns_sem);
-	stat = sm_unmon_1(&args, &res, nsm->ns_handle);
 	sema_p(&nsm->ns_sem);
+	nlm_nsm_clnt_init(nsm);
+	stat = sm_unmon_1(&args, &res, nsm->ns_handle);
+	sema_v(&nsm->ns_sem);
 
 	return (stat);
 }
@@ -2669,4 +2671,11 @@ nlm_cprresume(void)
 		nlm_resume_zone(g);
 
 	rw_exit(&lm_lck);
+}
+
+static void
+nlm_nsm_clnt_init(struct nlm_nsm *nsm)
+{
+	(void) clnt_tli_kinit(nsm->ns_handle, &nsm->ns_knc, &nsm->ns_addr, 0,
+	    NLM_RPC_RETRIES, kcred);
 }
