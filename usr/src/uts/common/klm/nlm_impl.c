@@ -64,6 +64,7 @@
 
 #include <rpcsvc/nlm_prot.h>
 #include <rpcsvc/sm_inter.h>
+#include <rpcsvc/nsm_addr.h>
 
 #include <nfs/nfs.h>
 #include <nfs/nfs_clnt.h>
@@ -206,7 +207,8 @@ static void nlm_kmem_reclaim(void *);
 static void nlm_pool_shutdown(void);
 static void nlm_suspend_zone(struct nlm_globals *);
 static void nlm_resume_zone(struct nlm_globals *);
-static void nlm_nsm_clnt_init(struct nlm_nsm *);
+static void nlm_nsm_clnt_init(CLIENT *, struct nlm_nsm *);
+static void nlm_netbuf_to_netobj(struct netbuf *, int *, netobj *);
 
 /*
  * NLM thread functions
@@ -762,7 +764,6 @@ nlm_nsm_init_local(struct nlm_nsm *nsm)
 static int
 nlm_nsm_init(struct nlm_nsm *nsm, struct knetconfig *knc, struct netbuf *nb)
 {
-	CLIENT *clnt = NULL;
 	enum clnt_stat stat;
 	int error, retries;
 
@@ -797,22 +798,30 @@ nlm_nsm_init(struct nlm_nsm *nsm, struct knetconfig *knc, struct netbuf *nb)
 	}
 
 	/*
-	 * Create a RPC handle that'll be used for
-	 * communication with local statd
+	 * Create an RPC handle that'll be used for communication with local
+	 * statd using the status monitor protocol.
 	 */
 	error = clnt_tli_kcreate(&nsm->ns_knc, &nsm->ns_addr, SM_PROG, SM_VERS,
-	    0, NLM_RPC_RETRIES, kcred, &clnt);
+	    0, NLM_RPC_RETRIES, kcred, &nsm->ns_handle);
 	if (error != 0)
 		goto error;
 
-	nsm->ns_handle = clnt;
+	/*
+	 * Create an RPC handle that'll be used for communication with the
+	 * local statd using the address registration protocol.
+	 */
+	error = clnt_tli_kcreate(&nsm->ns_knc, &nsm->ns_addr, NSM_ADDR_PROGRAM,
+	    NSM_ADDR_V1, 0, NLM_RPC_RETRIES, kcred, &nsm->ns_addr_handle);
+	if (error != 0)
+		goto error;
+
 	sema_init(&nsm->ns_sem, 1, NULL, SEMA_DEFAULT, NULL);
 	return (0);
 
 error:
 	kmem_free(nsm->ns_addr.buf, nsm->ns_addr.maxlen);
-	if (clnt)
-		CLNT_DESTROY(clnt);
+	if (nsm->ns_handle)
+		CLNT_DESTROY(nsm->ns_handle);
 
 	return (error);
 }
@@ -821,6 +830,8 @@ static void
 nlm_nsm_fini(struct nlm_nsm *nsm)
 {
 	kmem_free(nsm->ns_addr.buf, nsm->ns_addr.maxlen);
+	CLNT_DESTROY(nsm->ns_addr_handle);
+	nsm->ns_addr_handle = NULL;
 	CLNT_DESTROY(nsm->ns_handle);
 	nsm->ns_handle = NULL;
 	sema_destroy(&nsm->ns_sem);
@@ -832,7 +843,7 @@ nlm_nsm_simu_crash(struct nlm_nsm *nsm)
 	enum clnt_stat stat;
 
 	sema_p(&nsm->ns_sem);
-	nlm_nsm_clnt_init(nsm);
+	nlm_nsm_clnt_init(nsm->ns_handle, nsm);
 	stat = sm_simu_crash_1(NULL, NULL, nsm->ns_handle);
 	sema_v(&nsm->ns_sem);
 
@@ -850,7 +861,7 @@ nlm_nsm_stat(struct nlm_nsm *nsm, int32_t *out_stat)
 	bzero(&res, sizeof (res));
 
 	sema_p(&nsm->ns_sem);
-	nlm_nsm_clnt_init(nsm);
+	nlm_nsm_clnt_init(nsm->ns_handle, nsm);
 	stat = sm_stat_1(&args, &res, nsm->ns_handle);
 	sema_v(&nsm->ns_sem);
 
@@ -878,7 +889,7 @@ nlm_nsm_mon(struct nlm_nsm *nsm, char *hostname, uint16_t priv)
 	bcopy(&priv, args.priv, sizeof (priv));
 
 	sema_p(&nsm->ns_sem);
-	nlm_nsm_clnt_init(nsm);
+	nlm_nsm_clnt_init(nsm->ns_handle, nsm);
 	stat = sm_mon_1(&args, &res, nsm->ns_handle);
 	sema_v(&nsm->ns_sem);
 
@@ -902,8 +913,27 @@ nlm_nsm_unmon(struct nlm_nsm *nsm, char *hostname)
 	args.my_id.my_proc = NLM_SM_NOTIFY1;
 
 	sema_p(&nsm->ns_sem);
-	nlm_nsm_clnt_init(nsm);
+	nlm_nsm_clnt_init(nsm->ns_handle, nsm);
 	stat = sm_unmon_1(&args, &res, nsm->ns_handle);
+	sema_v(&nsm->ns_sem);
+
+	return (stat);
+}
+
+static enum clnt_stat
+nlm_nsmaddr_reg(struct nlm_nsm *nsm, char *name, int family, netobj *address)
+{
+	struct reg1args args = { 0 };
+	struct reg1res res = { 0 };
+	enum clnt_stat stat;
+
+	args.family = family;
+	args.name = name;
+	args.address = *address;
+
+	sema_p(&nsm->ns_sem);
+	nlm_nsm_clnt_init(nsm->ns_addr_handle, nsm);
+	stat = nsmaddrproc1_reg_1(&args, &res, nsm->ns_addr_handle);
 	sema_v(&nsm->ns_sem);
 
 	return (stat);
@@ -1306,6 +1336,7 @@ nlm_host_create(char *name, const char *netid,
 
 	host->nh_state = 0;
 	host->nh_rpcb_state = NRPCB_NEED_UPDATE;
+	host->nh_flags = 0;
 
 	host->nh_vholds_by_vp = mod_hash_create_ptrhash("nlm vholds hash",
 	    32, mod_hash_null_valdtor, sizeof (vnode_t));
@@ -1751,6 +1782,8 @@ nlm_host_unmonitor(struct nlm_globals *g, struct nlm_host *host)
 void
 nlm_host_monitor(struct nlm_globals *g, struct nlm_host *host, int state)
 {
+	int family;
+	netobj obj;
 	enum clnt_stat stat;
 
 	if (state != 0 && host->nh_state == 0) {
@@ -1770,6 +1803,21 @@ nlm_host_monitor(struct nlm_globals *g, struct nlm_host *host, int state)
 
 	host->nh_flags |= NLM_NH_MONITORED;
 	mutex_exit(&host->nh_lock);
+
+	/*
+	 * Before we begin monitoring the host register the network address
+	 * associated with this hostname.
+	 */
+	nlm_netbuf_to_netobj(&host->nh_addr, &family, &obj);
+	stat = nlm_nsmaddr_reg(&g->nlm_nsm, host->nh_name, family, &obj);
+	if (state != RPC_SUCCESS) {
+		NLM_WARN("Failed to register address, stat=%d\n", stat);
+		mutex_enter(&g->lock);
+		host->nh_flags &= ~NLM_NH_MONITORED;
+		mutex_exit(&g->lock);
+
+		return;
+	}
 
 	/*
 	 * Tell statd how to call us with status updates for
@@ -2674,8 +2722,41 @@ nlm_cprresume(void)
 }
 
 static void
-nlm_nsm_clnt_init(struct nlm_nsm *nsm)
+nlm_nsm_clnt_init(CLIENT *clnt, struct nlm_nsm *nsm)
 {
-	(void) clnt_tli_kinit(nsm->ns_handle, &nsm->ns_knc, &nsm->ns_addr, 0,
+	(void) clnt_tli_kinit(clnt, &nsm->ns_knc, &nsm->ns_addr, 0,
 	    NLM_RPC_RETRIES, kcred);
+}
+
+static void
+nlm_netbuf_to_netobj(struct netbuf *addr, int *family, netobj *obj)
+{
+	/* LINTED pointer alignment */
+	struct sockaddr *sa = (struct sockaddr *)addr->buf;
+
+	*family = sa->sa_family;
+
+	switch (sa->sa_family) {
+	case AF_INET: {
+		/* LINTED pointer alignment */
+		struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+
+		obj->n_len = sizeof (sin->sin_addr);
+		obj->n_bytes = (char *)&sin->sin_addr;
+		break;
+	}
+
+	case AF_INET6: {
+		/* LINTED pointer alignment */
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
+
+		obj->n_len = sizeof (sin6->sin6_addr);
+		obj->n_bytes = (char *)&sin6->sin6_addr;
+		break;
+	}
+
+	default:
+		VERIFY(0);
+		break;
+	}
 }

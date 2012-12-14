@@ -22,6 +22,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2012 by Delphix. All rights reserved.
+#
 # uts/common/rpcsvc/Makefile
 #	This makefile installs system header files that go into
 #	/usr/include/rpcsvc.
@@ -49,6 +51,7 @@ RPCGENFLAGS = -C
 idmap_prot.h :=	RPCGENFLAGS += -MN
 nlm_prot.h :=	RPCGENFLAGS += -M
 sm_inter.h :=	RPCGENFLAGS += -M
+nsm_addr.h :=	RPCGENFLAGS += -M
 
 $(ROOTDIRS)/%: %
 	$(INS.file)

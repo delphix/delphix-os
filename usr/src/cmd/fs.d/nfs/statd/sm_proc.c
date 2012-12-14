@@ -58,6 +58,8 @@
 #include <netdir.h>
 #include <synch.h>
 #include <thread.h>
+#include <ifaddrs.h>
+#include <errno.h>
 #include <assert.h>
 #include "sm_statd.h"
 
@@ -770,9 +772,10 @@ statd_call_lockd(monp, state)
 	tottimeout.tv_sec = SM_RPC_TIMEOUT;
 	tottimeout.tv_usec = 0;
 
-	if ((clnt = create_client(my_idp->my_name, my_idp->my_prog,
-	            my_idp->my_vers, &tottimeout)) == (CLIENT *) NULL) {
-			return (-1);
+	clnt = create_client(my_idp->my_name, my_idp->my_prog, my_idp->my_vers,
+	    "ticotsord", &tottimeout);
+	if (clnt == NULL) {
+		return (-1);
 	}
 
 	clnt_stat = clnt_call(clnt, my_idp->my_proc,
@@ -798,21 +801,35 @@ statd_call_lockd(monp, state)
  * Client handle created.
  */
 CLIENT *
-create_client(host, prognum, versnum, utimeout)
-	char	*host;
-	int	prognum;
-	int	versnum;
-	struct timeval	*utimeout;
+create_client(char *host, int prognum, int versnum, char *netid,
+    struct timeval *utimeout)
 {
 	int		fd;
 	struct timeval	timeout;
 	CLIENT		*client;
 	struct t_info	tinfo;
 
-	if ((client = clnt_create_timed(host, prognum, versnum,
-			"netpath", utimeout)) == NULL) {
+	if (netid == NULL) {
+		client = clnt_create_timed(host, prognum, versnum,
+		    "netpath", utimeout);
+	} else {
+		struct netconfig *nconf;
+
+		nconf = getnetconfigent(netid);
+		if (nconf == NULL) {
+			return (NULL);
+		}
+
+		client = clnt_tp_create_timed(host, prognum, versnum, nconf,
+		    utimeout);
+
+		freenetconfigent(nconf);
+	}
+
+	if (client == NULL) {
 		return (NULL);
 	}
+
 	(void) CLNT_CONTROL(client, CLGET_FD, (caddr_t)&fd);
 	if (t_getinfo(fd, &tinfo) != -1) {
 		if (tinfo.servtype == T_CLTS) {
@@ -937,7 +954,12 @@ ipv6_addr, abuf, sizeof (abuf)), addr->family);
  * easy to do.  Other schemes are possible and this routine
  * could be converted if required.
  *
- * If it can't find an address for some reason, 0 is returned.
+ * In order to prevent this function from failing when the server
+ * can't resolve the client host name we first try a simple
+ * string compare of the two hosts.  If the string compare fails
+ * we fall back to resolving the hosts to their universal network
+ * identifiers.  If it can't find an address for some reason, 0
+ * is returned.
  */
 static int
 hostname_eq(char *host1, char *host2)
@@ -945,6 +967,10 @@ hostname_eq(char *host1, char *host2)
 	char *sysid1;
 	char *sysid2;
 	int rv;
+
+	/* First try a simple string compare. */
+	if (host1 != NULL && host2 != NULL && strcasecmp(host1, host2) == 0)
+		return (1);
 
 	sysid1 = get_system_id(host1);
 	sysid2 = get_system_id(host2);
@@ -1288,4 +1314,73 @@ str_cmp_address_specifier(char *specifier1, char *specifier2)
 		}
 	}
 	return (1);
+}
+
+/*
+ * Add IP address strings to the host_name list.
+ */
+void
+merge_ips(void)
+{
+	struct ifaddrs *ifap, *cifap;
+	int error;
+
+	error = getifaddrs(&ifap);
+	if (error) {
+		syslog(LOG_WARNING, "getifaddrs error: '%s'",
+		       strerror(errno));
+		return;
+	}
+
+	for (cifap = ifap; cifap != NULL; cifap = cifap->ifa_next) {
+		struct sockaddr *sa = cifap->ifa_addr;
+		char addr_str[INET6_ADDRSTRLEN];
+		void *addr = NULL;
+
+		switch (sa->sa_family) {
+		case AF_INET: {
+			struct sockaddr_in *sin = (struct sockaddr_in *)sa;
+
+			/* Skip loopback addresses. */
+			if (sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
+				continue;
+			}
+
+			addr = &sin->sin_addr;
+			break;
+		}
+
+		case AF_INET6: {
+			struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
+
+			/* Skip loopback addresses. */
+			if (IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) {
+				continue;
+			}
+
+			addr = &sin6->sin6_addr;
+			break;
+		}
+
+		default:
+			syslog(LOG_WARNING, "Unknown address family %d for "
+			    "interface %s", sa->sa_family, cifap->ifa_name);
+			continue;
+		}
+
+		if (inet_ntop(sa->sa_family, addr, addr_str, sizeof (addr_str))
+		    == NULL) {
+			syslog(LOG_WARNING, "Failed to convert address into "
+			    "string representation for interface '%s' "
+			    "address family %d", cifap->ifa_name,
+			    sa->sa_family);
+			continue;
+		}
+
+		if (!in_host_array(addr_str)) {
+			add_to_host_array(addr_str);
+		}
+	}
+
+	freeifaddrs(ifap);
 }

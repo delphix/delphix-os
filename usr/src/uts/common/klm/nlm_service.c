@@ -193,7 +193,7 @@ nlm_fh_to_vhold(struct nlm_host *hostp, struct netobj *fh)
  * According to NSM protocol description, the state is a
  * number that is increases monotonically each time the
  * state of host changes. An even number indicates that
- * the host is doen, while an odd number indicates that
+ * the host is down, while an odd number indicates that
  * the host is up.
  *
  * Here we ignore this even/odd difference of status number
@@ -209,7 +209,7 @@ nlm_fh_to_vhold(struct nlm_host *hostp, struct netobj *fh)
  */
 /* ARGSUSED */
 void
-nlm_do_notify2(nlm_sm_status *argp, void *res, struct svc_req *sr)
+nlm_do_notify1(nlm_sm_status *argp, void *res, struct svc_req *sr)
 {
 	struct nlm_globals *g;
 	struct nlm_host *host;
@@ -236,8 +236,9 @@ nlm_do_notify2(nlm_sm_status *argp, void *res, struct svc_req *sr)
  */
 /* ARGSUSED */
 void
-nlm_do_notify1(nlm_sm_status *argp, void *res, struct svc_req *sr)
+nlm_do_notify2(nlm_sm_status *argp, void *res, struct svc_req *sr)
 {
+	ASSERT(0);
 }
 
 
