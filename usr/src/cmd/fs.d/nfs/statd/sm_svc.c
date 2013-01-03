@@ -36,6 +36,10 @@
  * contributors.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #include <stdio.h>
 #include <stdio_ext.h>
 #include <stdlib.h>
@@ -586,6 +590,9 @@ main(int argc, char *argv[])
 
 	/* Get other aliases from each interface. */
 	merge_hosts();
+
+	/* Get all of the configured IP addresses. */
+	merge_ips();
 
 	/*
 	 * Set to automatic mode such that threads are automatically

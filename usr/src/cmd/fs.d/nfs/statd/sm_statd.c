@@ -40,6 +40,10 @@
  * contributors.
  */
 
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
+
 #pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 /*
@@ -585,8 +589,8 @@ statd_call_statd(name)
 	tottimeout.tv_sec = SM_RPC_TIMEOUT;
 	tottimeout.tv_usec = 0;
 
-	if ((clnt = create_client(name_or_addr, SM_PROG, SM_VERS,
-	    &tottimeout)) == (CLIENT *) NULL) {
+	if ((clnt = create_client(name_or_addr, SM_PROG, SM_VERS, NULL,
+	    &tottimeout)) == NULL) {
 		return (-1);
 	}
 
