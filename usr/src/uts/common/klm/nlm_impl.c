@@ -1810,7 +1810,7 @@ nlm_host_monitor(struct nlm_globals *g, struct nlm_host *host, int state)
 	 */
 	nlm_netbuf_to_netobj(&host->nh_addr, &family, &obj);
 	stat = nlm_nsmaddr_reg(&g->nlm_nsm, host->nh_name, family, &obj);
-	if (state != RPC_SUCCESS) {
+	if (stat != RPC_SUCCESS) {
 		NLM_WARN("Failed to register address, stat=%d\n", stat);
 		mutex_enter(&g->lock);
 		host->nh_flags &= ~NLM_NH_MONITORED;
