@@ -21,9 +21,14 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include "includes.h"
@@ -615,7 +620,6 @@ getpwnamallow(const char *user)
 	return (NULL);
 }
 
-
 /*
  * The fatal_cleanup method to kill the hook. Since hook has been put into
  * new process group all descendants will be killed as well.
@@ -625,10 +629,10 @@ kill_hook(void *arg)
 {
 	pid_t pid;
 
-        pid = *(pid_t*)arg;
+	pid = *(pid_t *)arg;
 	debug("killing hook and all it's children, process group: %ld", pid);
 	xfree(arg);
-	(void)killpg(pid, SIGTERM);
+	(void) killpg(pid, SIGTERM);
 }
 
 /*
@@ -637,16 +641,20 @@ kill_hook(void *arg)
  * successful.
  */
 int
-run_auth_hook(const char *path, const char *user, const char *method)
+run_auth_hook(const char *path, const char *user, const char *method,
+    char **result)
 {
 	struct stat st;
 	int i, status, ret = 1;
-	u_int envsize, argsize;
+	uint_t envsize, argsize;
 	char buf[256];
 	char **env, **args;
-        pid_t pid, *ppid;
+	pid_t pid, *ppid;
+	int fd[2];
+	char username[256];
+	ssize_t len, total;
 
-	if (path == NULL || user == NULL || method == NULL) {
+	if (path == NULL || user == NULL || method == NULL || result == NULL) {
 		return (-1);
 	}
 
@@ -682,7 +690,7 @@ run_auth_hook(const char *path, const char *user, const char *method)
 
 	/* check if script does exist */
 	if (stat(path, &st) < 0) {
-		log("Error executing PreUserauthHook \"%s\": %s", path,
+		log("Error executing PreUserauthHook \"%s\": stat: %s", path,
 		    strerror(errno));
 		goto cleanup;
 	}
@@ -691,27 +699,51 @@ run_auth_hook(const char *path, const char *user, const char *method)
 	if (st.st_uid != getuid() || ((st.st_mode & 0777) != 0500)) {
 		log("PreUserauthHook has invalid permissions (should be 500, is"
 		    " %o) or ownership (should be %d, is %d)",
-		(uint) st.st_mode & 0777, getuid(), st.st_uid);
+		    (uint_t)st.st_mode & 0777, getuid(), st.st_uid);
+		goto cleanup;
+	}
+
+	/* Create the pipe with which we will communicate with the child. */
+	if (pipe(fd) != 0) {
+		log("Error executing PreUserauthHook \"%s\": pipe: %s", path,
+		    strerror(errno));
 		goto cleanup;
 	}
 
 	if ((pid = fork()) == 0) {
-		/* 
+		/*
 		 * We put the hook and all its (possible) descendants into
 		 * a new process group so that in case of a hanging hook
 		 * we can wipe out the whole "family".
 		 */
-            	if (setpgid(0, 0) != 0) {
-			log("setpgid: %s", strerror(errno));
+		if (setpgid(0, 0) != 0) {
+			log("Error executing PreUserauthHook \"%s\": "
+			    "setpgid: %s", path, strerror(errno));
 			_exit(255);
-                }
+		}
+
+		/* Set up the file descriptors in the child. */
+		if (dup2(fd[1], STDOUT_FILENO) == -1) {
+			log("Error executing PreUserauthHook \"%s\": dup2: %s",
+			    path, strerror(errno));
+			_exit(255);
+		}
+
+		/*
+		 * Now that stdout is set up correctly, we don't care about
+		 * these file descriptors.
+		 */
+		(void) close(fd[0]);
+		(void) close(fd[1]);
+
 		(void) execve(path, args, env);
+
 		/* child is gone so we shouldn't get here */
-		log("Error executing PreUserauthHook \"%s\": %s", path,
+		log("Error executing PreUserauthHook \"%s\": execve: %s", path,
 		    strerror(errno));
 		_exit(255);
 	} else if (pid == -1) {
-		log("Error executing PreUserauthHook \"%s\": %s", path,
+		log("Error executing PreUserauthHook \"%s\": fork: %s", path,
 		    strerror(errno));
 		goto cleanup;
 	}
@@ -719,23 +751,52 @@ run_auth_hook(const char *path, const char *user, const char *method)
 	/* make preparations to kill hook if it is hanging */
 	ppid = xmalloc(sizeof (pid_t));
 	*ppid = pid;
-	fatal_add_cleanup((void (*)(void *))kill_hook, (void *) ppid);
+	fatal_add_cleanup((void (*)(void *))kill_hook, (void *)ppid);
 
+	/*
+	 * We don't care about this side of the pipe because only the child
+	 * uses it.
+	 */
+	(void) close(fd[1]);
+
+	/* Read the data from the child. */
+	total = 0;
+	while ((len = read(fd[0], &username[total],
+	    sizeof (username) - total - 1)) > 0) {
+		total += len;
+	}
+	if (len < 0) {
+		log("Error executing PreUserauthHook \"%s\": read: %s",
+		    path, strerror(errno));
+	}
+	username[total] = '\0';
+
+	(void) close(fd[0]);
+
+	/* Wait for the child to terminate. */
 	if (waitpid(pid, &status, 0) == -1) {
-		log("Error executing PreUserauthHook \"%s\": %s", path,
-		    strerror(errno));
+		log("Error executing PreUserauthHook \"%s\": waitpid: %s",
+		    path, strerror(errno));
 		goto cleanup;
 	}
 
 	ret = WEXITSTATUS(status);
 
 	if (ret == 255) {
-		ret = -1; /* execve() failed, error msg already logged */
+		ret = -1; /* error msg already logged */
 	} else if (ret != 0) {
 		log("PreUserauthHook \"%s\" failed with exit code %d",
 		    path, ret);
 	} else {
 		debug("PreUserauthHook \"%s\" finished successfully", path);
+	}
+
+	if (ret == 0 && strlen(username) > 0) {
+		*result = xstrdup(username);
+		debug("PreUserauthHook \"%s\" rewrote username to \"%s\"",
+		    path, username);
+	} else {
+		*result = NULL;
 	}
 
 cleanup:

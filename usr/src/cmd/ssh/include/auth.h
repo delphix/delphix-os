@@ -32,9 +32,14 @@ extern "C" {
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include "key.h"
@@ -89,6 +94,7 @@ struct Authctxt {
 	char		*v1_auth_name;
 	Authmethod	*method;
 	char		*user;
+	char		*orig_user;
 	char		*service;
 	struct passwd	*pw;
 	char		*style;
@@ -282,7 +288,7 @@ int	skey_respond(void *, u_int, char **);
 
 struct passwd * getpwnamallow(const char *user);
 
-int	run_auth_hook(const char *, const char *, const char *);
+int	run_auth_hook(const char *, const char *, const char *, char **);
 
 char	*get_challenge(Authctxt *);
 int	verify_response(Authctxt *, const char *);

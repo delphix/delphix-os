@@ -21,8 +21,13 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
+ */
+
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include "includes.h"
@@ -157,15 +162,17 @@ input_userauth_request(int type, u_int32_t seq, void *ctxt)
 	Authctxt *authctxt = ctxt;
 	Authmethod *m = NULL;
 	char *user, *service, *method, *style = NULL;
+	char *orig_user;
+	char *new_user = NULL;
 	int valid_attempt;
 
 	if (authctxt == NULL)
 		fatal("input_userauth_request: no authctxt");
 
-	user = packet_get_string(NULL);
+	orig_user = packet_get_string(NULL);
 	service = packet_get_string(NULL);
 	method = packet_get_string(NULL);
-	debug("userauth-request for user %s service %s method %s", user,
+	debug("userauth-request for user %s service %s method %s", orig_user,
 		service, method);
 	debug("attempt %d initial attempt %d failures %d initial failures %d",
 		authctxt->attempt, authctxt->init_attempt,
@@ -173,7 +180,7 @@ input_userauth_request(int type, u_int32_t seq, void *ctxt)
 
 	m = authmethod_lookup(method);
 
-	if ((style = strchr(user, ':')) != NULL)
+	if ((style = strchr(orig_user, ':')) != NULL)
 		*style++ = 0;
 
 	authctxt->attempt++;
@@ -181,11 +188,13 @@ input_userauth_request(int type, u_int32_t seq, void *ctxt)
 		authctxt->init_attempt++;
 
 	if (options.pre_userauth_hook != NULL &&
-	    run_auth_hook(options.pre_userauth_hook, user, m->name) != 0) {
+	    run_auth_hook(options.pre_userauth_hook, orig_user, m->name, &new_user) != 0) {
 		valid_attempt = 0;
 	} else {
 		valid_attempt = 1;
 	}
+
+	user = new_user != NULL ? new_user : orig_user;
 
 	if (authctxt->attempt == 1) {
 		/* setup auth context */
@@ -202,6 +211,7 @@ input_userauth_request(int type, u_int32_t seq, void *ctxt)
 		}
 		setproctitle("%s", authctxt->pw ? user : "unknown");
 		authctxt->user = xstrdup(user);
+		authctxt->orig_user = xstrdup(orig_user);
 		authctxt->service = xstrdup(service);
 		authctxt->style = style ? xstrdup(style) : NULL;
 		userauth_reset_methods();
@@ -267,7 +277,9 @@ input_userauth_request(int type, u_int32_t seq, void *ctxt)
 
 done:
 	xfree(service);
-	xfree(user);
+	if (new_user != NULL)
+		xfree(new_user);
+	xfree(orig_user);
 	xfree(method);
 }
 

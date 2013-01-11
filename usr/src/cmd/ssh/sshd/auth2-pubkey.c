@@ -21,9 +21,14 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include "includes.h"
@@ -135,7 +140,7 @@ userauth_pubkey(Authctxt *authctxt)
 		}
 		/* reconstruct packet */
 		buffer_put_char(&b, SSH2_MSG_USERAUTH_REQUEST);
-		buffer_put_cstring(&b, authctxt->user);
+		buffer_put_cstring(&b, authctxt->orig_user);
 		buffer_put_cstring(&b,
 		    datafellows & SSH_BUG_PKSERVICE ?
 		    "ssh-userauth" :
