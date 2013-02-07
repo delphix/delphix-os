@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -42,7 +42,7 @@
  * of i/os pending to each device (before it starts ramping up to
  * max_pending).
  */
-int zfs_vdev_max_pending = 10;
+int zfs_vdev_max_pending = 24;
 int zfs_vdev_min_pending = 4;
 
 /*

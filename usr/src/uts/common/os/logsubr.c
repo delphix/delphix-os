@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -249,7 +249,7 @@ log_init(void)
 	 */
 	printf("\rDelphixOS Release %s Version %s %u-bit\n",
 	    utsname.release, utsname.version, NBBY * (uint_t)sizeof (void *));
-	printf("Copyright (c) 2012 by Delphix. All rights reserved.\n");
+	printf("Copyright (c) 2013 by Delphix. All rights reserved.\n");
 #ifdef DEBUG
 	printf("DEBUG enabled\n");
 #endif
