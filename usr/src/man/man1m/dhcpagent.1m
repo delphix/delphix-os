@@ -1,5 +1,6 @@
 '\" te
 .\"  Copyright (c) 1992-1996 Competitive Automation, Inc. Copyright (c) 2009 Sun Microsystems, Inc. All Rights Reserved.
+.\" Copyright (c) 2013 by Delphix. All rights reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License"). You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\" See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE. If applicable, add the following below this CDDL HEADER, with the
 .\" fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
@@ -9,14 +10,17 @@ dhcpagent \- Dynamic Host Configuration Protocol (DHCP) client daemon
 .SH SYNOPSIS
 .LP
 .nf
-\fBdhcpagent\fR [\fB-a\fR] [ \fB-d\fR \fIn\fR] [\fB-f\fR] [\fB-v\fR]
+\fBdhcpagent\fR [ \fB-d\fR \fIn\fR] [\fB-f\fR] [\fB-v\fR]
 .fi
 
 .SH DESCRIPTION
 .sp
 .LP
 \fBdhcpagent\fR implements the client half of the Dynamic Host Configuration
-Protocol \fB(DHCP)\fR for machines running Solaris software.
+Protocol \fB(DHCP)\fR for machines running Solaris software.  It is managed
+by the svc:/network/dhcp-client:default SMF service.  This service is enabled
+by default, and must be enabled for \fBipadm\fR(1M), \fBifconfig\fR(1M), and
+\fBin.ndpd\fR(1M) to configure DHCP addresses.
 .sp
 .LP
 The \fBdhcpagent\fR daemon obtains configuration parameters for the client
@@ -29,29 +33,18 @@ it must negotiate an extension using \fBDHCP\fR. For this reason,
 powers down.
 .sp
 .LP
-For IPv4, the \fBdhcpagent\fR daemon is controlled through \fBifconfig\fR(1M)
-in much the same way that the \fBinit\fR(1M) daemon is controlled by
-\fBtelinit\fR(1M). \fBdhcpagent\fR can be invoked as a user process, albeit one
-requiring root privileges, but this is not necessary, as \fBifconfig\fR(1M)
-will start it automatically.
-.sp
-.LP
-For IPv6, the \fBdhcpagent\fR daemon is invoked automatically by
-\fBin.ndpd\fR(1M). It can also be controlled through \fBifconfig\fR(1M), if
-necessary.
-.sp
-.LP
 When invoked, \fBdhcpagent\fR enters a passive state while it awaits
-instructions from \fBifconfig\fR(1M) or \fBin.ndpd\fR(1M). When it receives a
-command to configure an interface, it brings up the interface (if necessary)
-and starts DHCP. Once DHCP is complete, \fBdhcpagent\fR can be queried for the
-values of the various network parameters. In addition, if DHCP was used to
-obtain a lease on an address for an interface, it configures the address for
-use. When a lease is obtained, it is automatically renewed as necessary. If the
-lease cannot be renewed, \fBdhcpagent\fR will unconfigure the address, but the
-interface will be left up and \fBdhcpagent\fR will attempt to acquire a new
-address lease. \fBdhcpagent\fR monitors system suspend/resume events and will
-validate any non-permanent leases with the DHCP server upon resume. Similarly,
+instructions from \fBipadm\fR(1M), \fBifconfig\fR(1M), or \fBin.ndpd\fR(1M).
+When it receives a command to configure an interface, it brings up the
+interface (if necessary) and starts DHCP. Once DHCP is complete,
+\fBdhcpagent\fR can be queried for the values of the various network
+parameters. In addition, if DHCP was used to obtain a lease on an address for
+an interface, it configures the address for use. When a lease is obtained, it
+is automatically renewed as necessary. If the lease cannot be renewed,
+\fBdhcpagent\fR will unconfigure the address, but the interface will be left up
+and \fBdhcpagent\fR will attempt to acquire a new address lease.
+\fBdhcpagent\fR monitors system suspend/resume events and will validate any
+non-permanent leases with the DHCP server upon resume. Similarly,
 \fBdhcpagent\fR monitors link up/down events and will validate any
 non-permanent leases with the DHCP server when the downed link is brought back
 up. The lease validation mechanism will restart DHCP if the server indicates
@@ -59,6 +52,30 @@ that the existing lease is no longer valid. If the server cannot be contacted,
 then the existing lease will continue. This behavior can be modified with the
 \fBVERIFIED_LEASE_ONLY\fR parameter in the \fB/etc/default/dhcpagent\fR file.
 See the description of this parameter below.
+.sp
+.LP
+In the case of a diskless DHCP client, DHCP has already been performed on the
+network interface providing the operating system image prior to running
+\fBdhcpagent\fR, and \fBdhcpagent\fR will automatically adopt this interface.
+The client id used in this case is specified in
+\fB/chosen\fR:\fI<client_id>\fR, as published by the PROM or as specified on a
+\fBboot\fR(1M) command line. If this value is not present, the client id is
+undefined. The DHCP server then determines what to use as a client id. It is an
+error condition if the interface is an Infiniband interface and the PROM value
+is not present.
+.sp
+.LP
+If an interface is not adopted, the client id is obtained from
+\fB/etc/default/dhcpagent\fR. If this value is not present, the client id is
+undefined. If the interface is Infiniband and there is no value in
+\fB/etc/default/dhcpagent\fR, a client id is generated as described by the
+draft document on DHCP over Infiniband, available at:
+.sp
+.in +2
+.nf
+http://www.ietf.org
+.fi
+.in -2
 .sp
 .LP
 For IPv4, if the configured interface is found to be unplumbed, or to have a
@@ -110,7 +127,7 @@ takes place:
 .sp
 .in +2
 .nf
-# pkill dhcpagent
+# svcadm disable -t svc:/network/dhcp-client
 # rm /etc/dhcp/\fIinterface\fR.dhc
 # reboot
 .fi
@@ -351,46 +368,6 @@ See EXAMPLES for an example event program.
 .sp
 .LP
 The following options are supported:
-.sp
-.ne 2
-.na
-\fB\fB-a\fR\fR
-.ad
-.sp .6
-.RS 4n
-Adopt a configured IPv4 interface. This option is for use with diskless
-\fBDHCP\fR clients. In the case of diskless \fBDHCP\fR, \fBDHCP\fR has already
-been performed on the network interface providing the operating system image
-prior to running \fBdhcpagent\fR. This option instructs the agent to take over
-control of the interface. It is intended primarily for use in boot scripts.
-.sp
-The effect of this option depends on whether the interface is being adopted.
-.sp
-If the interface is being adopted, the following conditions apply:
-.sp
-\fBdhcpagent\fR uses the client id specified in
-\fB/chosen\fR:\fI<client_id>\fR, as published by the PROM or as specified on a
-\fBboot\fR(1M) command line. If this value is not present, the client id is
-undefined. The DHCP server then determines what to use as a client id. It is an
-error condition if the interface is an Infiniband interface and the PROM value
-is not present.
-.sp
-If the interface is not being adopted:
-.sp
-\fBdhcpagent\fR uses the value stored in \fB/etc/default/dhcpagent\fR. If this
-value is not present, the client id is undefined. If the interface is
-Infiniband and there is no value in \fB/etc/default/dhcpagent\fR, a client id
-is generated as described by the draft document on DHCP over Infiniband,
-available at:
-.sp
-.in +2
-.nf
-http://www.ietf.org
-.fi
-.in -2
-
-.RE
-
 .sp
 .ne 2
 .na
@@ -717,7 +694,8 @@ Interface Stability	Committed
 .sp
 .LP
 \fBdhcpinfo\fR(1), \fBifconfig\fR(1M), \fBinit\fR(1M), \fBin.mpathd\fR(1M),
-\fBin.ndpd\fR(1M), \fBsyslog\fR(3C), \fBattributes\fR(5), \fBdhcp\fR(5)
+\fBin.ndpd\fR(1M), \fBipadm\fR(1M), \fBsyslog\fR(3C), \fBattributes\fR(5),
+\fBdhcp\fR(5)
 .sp
 .LP
 \fI\fR

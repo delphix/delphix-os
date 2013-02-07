@@ -22,11 +22,12 @@
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #ifndef	AGENT_H
 #define	AGENT_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <sys/types.h>
 #include <libinetutil.h>
@@ -45,12 +46,9 @@ extern "C" {
 #endif
 
 /*
- * global variables: `tq' and `eh' represent the global timer queue
- * and event handler, as described in the README. `class_id' is our
- * vendor class id set early on in main().  `inactivity_id' is the
- * timer id of the global inactivity timer, which shuts down the agent
- * if there are no state machines to manage for DHCP_INACTIVITY_WAIT
- * seconds. `grandparent' is the pid of the original process when in
+ * global variables: `tq' and `eh' represent the global timer queue and event
+ * handler, as described in the README. `class_id' is our vendor class id set
+ * early on in main(). `grandparent' is the pid of the original process when in
  * adopt mode.  `rtsock_fd' is the global routing socket file descriptor.
  */
 
@@ -58,7 +56,6 @@ extern iu_tq_t		*tq;
 extern iu_eh_t		*eh;
 extern char		*class_id;
 extern int		class_id_len;
-extern iu_timer_id_t	inactivity_id;
 extern pid_t		grandparent;
 extern int		rtsock_fd;
 
@@ -102,9 +99,6 @@ boolean_t	check_cmd_allowed(DHCPSTATE, dhcp_ipc_type_t);
 /* I: if lease is not being extended, seconds left before alerting user */
 #define	DHCP_LEASE_ERROR_THRESH	(60*60)	/* one hour */
 
-/* I: how many seconds before bailing out if there's no work to do */
-#define	DHCP_INACTIVITY_WAIT	(60*3)		/* three minutes */
-
 /* I: the maximum amount of seconds we use an adopted lease */
 #define	DHCP_ADOPT_LEASE_MAX	(60*60)		/* one hour */
 
@@ -142,7 +136,7 @@ boolean_t	check_cmd_allowed(DHCPSTATE, dhcp_ipc_type_t);
 /*
  * reasons for why iu_handle_events() returned
  */
-enum { DHCP_REASON_INACTIVITY, DHCP_REASON_SIGNAL, DHCP_REASON_TERMINATE };
+enum { DHCP_REASON_SIGNAL, DHCP_REASON_TERMINATE };
 
 #ifdef	__cplusplus
 }

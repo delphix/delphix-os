@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 /*
@@ -2852,8 +2852,6 @@ i_ipadm_create_dhcp(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	ipadm_status_t	status;
 	ipadm_status_t	dh_status;
 
-	if (dhcp_start_agent(DHCP_IPC_MAX_WAIT) == -1)
-		return (IPADM_DHCP_START_ERROR);
 	/*
 	 * Create a new logical interface if needed; otherwise, just
 	 * use the 0th logical interface.
@@ -3353,9 +3351,6 @@ ipadm_refresh_addr(ipadm_handle_t iph, const char *aobjname,
 		if (status != IPADM_SUCCESS)
 			return (status);
 		if (inform) {
-			if (dhcp_start_agent(DHCP_IPC_MAX_WAIT) == -1)
-				return (IPADM_DHCP_START_ERROR);
-
 			ipaddr.ipadm_wait = IPADM_DHCP_WAIT_DEFAULT;
 			return (i_ipadm_op_dhcp(&ipaddr, DHCP_INFORM, NULL));
 		}

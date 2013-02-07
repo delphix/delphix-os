@@ -22,16 +22,16 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #include <sys/types.h>
 #include <sys/ctfs.h>
-#include <sys/contract/process.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <fcntl.h>
-#include <libcontract.h>
-#include <libcontract_priv.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,112 +81,6 @@ dhcp_state_to_string(DHCPSTATE state)
 		return ("<unknown>");
 
 	return (states[state]);
-}
-
-static int
-init_template(void)
-{
-	int fd;
-	int err = 0;
-
-	fd = open64(CTFS_ROOT "/process/template", O_RDWR);
-	if (fd == -1)
-		return (-1);
-
-	/*
-	 * Deliver no events, don't inherit, and allow it to be orphaned.
-	 */
-	err |= ct_tmpl_set_critical(fd, 0);
-	err |= ct_tmpl_set_informative(fd, 0);
-	err |= ct_pr_tmpl_set_fatal(fd, CT_PR_EV_HWERR);
-	err |= ct_pr_tmpl_set_param(fd, CT_PR_PGRPONLY | CT_PR_REGENT);
-	if (err != 0 || ct_tmpl_activate(fd) != 0) {
-		(void) close(fd);
-		return (-1);
-	}
-
-	return (fd);
-}
-
-/*
- * dhcp_start_agent(): starts the agent if not already running
- *
- *   input: int: number of seconds to wait for agent to start (-1 is forever)
- *  output: int: 0 on success, -1 on failure
- */
-
-int
-dhcp_start_agent(int timeout)
-{
-	int			error;
-	time_t			start_time = time(NULL);
-	dhcp_ipc_request_t	*request;
-	dhcp_ipc_reply_t	*reply;
-	int			ctfd;
-	pid_t			childpid;
-	ctid_t			ct;
-
-	/*
-	 * just send a dummy request to the agent to find out if it's
-	 * up.  we do this instead of directly connecting to it since
-	 * we want to make sure we follow its IPC conventions
-	 * (otherwise, it will log warnings to syslog).
-	 */
-
-	request = dhcp_ipc_alloc_request(DHCP_PING, "", NULL, 0,
-	    DHCP_TYPE_NONE);
-	if (request == NULL)
-		return (-1);
-
-	error = dhcp_ipc_make_request(request, &reply, 0);
-	if (error == 0) {
-		free(reply);
-		free(request);
-		return (0);
-	}
-	if (error != DHCP_IPC_E_CONNECT)
-		goto fail;
-
-	if ((ctfd = init_template()) == -1)
-		goto fail;
-
-	childpid = fork();
-
-	(void) ct_tmpl_clear(ctfd);
-	(void) close(ctfd);
-
-	switch (childpid) {
-	case -1:
-		goto fail;
-
-	case  0:
-		(void) execl(DHCP_AGENT_PATH, DHCP_AGENT_PATH, (char *)0);
-		_exit(EXIT_FAILURE);
-
-	default:
-		break;
-	}
-
-	/* wait for the daemon to run and then abandon the contract */
-	(void) waitpid(childpid, NULL, 0);
-
-	if (contract_latest(&ct) != -1)
-		(void) contract_abandon_id(ct);
-
-	while ((timeout != -1) && (time(NULL) - start_time < timeout)) {
-		error = dhcp_ipc_make_request(request, &reply, 0);
-		if (error == 0) {
-			free(reply);
-			free(request);
-			return (0);
-		} else if (error != DHCP_IPC_E_CONNECT)
-			break;
-		(void) sleep(1);
-	}
-
-fail:
-	free(request);
-	return (-1);
 }
 
 /*

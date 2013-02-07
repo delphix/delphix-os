@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  *
  * This module contains core functions for managing DHCP state machine
  * instances.
@@ -45,8 +46,6 @@
 #include "interface.h"
 #include "defaults.h"
 #include "script_handler.h"
-
-static uint_t global_smach_count;
 
 static uchar_t *global_duid;
 static size_t global_duidlen;
@@ -274,17 +273,8 @@ insert_smach(dhcp_lif_t *lif, int *error)
 		}
 	}
 
-	/*
-	 * We now have at least one state machine running, so cancel any
-	 * running inactivity timer.
-	 */
-	if (inactivity_id != -1 &&
-	    iu_cancel_timer(tq, inactivity_id, NULL) == 1)
-		inactivity_id = -1;
-
 	dsmp->dsm_dflags &= ~DHCP_IF_REMOVED;
 	insque(dsmp, &lif->lif_smachs);
-	global_smach_count++;
 	dhcpmsg(MSG_DEBUG2, "insert_smach: inserted %s", dsmp->dsm_name);
 
 	return (dsmp);
@@ -333,12 +323,6 @@ free_smach(dhcp_smach_t *dsmp)
 	free(dsmp->dsm_routers);
 	free(dsmp->dsm_reqhost);
 	free(dsmp);
-
-	/* no big deal if this fails */
-	if (global_smach_count == 0 && inactivity_id == -1) {
-		inactivity_id = iu_schedule_timer(tq, DHCP_INACTIVITY_WAIT,
-		    inactivity_shutdown, NULL);
-	}
 }
 
 /*
@@ -714,7 +698,6 @@ remove_smach(dhcp_smach_t *dsmp)
 	dhcpmsg(MSG_DEBUG2, "remove_smach: removing %s", dsmp->dsm_name);
 	dsmp->dsm_dflags |= DHCP_IF_REMOVED;
 	remque(dsmp);
-	global_smach_count--;
 
 	/*
 	 * if we have long term timers, cancel them so that state machine
@@ -1129,19 +1112,6 @@ alloc_failure:
 	dhcpmsg(MSG_ERR, "get_smach_cid: cannot allocate Client Id for %s",
 	    dsmp->dsm_name);
 	return (DHCP_IPC_E_MEMORY);
-}
-
-/*
- * smach_count(): returns the number of state machines running
- *
- *   input: void
- *  output: uint_t: the number of state machines
- */
-
-uint_t
-smach_count(void)
-{
-	return (global_smach_count);
 }
 
 /*

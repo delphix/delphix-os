@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #include <string.h>
 #include <unistd.h>
@@ -560,7 +563,6 @@ dhcp_ipc_strerror(int error)
 	case DHCP_IPC_E_CLOSE:			/* FALLTHRU */
 	case DHCP_IPC_E_BIND:			/* FALLTHRU */
 	case DHCP_IPC_E_LISTEN:			/* FALLTHRU */
-	case DHCP_IPC_E_CONNECT:		/* FALLTHRU */
 	case DHCP_IPC_E_WRITEV:			/* FALLTHRU */
 	case DHCP_IPC_E_POLL:
 
@@ -572,6 +574,10 @@ dhcp_ipc_strerror(int error)
 		    syscalls[error], error_string);
 
 		error_string = buffer;
+		break;
+
+	case DHCP_IPC_E_CONNECT:
+		error_string = "svc:/network/dhcp-client:default is disabled";
 		break;
 
 	case DHCP_IPC_E_MEMORY:
@@ -856,13 +862,6 @@ dhcp_ipc_getinfo(dhcp_optnum_t *optnum, DHCP_OPT **result, int32_t timeout)
 
 	if (timeout == DHCP_IPC_WAIT_DEFAULT)
 		timeout = DHCP_IPC_DEFAULT_WAIT;
-
-	/*
-	 * wait at most 5 seconds for the agent to start.
-	 */
-
-	if (dhcp_start_agent((timeout > 5 || timeout < 0) ? 5 : timeout) == -1)
-		return (DHCP_IPC_E_INT);
 
 	/*
 	 * check the primary interface for the option value first.

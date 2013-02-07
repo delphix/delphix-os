@@ -22,6 +22,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2013 by Delphix. All rights reserved.
+#
 
 LIBRARY	=	libdhcpagent.a
 VERS =		.1
@@ -34,12 +36,12 @@ include ../../Makefile.rootfs
 
 LIBS =		$(DYNLIB) $(LINTLIB)
 
-LDLIBS +=	-lc -lsocket -ldhcputil -luuid -ldlpi -lcontract
+LDLIBS +=	-lc -lsocket -ldhcputil -luuid -ldlpi
 
 SRCDIR =	../common
 $(LINTLIB) :=	SRCS = $(SRCDIR)/$(LINTSRC)
 
-CFLAGS += 	$(CCVERBOSE) 
+CFLAGS +=	$(CCVERBOSE)
 CERRWARN +=	-_gcc=-Wno-type-limits
 
 .KEEP_STATE:

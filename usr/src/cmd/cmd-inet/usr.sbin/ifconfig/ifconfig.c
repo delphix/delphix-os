@@ -1,9 +1,7 @@
 /*
- * Copyright 2012, Daniil Lunev. All rights reserved.
- */
-/*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2012, Daniil Lunev. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 /*
  * Copyright (c) 1983 Regents of the University of California.
@@ -4326,7 +4324,6 @@ setifdhcp(const char *caller, const char *ifname, int argc, char *argv[])
 	dhcp_ipc_type_t		type	= DHCP_START;
 	int			error;
 	boolean_t		is_primary = _B_FALSE;
-	boolean_t		started = _B_FALSE;
 	int32_t			ipadm_wait;
 
 	for (argv++; --argc > 0; argv++) {
@@ -4386,19 +4383,6 @@ setifdhcp(const char *caller, const char *ifname, int argc, char *argv[])
 		return (DHCP_EXIT_SUCCESS);
 	}
 
-	/*
-	 * Only try to start agent on inform; in all other cases it has to
-	 * already be running for anything to make sense.
-	 */
-	if (type == DHCP_INFORM) {
-		if (dhcp_start_agent(DHCP_IPC_MAX_WAIT) == -1) {
-			(void) fprintf(stderr, "%s: unable to start %s\n",
-			    caller, DHCP_AGENT_PATH);
-			return (DHCP_EXIT_FAILURE);
-		}
-		started = _B_TRUE;
-	}
-
 	if (is_primary)
 		type |= DHCP_PRIMARY;
 
@@ -4414,15 +4398,6 @@ setifdhcp(const char *caller, const char *ifname, int argc, char *argv[])
 	error = dhcp_ipc_make_request(request, &reply, timeout);
 	if (error != 0) {
 		free(request);
-		/*
-		 * Re-map connect error to not under control if we didn't try a
-		 * start operation, as this has to be true and results in a
-		 * clearer message, not to mention preserving compatibility
-		 * with the days when we always started dhcpagent for every
-		 * request.
-		 */
-		if (error == DHCP_IPC_E_CONNECT && !started)
-			error = DHCP_IPC_E_UNKIF;
 		(void) fprintf(stderr, "%s: %s: %s\n", caller, ifname,
 		    dhcp_ipc_strerror(error));
 		return (DHCP_EXIT_FAILURE);

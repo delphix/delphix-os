@@ -20,7 +20,7 @@ CDDL HEADER END
 Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 Use is subject to license terms.
 
-ident	"%Z%%M%	%I%	%E% SMI"
+Copyright (c) 2013 by Delphix. All rights reserved.
 
 
 **  PLEASE NOTE:
@@ -733,29 +733,8 @@ Router Advertisements
     - they provide a list of the valid prefixes on an interface.
 
   For the first function, in.ndpd needs to use the same DHCP control
-  interfaces that ifconfig uses, so that it can launch dhcpagent and
-  trigger DHCPv6 when necessary.  Note that it never needs to shut
-  down DHCPv6, as router advertisements can't do that.
-
-  However, launching dhcpagent presents new problems.  As a part of
-  the "Quagga SMF Modifications" project (PSARC 2006/552), in.ndpd in
-  Nevada is now privilege-aware and runs with limited privileges,
-  courtesy of SMF.  Dhcpagent, on the other hand, must run with all
-  privileges.
-
-  A simple work-around for this issue is to rip out the "privileges="
-  clause from the method_credential for in.ndpd.  I've taken this
-  direction initially, but the right longer-term answer seems to be
-  converting dhcpagent into an SMF service.  This is quite a bit more
-  complex, as it means turning the /sbin/dhcpagent command line
-  interface into a utility that manipulates the service and passes the
-  command line options via IPC extensions.
-
-  Such a design also begs the question of whether dhcpagent itself
-  ought to run with reduced privileges.  It could, but it still needs
-  the ability to grant "all" (traditional UNIX root) privileges to the
-  eventhook script, if present.  There seem to be few ways to do this,
-  though it's a good area for research.
+  interfaces that ifconfig uses iso that it can trigger DHCPv6 when
+  necessary.
 
   The second function, prefix handling, is also subtle.  Unlike IPv4
   DHCP, DHCPv6 does not give the netmask or prefix length along with

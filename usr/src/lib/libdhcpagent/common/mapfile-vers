@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2013 by Delphix. All rights reserved.
 #
 
 #
@@ -52,7 +53,6 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	dhcp_ipc_send_reply;
 	dhcp_ipc_strerror;
 	dhcp_ipc_type_to_string;
-	dhcp_start_agent;
 	dhcp_state_to_string;
 	dhcp_status_hdr_string;
 	dhcp_status_reply_to_string;

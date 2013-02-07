@@ -22,10 +22,13 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2013 by Delphix. All rights reserved.
+#
 
 PROG    = dhcpagent
 ROOTFS_PROG = $(PROG)
 DEFAULTFILES = dhcpagent.dfl
+MANIFEST = dhcp-client.xml
 
 OBJS =	adopt.o agent.o async.o bound.o class_id.o defaults.o inform.o \
 	init_reboot.o interface.o ipc_action.o packet.o release.o renew.o \
@@ -33,6 +36,7 @@ OBJS =	adopt.o agent.o async.o bound.o class_id.o defaults.o inform.o \
 
 include ../../../Makefile.cmd
 
+ROOTMANIFESTDIR = $(ROOTSVCNETWORK)
 SRCS    = $(OBJS:%.o=%.c)
 POFILES = $(OBJS:%.o=%.po)
 XGETFLAGS += -a -x dhcpagent.xcl
@@ -54,7 +58,7 @@ LINTFLAGS += -erroff=E_INCONS_ARG_DECL2 -erroff=E_INCONS_VAL_TYPE_DECL2
 
 all:		$(ROOTFS_PROG)
 
-install:	all $(ROOTSBINPROG) $(ROOTETCDEFAULTFILES)
+install:	all $(ROOTSBINPROG) $(ROOTETCDEFAULTFILES) $(ROOTMANIFEST)
 
 $(PROG):	$(OBJS)
 		$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
@@ -65,6 +69,8 @@ $(POFILE):	$(POFILES)
 
 clean:
 		$(RM) $(OBJS)
+
+check:		$(CHKMANIFEST)
 
 lint:		lint_SRCS
 

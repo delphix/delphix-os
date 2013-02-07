@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #ifndef	UTIL_H
@@ -56,7 +57,6 @@ monosec_t	hrtime_to_monosec(hrtime_t);
 
 /* shutdown handlers */
 void		graceful_shutdown(int);
-void		inactivity_shutdown(iu_tq_t *, void *);
 
 /* timer functions */
 void		init_timer(dhcp_timer_t *, lease_t);

@@ -21,13 +21,19 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- *
+ */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
+
+/*
  * ADOPTING state of the client state machine.  This is used only during
  * diskless boot with IPv4.
  */
 
 #include <sys/types.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -41,19 +47,13 @@
 #include <libdevinfo.h>
 
 #include "agent.h"
+#include "adopt.h"
 #include "async.h"
 #include "util.h"
 #include "packet.h"
 #include "interface.h"
 #include "states.h"
 
-
-typedef struct {
-	char		dk_if_name[IFNAMSIZ];
-	char		dk_ack[1];
-} dhcp_kcache_t;
-
-static int	get_dhcp_kcache(dhcp_kcache_t **, size_t *);
 
 static boolean_t	get_prom_prop(const char *, const char *, uchar_t **,
 			    uint_t *);
@@ -66,23 +66,13 @@ static boolean_t	get_prom_prop(const char *, const char *, uchar_t **,
  */
 
 boolean_t
-dhcp_adopt(void)
+dhcp_adopt(dhcp_kcache_t *kcache)
 {
 	int		retval;
-	dhcp_kcache_t	*kcache = NULL;
-	size_t		kcache_size;
 	PKT_LIST	*plp = NULL;
 	dhcp_lif_t	*lif;
 	dhcp_smach_t	*dsmp = NULL;
 	uint_t		client_id_len;
-
-	retval = get_dhcp_kcache(&kcache, &kcache_size);
-	if (retval == 0 || kcache_size < sizeof (dhcp_kcache_t)) {
-		dhcpmsg(MSG_CRIT, "dhcp_adopt: cannot fetch kernel cache");
-		goto failure;
-	}
-
-	dhcpmsg(MSG_DEBUG, "dhcp_adopt: fetched %s kcache", kcache->dk_if_name);
 
 	/*
 	 * convert the kernel's ACK into binary
@@ -227,29 +217,31 @@ dhcp_adopt_complete(dhcp_smach_t *dsmp)
 
 /*
  * get_dhcp_kcache(): fetches the DHCP ACK and interface name from the kernel
- *
- *   input: dhcp_kcache_t **: a dynamically-allocated cache packet
- *	    size_t *: the length of that packet (on return)
- *  output: int: nonzero on success, zero on failure
  */
-
-static int
-get_dhcp_kcache(dhcp_kcache_t **kernel_cachep, size_t *kcache_size)
+dhcp_kcache_t *
+get_dhcp_kcache(void)
 {
-	char	dummy;
-	long	size;
+	dhcp_kcache_t	*kcache;
+	char		dummy;
+	long		size;
 
-	size = sysinfo(SI_DHCP_CACHE, &dummy, sizeof (dummy));
-	if (size == -1)
-		return (0);
+	if ((size = sysinfo(SI_DHCP_CACHE, &dummy, sizeof (dummy))) <= 0)
+		return (NULL);
+	if (size < sizeof (dhcp_kcache_t)) {
+		dhcpmsg(MSG_ERROR,
+		    "get_dhcp_kcache: cannot fetch kernel cache");
+		return (NULL);
+	}
 
-	*kcache_size   = size;
-	*kernel_cachep = malloc(*kcache_size);
-	if (*kernel_cachep == NULL)
-		return (0);
+	if ((kcache = malloc(size)) == NULL) {
+		dhcpmsg(MSG_ERROR, "get_dhcp_kcache: %s", strerror(errno));
+		return (NULL);
+	}
 
-	(void) sysinfo(SI_DHCP_CACHE, (caddr_t)*kernel_cachep, size);
-	return (1);
+	(void) sysinfo(SI_DHCP_CACHE, (char *)kcache, size);
+	dhcpmsg(MSG_DEBUG, "get_dhcp_kcache: fetched %s kcache",
+	    kcache->dk_if_name);
+	return (kcache);
 }
 
 /*

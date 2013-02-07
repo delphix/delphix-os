@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -46,6 +47,7 @@
 
 #include "async.h"
 #include "agent.h"
+#include "adopt.h"
 #include "script_handler.h"
 #include "util.h"
 #include "class_id.h"
@@ -58,7 +60,6 @@
 #define	TEXT_DOMAIN	"SYS_TEST"
 #endif
 
-iu_timer_id_t		inactivity_id;
 int			class_id_len = 0;
 char			*class_id;
 iu_eh_t			*eh;
@@ -134,6 +135,7 @@ main(int argc, char **argv)
 	int		c;
 	int		aware = RTAW_UNDER_IPMP;
 	struct rlimit	rl;
+	dhcp_kcache_t	*kcache;
 
 	debug_level = df_get_int("", B_FALSE, DF_DEBUG_LEVEL);
 	is_verbose = df_get_bool("", B_FALSE, DF_VERBOSE);
@@ -148,7 +150,6 @@ main(int argc, char **argv)
 
 		case 'a':
 			do_adopt = B_TRUE;
-			grandparent = getpid();
 			break;
 
 		case 'd':
@@ -235,16 +236,6 @@ main(int argc, char **argv)
 		    "with no vendor class id");
 
 	/*
-	 * the inactivity timer is enabled any time there are no
-	 * interfaces under DHCP control.  if DHCP_INACTIVITY_WAIT
-	 * seconds transpire without an interface under DHCP control,
-	 * the agent shuts down.
-	 */
-
-	inactivity_id = iu_schedule_timer(tq, DHCP_INACTIVITY_WAIT,
-	    inactivity_shutdown, NULL);
-
-	/*
 	 * max out the number available descriptors, just in case..
 	 */
 
@@ -318,12 +309,17 @@ main(int argc, char **argv)
 	}
 
 	/*
-	 * if the -a (adopt) option was specified, try to adopt the
-	 * kernel-managed interface before we start.
+	 * The -a (adopt) option is obsolete (we automatically adopt an
+	 * existing cached lease), but if it was specified and there is no
+	 * cached DHCP lease in the kernel, then we fail as before.
 	 */
-
-	if (do_adopt && !dhcp_adopt())
+	if ((kcache = get_dhcp_kcache()) != NULL) {
+		grandparent = getpid();
+		if (!dhcp_adopt(kcache))
+			return (EXIT_FAILURE);
+	} else if (do_adopt) {
 		return (EXIT_FAILURE);
+	}
 
 	/*
 	 * For DHCPv6, we own all of the interfaces marked DHCPRUNNING.  As
@@ -345,10 +341,6 @@ main(int argc, char **argv)
 
 	case -1:
 		dhcpmsg(MSG_WARNING, "iu_handle_events exited abnormally");
-		break;
-
-	case DHCP_REASON_INACTIVITY:
-		dhcpmsg(MSG_INFO, "no interfaces to manage, shutting down...");
 		break;
 
 	case DHCP_REASON_TERMINATE:

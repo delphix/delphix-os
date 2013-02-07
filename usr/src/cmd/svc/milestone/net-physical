@@ -22,11 +22,10 @@
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2012 Milan Jurik. All rights reserved.
+# Copyright (c) 2013 by Delphix. All rights reserved.
 #
 # Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T.
 # All rights reserved.
-#
-# Copyright (c) 2012 by Delphix. All rights reserved.
 #
 
 . /lib/svc/share/smf_include.sh
@@ -41,14 +40,6 @@
 smf_configure_ip || exit $SMF_EXIT_OK
 
 smf_netstrategy
-
-#
-# If the system was net booted by DHCP, hand DHCP management off to the
-# DHCP agent.
-#
-if [ -n "$_INIT_NET_IF" -a "$_INIT_NET_STRATEGY" = "dhcp" ]; then
-	/sbin/dhcpagent -a
-fi
 
 #
 # The network initialization is done early to support diskless and

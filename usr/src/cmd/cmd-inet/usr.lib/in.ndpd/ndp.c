@@ -23,6 +23,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #include "defs.h"
 #include "tables.h"
@@ -352,14 +355,7 @@ start_dhcp(struct phyint *pi)
 	int	error;
 	int	type;
 
-	if (dhcp_start_agent(DHCP_IPC_MAX_WAIT) == -1) {
-		logmsg(LOG_ERR, "unable to start %s\n", DHCP_AGENT_PATH);
-		/* make sure we try again next time there's a chance */
-		pi->pi_ra_flags &= ~ND_RA_FLAG_MANAGED & ~ND_RA_FLAG_OTHER;
-		return;
-	}
-
-	else if (pi->pi_ra_flags & ND_RA_FLAG_MANAGED)
+	if (pi->pi_ra_flags & ND_RA_FLAG_MANAGED)
 		type = DHCP_START;
 	else
 		type = DHCP_INFORM;

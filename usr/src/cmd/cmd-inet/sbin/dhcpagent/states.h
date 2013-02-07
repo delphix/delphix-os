@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #ifndef	STATES_H
 #define	STATES_H
@@ -36,6 +39,7 @@
 #include "async.h"
 #include "packet.h"
 #include "util.h"
+#include "adopt.h"
 
 /*
  * interfaces for state transition/action functions.  these functions
@@ -261,7 +265,7 @@ iu_eh_callback_t	dhcp_acknak_global;
 iu_eh_callback_t	dhcp_packet_lif;
 
 /* Common state-machine related routines throughout dhcpagent */
-boolean_t	dhcp_adopt(void);
+boolean_t	dhcp_adopt(dhcp_kcache_t *);
 void		dhcp_adopt_complete(dhcp_smach_t *);
 boolean_t	dhcp_bound(dhcp_smach_t *, PKT_LIST *);
 void		dhcp_bound_complete(dhcp_smach_t *);

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <unistd.h>
@@ -375,27 +376,6 @@ del_default_route(uint32_t ifindex, struct in_addr *gateway_nbo)
 		return (B_TRUE);
 
 	return (update_default_route(ifindex, RTM_DELETE, gateway_nbo, 0));
-}
-
-/*
- * inactivity_shutdown(): shuts down agent if there are no state machines left
- *			  to manage
- *
- *   input: iu_tq_t *: unused
- *	    void *: unused
- *  output: void
- */
-
-/* ARGSUSED */
-void
-inactivity_shutdown(iu_tq_t *tqp, void *arg)
-{
-	if (smach_count() > 0)	/* shouldn't happen, but... */
-		return;
-
-	dhcpmsg(MSG_VERBOSE, "inactivity_shutdown: timed out");
-
-	iu_stop_handling_events(eh, DHCP_REASON_INACTIVITY, NULL, NULL);
 }
 
 /*

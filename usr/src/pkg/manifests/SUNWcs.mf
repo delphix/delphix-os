@@ -22,7 +22,7 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2012 Nexenta Systems, Inc. All rights reserved.
-# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2013 by Delphix. All rights reserved.
 # Copyright (c) 2012, Joyent, Inc. All rights reserved.
 # Copyright (c) 2012, OmniTI Computer Consulting, Inc. All rights reserved.
 #
@@ -500,6 +500,7 @@ file path=lib/svc/manifest/milestone/name-services.xml group=sys mode=0444
 file path=lib/svc/manifest/milestone/network.xml group=sys mode=0444
 file path=lib/svc/manifest/milestone/single-user.xml group=sys mode=0444
 file path=lib/svc/manifest/milestone/sysconfig.xml group=sys mode=0444
+file path=lib/svc/manifest/network/dhcp-client.xml group=sys mode=0444
 file path=lib/svc/manifest/network/dlmgmt.xml group=sys mode=0444
 file path=lib/svc/manifest/network/dns/client.xml group=sys mode=0444
 file path=lib/svc/manifest/network/dns/install.xml group=sys mode=0444
