@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
 
@@ -1879,12 +1879,16 @@ dsl_dataset_destroy_sync(void *arg1, void *tag, dmu_tx_t *tx)
 			zil_destroy_sync(dmu_objset_zil(os), tx);
 
 			if (!spa_feature_is_active(dp->dp_spa, async_destroy)) {
+				dsl_scan_t *scn = dp->dp_scan;
+
 				spa_feature_incr(dp->dp_spa, async_destroy, tx);
 				dp->dp_bptree_obj = bptree_alloc(mos, tx);
 				VERIFY(zap_add(mos,
 				    DMU_POOL_DIRECTORY_OBJECT,
 				    DMU_POOL_BPTREE_OBJ, sizeof (uint64_t), 1,
 				    &dp->dp_bptree_obj, tx) == 0);
+				ASSERT(!scn->scn_async_destroying);
+				scn->scn_async_destroying = B_TRUE;
 			}
 
 			used = ds->ds_dir->dd_phys->dd_used_bytes;
