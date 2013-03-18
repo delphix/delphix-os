@@ -1750,6 +1750,7 @@ nlm_host_release(struct nlm_globals *g, struct nlm_host *hostp)
 	hostp->nh_idle_timeout = ddi_get_lbolt() +
 	    SEC_TO_TICK(g->cn_idle_tmo);
 
+	ASSERT((hostp->nh_flags & NLM_NH_INIDLE) == 0);
 	TAILQ_INSERT_TAIL(&g->nlm_idle_hosts, hostp, nh_link);
 	hostp->nh_flags |= NLM_NH_INIDLE;
 	mutex_exit(&g->lock);

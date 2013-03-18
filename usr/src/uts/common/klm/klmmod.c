@@ -88,6 +88,7 @@ lm_zone_init(zoneid_t zoneid)
 	mutex_init(&g->lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&g->nlm_gc_sched_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&g->nlm_gc_finish_cv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&g->clean_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	g->lockd_pid = 0;
 	g->run_status = NLM_ST_DOWN;
@@ -110,6 +111,7 @@ lm_zone_fini(zoneid_t zoneid, void *data)
 	mutex_destroy(&g->lock);
 	cv_destroy(&g->nlm_gc_sched_cv);
 	cv_destroy(&g->nlm_gc_finish_cv);
+	mutex_destroy(&g->clean_lock);
 
 	nlm_globals_unregister(g);
 	kmem_free(g, sizeof (*g));
