@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 /*
@@ -4067,8 +4068,11 @@ scf_transaction_commit(scf_transaction_t *tran)
 	}
 
 	request_size = REP_PROTOCOL_TRANSACTION_COMMIT_SIZE(total);
-	request = alloca(request_size);
-	(void) memset(request, '\0', request_size);
+	request = uu_zalloc(request_size);
+	if (request == NULL) {
+		(void) pthread_mutex_unlock(&h->rh_lock);
+		return (scf_set_error(SCF_ERROR_NO_MEMORY));
+	}
 	request->rpr_request = REP_PROTOCOL_PROPERTYGRP_TX_COMMIT;
 	request->rpr_entityid = tran->tran_pg.rd_d.rd_entity;
 	request->rpr_size = request_size;
@@ -4082,6 +4086,7 @@ scf_transaction_commit(scf_transaction_t *tran)
 		size = commit_process(cur, (void *)cmd);
 		if (size == BAD_SIZE) {
 			(void) pthread_mutex_unlock(&h->rh_lock);
+			uu_free(request);
 			return (scf_set_error(SCF_ERROR_INTERNAL));
 		}
 		cmd += size;
@@ -4094,17 +4099,20 @@ scf_transaction_commit(scf_transaction_t *tran)
 
 	if (r < 0) {
 		(void) pthread_mutex_unlock(&h->rh_lock);
+		uu_free(request);
 		DOOR_ERRORS_BLOCK(r);
 	}
 
 	if (response.rpr_response != REP_PROTOCOL_SUCCESS &&
 	    response.rpr_response != REP_PROTOCOL_FAIL_NOT_LATEST) {
 		(void) pthread_mutex_unlock(&h->rh_lock);
+		uu_free(request);
 		return (scf_set_error(proto_error(response.rpr_response)));
 	}
 
 	tran->tran_state = TRAN_STATE_COMMITTED;
 	(void) pthread_mutex_unlock(&h->rh_lock);
+	uu_free(request);
 	return (response.rpr_response == REP_PROTOCOL_SUCCESS);
 }
 
