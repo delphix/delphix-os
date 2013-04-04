@@ -66,7 +66,7 @@ static ndmp_handler_t *ndmp_get_interface(ndmp_message message);
 static ndmp_handler_t *
 ndmp_get_interface(ndmp_message message)
 {
-	int class = (message >> 8);
+	uint_t class = (message >> 8);
 	ndmp_handler_t *ni;
 
 	if (class >= INT_MAXCLASS)
@@ -93,7 +93,7 @@ static ndmp_msg_handler_t *
 ndmp_get_handler(ndmp_session_t *session, ndmp_message message,
     ndmp_header_message_type type, boolean_t isreq, const char **messagestr)
 {
-	int class = (message >> 8);
+	uint_t class = (message >> 8);
 	ndmp_msg_handler_t *handler = NULL;
 	int ver = session->ns_version;
 	ndmp_handler_t *ni;
