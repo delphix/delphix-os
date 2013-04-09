@@ -30,7 +30,7 @@
 
 /*
  * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 /*
@@ -433,6 +433,7 @@ typedef enum {
  * grace_period: a value of grace period (in seconds) obtained from lockd
  * retrans_tmo: a value of retransmission timeout (in seconds) obtained
  *              from lockd.
+ * clean_lock: mutex used to serialize clear_locks calls.
  * nlm_link: a list node used for keeping all nlm_globals objects
  *           in one global linked list.
  */
@@ -453,6 +454,7 @@ struct nlm_globals {
 	int				cn_idle_tmo;		/* (z) */
 	int				grace_period;		/* (z) */
 	int				retrans_tmo;		/* (z) */
+	kmutex_t			clean_lock;		/* (c) */
 	TAILQ_ENTRY(nlm_globals)	nlm_link;		/* (g) */
 };
 TAILQ_HEAD(nlm_globals_list, nlm_globals);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 by Delphix. All rights reserved.
+ * Copyright 2013 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2008 Isilon Inc http://www.isilon.com/
  * Authors: Doug Rabson <dfr@rabson.org>
@@ -918,28 +918,56 @@ void
 nlm_do_free_all(nlm4_notify *argp, void *res, struct svc_req *sr)
 {
 	struct nlm_globals *g;
-	struct nlm_host *host;
-	struct netbuf *addr;
-	char *netid;
+	struct nlm_host_list host_list;
+	struct nlm_host *hostp;
 
-	netid = svc_getnetid(sr->rq_xprt);
-	addr = svc_getrpccaller(sr->rq_xprt);
-
+	TAILQ_INIT(&host_list);
 	g = zone_getspecific(nlm_zone_key, curzone);
-	host = nlm_host_find(g, netid, addr);
-	if (host == NULL) {
-		/* nothing to do */
-		return;
-	}
+
+	/* Serialize calls to clean locks. */
+	mutex_enter(&g->clean_lock);
 
 	/*
-	 * Note that this does not do client-side cleanup.
-	 * We want to do that ONLY if statd tells us the
-	 * server has restarted.
+	 * Find all hosts that have the given node name and put them on a
+	 * local list.
 	 */
-	nlm_host_notify_server(host, argp->state);
-	nlm_host_release(g, host);
+	mutex_enter(&g->lock);
+	for (hostp = avl_first(&g->nlm_hosts_tree); hostp != NULL;
+	    hostp = AVL_NEXT(&g->nlm_hosts_tree, hostp)) {
+		if (strcasecmp(hostp->nh_name, argp->name) == 0) {
+			/*
+			 * If needed take the host out of the idle list since
+			 * we are taking a reference.
+			 */
+			if (hostp->nh_flags & NLM_NH_INIDLE) {
+				TAILQ_REMOVE(&g->nlm_idle_hosts, hostp, nh_link);
+				hostp->nh_flags &= ~NLM_NH_INIDLE;
+			}
+			hostp->nh_refs++;
+
+			TAILQ_INSERT_TAIL(&host_list, hostp, nh_link);
+		}
+	}
+	mutex_exit(&g->lock);
+
+	/* Free locks for all hosts on the local list. */
+	while (!TAILQ_EMPTY(&host_list)) {
+		hostp = TAILQ_FIRST(&host_list);
+		TAILQ_REMOVE(&host_list, hostp, nh_link);
+
+		/*
+		 * Note that this does not do client-side cleanup.
+		 * We want to do that ONLY if statd tells us the
+		 * server has restarted.
+		 */
+		nlm_host_notify_server(hostp, argp->state);
+		nlm_host_release(g, hostp);
+	}
+
+	mutex_exit(&g->clean_lock);
+
 	(void) res;
+	(void) sr;
 }
 
 static void
