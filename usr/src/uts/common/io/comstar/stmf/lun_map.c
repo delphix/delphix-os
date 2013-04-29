@@ -21,6 +21,9 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #include <sys/conf.h>
 #include <sys/file.h>
@@ -261,6 +264,8 @@ stmf_session_destroy_lun_map(stmf_i_local_port_t *ilport,
 			if ((ent = (stmf_lun_map_ent_t *)sm->lm_plus[n])
 			    != NULL) {
 				if (ent->ent_itl_datap) {
+					stmf_iitl_kstat_unlink(
+					    ent->ent_itl_datap->itl_iitl_kstat);
 					stmf_do_itl_dereg(ent->ent_lu,
 					    ent->ent_itl_datap,
 					    STMF_ITL_REASON_IT_NEXUS_LOSS);
@@ -460,6 +465,8 @@ stmf_remove_lu_from_session(stmf_i_local_port_t *ilport,
 	atomic_add_32(&ilu->ilu_ref_cnt, -1);
 	iss->iss_flags |= ISS_LUN_INVENTORY_CHANGED;
 	if (lun_map_ent->ent_itl_datap) {
+		stmf_iitl_kstat_unlink(
+		    lun_map_ent->ent_itl_datap->itl_iitl_kstat);
 		stmf_do_itl_dereg(lu, lun_map_ent->ent_itl_datap,
 		    STMF_ITL_REASON_USER_REQUEST);
 	}

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 #ifndef _STMF_IMPL_H
 #define	_STMF_IMPL_H
@@ -170,6 +171,7 @@ typedef struct stmf_i_itl_kstat {
 	char			iitl_kstat_guid[STMF_GUID_INPUT + 1];
 	char			*iitl_kstat_strbuf;
 	int			iitl_kstat_strbuflen;
+	uint32_t		iitl_kstat_refcnt;
 	kstat_t			*iitl_kstat_info;
 	kstat_t			*iitl_kstat_taskq;
 	kstat_t			*iitl_kstat_lu_xfer;
@@ -324,13 +326,8 @@ typedef struct stmf_itl_data {
 	uint32_t			itl_counter;
 	uint8_t				itl_flags;
 	uint8_t				itl_hdlrm_reason;
-	uint16_t			itl_lun;
-	char				*itl_kstat_strbuf;
-	int				itl_kstat_strbuflen;
-	kstat_t				*itl_kstat_info;
-	kstat_t				*itl_kstat_taskq;
-	kstat_t				*itl_kstat_lu_xfer;
-	kstat_t				*itl_kstat_lport_xfer;
+	uint16_t                        itl_lun;
+	stmf_i_itl_kstat_t              *itl_iitl_kstat;
 	void				*itl_handle;
 	struct stmf_i_lu		*itl_ilu;
 	struct stmf_i_scsi_session	*itl_session;
@@ -408,6 +405,7 @@ void stmf_generate_lu_event(stmf_i_lu_t *ilu, int eventid,
 				void *arg, uint32_t flags);
 void stmf_generate_lport_event(stmf_i_local_port_t *ilport, int eventid,
 						void *arg, uint32_t flags);
+void stmf_iitl_kstat_unlink(stmf_i_itl_kstat_t *ks);
 
 #ifdef	__cplusplus
 }
