@@ -98,6 +98,7 @@ typedef struct stmf_i_lu {
 	kstat_t		*ilu_kstat_info;
 	kstat_t		*ilu_kstat_io;
 	kmutex_t	ilu_kstat_lock;
+	kcondvar_t      ilu_offline_pending_cv;
 
 	/* point to the luid entry in stmf_state.stmf_luid_list */
 	void		*ilu_luid;
@@ -164,20 +165,6 @@ typedef struct stmf_i_remote_port {
 	id_t			irport_instance;
 	avl_node_t		irport_ln;
 } stmf_i_remote_port_t;
-
-typedef struct stmf_i_itl_kstat {
-	char			iitl_kstat_nm[KSTAT_STRLEN];
-	char			iitl_kstat_lport[STMF_TGT_NAME_LEN];
-	char			iitl_kstat_guid[STMF_GUID_INPUT + 1];
-	char			*iitl_kstat_strbuf;
-	int			iitl_kstat_strbuflen;
-	uint32_t		iitl_kstat_refcnt;
-	kstat_t			*iitl_kstat_info;
-	kstat_t			*iitl_kstat_taskq;
-	kstat_t			*iitl_kstat_lu_xfer;
-	kstat_t			*iitl_kstat_lport_xfer;
-	avl_node_t		iitl_kstat_ln;
-} stmf_i_itl_kstat_t;
 
 /*
  * ilport flags
@@ -327,7 +314,6 @@ typedef struct stmf_itl_data {
 	uint8_t				itl_flags;
 	uint8_t				itl_hdlrm_reason;
 	uint16_t                        itl_lun;
-	stmf_i_itl_kstat_t              *itl_iitl_kstat;
 	void				*itl_handle;
 	struct stmf_i_lu		*itl_ilu;
 	struct stmf_i_scsi_session	*itl_session;
@@ -405,7 +391,6 @@ void stmf_generate_lu_event(stmf_i_lu_t *ilu, int eventid,
 				void *arg, uint32_t flags);
 void stmf_generate_lport_event(stmf_i_local_port_t *ilport, int eventid,
 						void *arg, uint32_t flags);
-void stmf_iitl_kstat_unlink(stmf_i_itl_kstat_t *ks);
 
 #ifdef	__cplusplus
 }

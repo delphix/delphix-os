@@ -43,7 +43,6 @@ typedef struct stmf_state {
 	id_space_t		*stmf_ilport_inst_space;
 	avl_tree_t		stmf_irportlist;
 	id_space_t		*stmf_irport_inst_space;
-	avl_tree_t		stmf_iitl_kstat_list;
 	int			stmf_nlps;
 	int			stmf_npps;
 	int			stmf_nlus;
