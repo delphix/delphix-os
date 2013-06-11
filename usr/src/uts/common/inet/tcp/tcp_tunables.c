@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, Joyent Inc. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -37,28 +37,22 @@
 /* Max of the above */
 #define	TCP_MSS_MAX		TCP_MSS_MAX_IPV4
 
-#define	TCP_XMIT_LOWATER	4096
-#define	TCP_XMIT_HIWATER	49152
-#define	TCP_RECV_LOWATER	2048
-#define	TCP_RECV_HIWATER	128000
-
 /*
  * Set the RFC 1948 pass phrase
  */
 /* ARGSUSED */
 static int
-tcp_set_1948phrase(void *cbarg,  cred_t *cr, mod_prop_info_t *pinfo,
+tcp_set_1948phrase(netstack_t *stack,  cred_t *cr, mod_prop_info_t *pinfo,
     const char *ifname, const void* pr_val, uint_t flags)
 {
-	tcp_stack_t	*tcps = (tcp_stack_t *)cbarg;
-
 	if (flags & MOD_PROP_DEFAULT)
 		return (ENOTSUP);
 
 	/*
 	 * Basically, value contains a new pass phrase.  Pass it along!
 	 */
-	tcp_iss_key_init((uint8_t *)pr_val, strlen(pr_val), tcps);
+	tcp_iss_key_init((uint8_t *)pr_val, strlen(pr_val),
+	    stack->netstack_tcp);
 	return (0);
 }
 
@@ -67,10 +61,10 @@ tcp_set_1948phrase(void *cbarg,  cred_t *cr, mod_prop_info_t *pinfo,
  */
 /* ARGSUSED */
 static int
-tcp_listener_conf_get(void *cbarg, mod_prop_info_t *pinfo, const char *ifname,
-    void *val, uint_t psize, uint_t flags)
+tcp_listener_conf_get(netstack_t *stack, mod_prop_info_t *pinfo,
+    const char *ifname, void *val, uint_t psize, uint_t flags)
 {
-	tcp_stack_t	*tcps = (tcp_stack_t *)cbarg;
+	tcp_stack_t	*tcps = stack->netstack_tcp;
 	tcp_listener_t	*tl;
 	char		*pval = val;
 	size_t		nbytes = 0, tbytes = 0;
@@ -111,7 +105,7 @@ tcp_listener_conf_get(void *cbarg, mod_prop_info_t *pinfo, const char *ifname,
  */
 /* ARGSUSED */
 static int
-tcp_listener_conf_add(void *cbarg, cred_t *cr, mod_prop_info_t *pinfo,
+tcp_listener_conf_add(netstack_t *stack, cred_t *cr, mod_prop_info_t *pinfo,
     const char *ifname, const void* pval, uint_t flags)
 {
 	tcp_listener_t	*new_tl;
@@ -119,7 +113,7 @@ tcp_listener_conf_add(void *cbarg, cred_t *cr, mod_prop_info_t *pinfo,
 	long		lport;
 	long		ratio;
 	char		*colon;
-	tcp_stack_t	*tcps = (tcp_stack_t *)cbarg;
+	tcp_stack_t	*tcps = stack->netstack_tcp;
 
 	if (flags & MOD_PROP_DEFAULT)
 		return (ENOTSUP);
@@ -160,12 +154,12 @@ tcp_listener_conf_add(void *cbarg, cred_t *cr, mod_prop_info_t *pinfo,
  */
 /* ARGSUSED */
 static int
-tcp_listener_conf_del(void *cbarg, cred_t *cr, mod_prop_info_t *pinfo,
+tcp_listener_conf_del(netstack_t *stack, cred_t *cr, mod_prop_info_t *pinfo,
     const char *ifname, const void* pval, uint_t flags)
 {
 	tcp_listener_t	*tl;
 	long		lport;
-	tcp_stack_t	*tcps = (tcp_stack_t *)cbarg;
+	tcp_stack_t	*tcps = stack->netstack_tcp;
 
 	if (flags & MOD_PROP_DEFAULT)
 		return (ENOTSUP);
@@ -186,6 +180,22 @@ tcp_listener_conf_del(void *cbarg, cred_t *cr, mod_prop_info_t *pinfo,
 	}
 	mutex_exit(&tcps->tcps_listener_conf_lock);
 	return (ESRCH);
+}
+
+static int
+tcp_set_buf_prop(netstack_t *stack, cred_t *cr, mod_prop_info_t *pinfo,
+    const char *ifname, const void *pval, uint_t flags)
+{
+	return (mod_set_buf_prop(stack->netstack_tcp->tcps_propinfo_tbl, stack,
+	    cr, pinfo, ifname, pval, flags));
+}
+
+static int
+tcp_get_buf_prop(netstack_t *stack, mod_prop_info_t *pinfo, const char *ifname,
+    void *val, uint_t psize, uint_t flags)
+{
+	return (mod_get_buf_prop(stack->netstack_tcp->tcps_propinfo_tbl, stack,
+	    pinfo, ifname, val, psize, flags));
 }
 
 /*
@@ -218,7 +228,7 @@ mod_prop_info_t tcp_propinfo_tbl[] = {
 
 	{ "_cwnd_max", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
-	    {128, (1<<30), 1024*1024}, {1024*1024} },
+	    {128, ULP_MAX_BUF, 1024*1024}, {1024*1024} },
 
 	{ "_debug", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
@@ -298,7 +308,7 @@ mod_prop_info_t tcp_propinfo_tbl[] = {
 
 	{ "_snd_lowat_fraction", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
-	    {0, 16, 0}, {0} },
+	    {0, 16, 10}, {10} },
 
 	{ "_dupack_fast_retransmit", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
@@ -317,20 +327,20 @@ mod_prop_info_t tcp_propinfo_tbl[] = {
 	    {1024, ULP_MAX_PORT, ULP_MAX_PORT},
 	    {ULP_MAX_PORT} },
 
-	{ "send_maxbuf", MOD_PROTO_TCP,
-	    mod_set_uint32, mod_get_uint32,
-	    {TCP_XMIT_LOWATER, (1<<30), TCP_XMIT_HIWATER},
+	{ "send_buf", MOD_PROTO_TCP,
+	    tcp_set_buf_prop, tcp_get_buf_prop,
+	    {TCP_XMIT_LOWATER, ULP_MAX_BUF, TCP_XMIT_HIWATER},
 	    {TCP_XMIT_HIWATER} },
 
 	/* tunable - 30 */
 	{ "_xmit_lowat", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
-	    {TCP_XMIT_LOWATER, (1<<30), TCP_XMIT_LOWATER},
+	    {TCP_XMIT_LOWATER, ULP_MAX_BUF, TCP_XMIT_LOWATER},
 	    {TCP_XMIT_LOWATER} },
 
-	{ "recv_maxbuf", MOD_PROTO_TCP,
-	    mod_set_uint32, mod_get_uint32,
-	    {TCP_RECV_LOWATER, (1<<30), TCP_RECV_HIWATER},
+	{ "recv_buf", MOD_PROTO_TCP,
+	    tcp_set_buf_prop, tcp_get_buf_prop,
+	    {TCP_RECV_LOWATER, ULP_MAX_BUF, TCP_RECV_HIWATER},
 	    {TCP_RECV_HIWATER} },
 
 	{ "_recv_hiwat_minmss", MOD_PROTO_TCP,
@@ -342,9 +352,9 @@ mod_prop_info_t tcp_propinfo_tbl[] = {
 	    {1*SECONDS, 2*HOURS, 60*SECONDS},
 	    {60*SECONDS} },
 
-	{ "_max_buf", MOD_PROTO_TCP,
+	{ "max_buf", MOD_PROTO_TCP,
 	    mod_set_uint32, mod_get_uint32,
-	    {8192, (1<<30), 1024*1024}, {1024*1024} },
+	    {8192, ULP_MAX_BUF, 1024*1024}, {1024*1024} },
 
 	/*
 	 * Question:  What default value should I set for tcp_strong_iss?

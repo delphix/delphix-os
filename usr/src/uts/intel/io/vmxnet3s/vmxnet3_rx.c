@@ -14,7 +14,7 @@
  *
  *********************************************************/
 /*
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3_solaris.h>
@@ -104,6 +104,42 @@ vmxnet3_free_rxbuf(vmxnet3_softc_t *dp, vmxnet3_rxbuf_t *rxBuf)
 /*
  *---------------------------------------------------------------------------
  *
+ * vmxnet3_put_rxpool_buf --
+ *
+ *    Return a rxBuf to the pool.
+ *
+ * Results:
+ *    B_TRUE if there was room in the pool and the rxBuf was returned,
+ *    B_FALSE otherwise.
+ *
+ * Side effects:
+ *    None.
+ *
+ *---------------------------------------------------------------------------
+ */
+static boolean_t
+vmxnet3_put_rxpool_buf(vmxnet3_softc_t *dp, vmxnet3_rxbuf_t *rxBuf)
+{
+   vmxnet3_rxpool_t *rxPool = &dp->rxPool;
+   boolean_t returned = B_FALSE;
+
+   mutex_enter(&dp->rxPoolLock);
+   ASSERT(rxPool->nBufs <= rxPool->nBufsLimit);
+   if (dp->devEnabled && rxPool->nBufs < rxPool->nBufsLimit) {
+      ASSERT((rxPool->listHead == NULL && rxPool->nBufs == 0) ||
+         (rxPool->listHead != NULL && rxPool->nBufs != 0));
+      rxBuf->next = rxPool->listHead;
+      rxPool->listHead = rxBuf;
+      rxPool->nBufs++;
+      returned = B_TRUE;
+   }
+   mutex_exit(&dp->rxPoolLock);
+   return returned;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * vmxnet3_put_rxbuf --
  *
  *    Return a rxBuf to the pool or free it.
@@ -120,19 +156,44 @@ static void
 vmxnet3_put_rxbuf(vmxnet3_rxbuf_t *rxBuf)
 {
    vmxnet3_softc_t *dp = rxBuf->dp;
-   vmxnet3_rxpool_t *rxPool = &dp->rxPool;
 
    VMXNET3_DEBUG(dp, 5, "free 0x%p\n", rxBuf);
 
-   mutex_enter(&dp->rxPoolLock);
-   if (dp->devEnabled && rxPool->nBufs < rxPool->nBufsLimit) {
-      rxBuf->next = rxPool->listHead;
-      rxPool->listHead = rxBuf;
-      mutex_exit(&dp->rxPoolLock);
-   } else {
-      mutex_exit(&dp->rxPoolLock);
+   if (!vmxnet3_put_rxpool_buf(dp, rxBuf))
       vmxnet3_free_rxbuf(dp, rxBuf);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * vmxnet3_get_rxpool_buf --
+ *
+ *    Get an unused rxBuf from the pool.
+ *
+ * Results:
+ *    A rxBuf or NULL if there are no buffers in the pool.
+ *
+ * Side effects:
+ *    None.
+ *
+ *---------------------------------------------------------------------------
+ */
+static vmxnet3_rxbuf_t *
+vmxnet3_get_rxpool_buf(vmxnet3_softc_t *dp)
+{
+   vmxnet3_rxpool_t *rxPool = &dp->rxPool;
+   vmxnet3_rxbuf_t *rxBuf = NULL;
+
+   mutex_enter(&dp->rxPoolLock);
+   if (rxPool->listHead) {
+      rxBuf = rxPool->listHead;
+      rxPool->listHead = rxBuf->next;
+      rxPool->nBufs--;
+      ASSERT((rxPool->listHead == NULL && rxPool->nBufs == 0) ||
+         (rxPool->listHead != NULL && rxPool->nBufs != 0));
    }
+   mutex_exit(&dp->rxPoolLock);
+   return rxBuf;
 }
 
 /*
@@ -155,35 +216,24 @@ static vmxnet3_rxbuf_t *
 vmxnet3_get_rxbuf(vmxnet3_softc_t *dp, boolean_t canSleep)
 {
    vmxnet3_rxbuf_t *rxBuf;
-   vmxnet3_rxpool_t *rxPool = &dp->rxPool;
 
-   mutex_enter(&dp->rxPoolLock);
-   if (rxPool->listHead) {
-      rxBuf = rxPool->listHead;
-      rxPool->listHead = rxBuf->next;
-      mutex_exit(&dp->rxPoolLock);
+   if ((rxBuf = vmxnet3_get_rxpool_buf(dp))) {
       VMXNET3_DEBUG(dp, 5, "alloc 0x%p from pool\n", rxBuf);
-   } else {
-      mutex_exit(&dp->rxPoolLock);
-      rxBuf = vmxnet3_alloc_rxbuf(dp, canSleep);
-      if (!rxBuf) {
-         goto done;
-      }
+   } else if ((rxBuf = vmxnet3_alloc_rxbuf(dp, canSleep))) {
       VMXNET3_DEBUG(dp, 5, "alloc 0x%p from mem\n", rxBuf);
    }
 
-   ASSERT(rxBuf);
-
-   rxBuf->mblk = desballoc((uchar_t *) rxBuf->dma.buf,
-                           rxBuf->dma.bufLen, BPRI_MED,
-                           &rxBuf->freeCB);
-   if (!rxBuf->mblk) {
-      vmxnet3_put_rxbuf(rxBuf);
-      atomic_inc_32(&dp->rx_alloc_failed);
-      rxBuf = NULL;
+   if (rxBuf) {
+      rxBuf->mblk = desballoc((uchar_t *) rxBuf->dma.buf,
+                              rxBuf->dma.bufLen, BPRI_MED,
+                              &rxBuf->freeCB);
+      if (!rxBuf->mblk) {
+         vmxnet3_put_rxbuf(rxBuf);
+         atomic_inc_32(&dp->rx_alloc_failed);
+         rxBuf = NULL;
+      }
    }
 
-done:
    return rxBuf;
 }
 
@@ -287,18 +337,14 @@ error:
 void
 vmxnet3_rxqueue_fini(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq)
 {
-   vmxnet3_rxpool_t *rxPool = &dp->rxPool;
    vmxnet3_rxbuf_t *rxBuf;
    unsigned int i;
 
    ASSERT(!dp->devEnabled);
 
    /* First the rxPool */
-   while (rxPool->listHead) {
-      rxBuf = rxPool->listHead;
-      rxPool->listHead = rxBuf->next;
+   while ((rxBuf = vmxnet3_get_rxpool_buf(dp)))
       vmxnet3_free_rxbuf(dp, rxBuf);
-   }
 
    /* Then the ring */
    for (i = 0; i < rxq->cmdRing.size; i++) {
