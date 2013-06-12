@@ -181,7 +181,7 @@ volatile int	stmf_default_task_timeout = 75;
  */
 volatile int	stmf_allow_modunload = 0;
 
-volatile int stmf_max_nworkers = 256;
+volatile int stmf_max_nworkers = 1024;
 volatile int stmf_min_nworkers = 4;
 volatile int stmf_worker_scale_down_delay = 20;
 
