@@ -1753,6 +1753,5 @@ boolean_t
 dmu_objset_is_receiving(objset_t *os)
 {
 	return (os->os_dsl_dataset != NULL &&
-	    strcmp(os->os_dsl_dataset->ds_dir->dd_myname,
-	    recv_clone_name) == 0);
+	    os->os_dsl_dataset->ds_owner == dmu_recv_tag);
 }
