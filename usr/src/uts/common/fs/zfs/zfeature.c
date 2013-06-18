@@ -398,7 +398,7 @@ spa_feature_get_refcount(spa_t *spa, zfeature_info_t *feature)
 	    spa->spa_feat_for_read_obj, spa->spa_feat_for_write_obj,
 	    feature, &refcount);
 	ASSERT(err == 0 || err == ENOTSUP);
-	return (err == 0 ? refcount : -1);
+	return (err == 0 ? refcount : 0);
 }
 
 boolean_t
