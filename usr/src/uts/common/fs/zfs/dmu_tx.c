@@ -1217,6 +1217,10 @@ dmu_tx_unassign(dmu_tx_t *tx)
  *	blocking, returns immediately with ERESTART.  This should be used
  *	whenever you're holding locks.  On an ERESTART error, the caller
  *	should drop locks, do a dmu_tx_wait(tx), and try again.
+ *
+ * (3)  TXG_WAITED.  Like TXG_NOWAIT, but indicates that dmu_tx_wait()
+ *      has already been called on behalf of this operation (though
+ *      most likely on a different tx).
  */
 int
 dmu_tx_assign(dmu_tx_t *tx, txg_how_t txg_how)
@@ -1224,11 +1228,15 @@ dmu_tx_assign(dmu_tx_t *tx, txg_how_t txg_how)
 	int err;
 
 	ASSERT(tx->tx_txg == 0);
-	ASSERT(txg_how == TXG_WAIT || txg_how == TXG_NOWAIT);
+	ASSERT(txg_how == TXG_WAIT || txg_how == TXG_NOWAIT ||
+	    txg_how == TXG_WAITED);
 	ASSERT(!dsl_pool_sync_context(tx->tx_pool));
 
 	/* If we might wait, we must not hold the config lock. */
 	ASSERT(txg_how != TXG_WAIT || !dsl_pool_config_held(tx->tx_pool));
+
+	if (txg_how == TXG_WAITED)
+		tx->tx_waited = B_TRUE;
 
 	while ((err = dmu_tx_try_assign(tx, txg_how)) != 0) {
 		dmu_tx_unassign(tx);
