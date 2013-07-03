@@ -117,7 +117,7 @@
  * the sum of each queue's max_active.  It must be at least the sum of each
  * queue's min_active.
  */
-uint32_t zfs_vdev_max_active = 40;
+uint32_t zfs_vdev_max_active = 1000;
 
 /*
  * Per-queue limits on the number of i/os active to each device.  If the
