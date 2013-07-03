@@ -916,7 +916,7 @@ dmu_tx_dirty_buf(dmu_tx_t *tx, dmu_buf_impl_t *db)
  * and hit zfs_dirty_data_max.
  */
 hrtime_t zfs_delay_max_ns = MSEC2NSEC(100);
-int zfs_delay_resolution_ns = 10 * 1000; /* 10 microseconds */
+int zfs_delay_resolution_ns = 100 * 1000; /* 100 microseconds */
 
 /*
  * We delay transactions when we've determined that the backend storage
