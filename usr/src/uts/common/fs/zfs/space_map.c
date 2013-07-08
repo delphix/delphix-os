@@ -486,8 +486,6 @@ space_map_truncate(space_map_t *sm, dmu_tx_t *tx)
 	dmu_object_info_from_db(sm->sm_dbuf, &doi);
 
 	if (spa_feature_is_enabled(spa, space_map_histogram)) {
-		if (doi.doi_bonus_size == SPACE_MAP_SIZE_V0)
-			spa_feature_incr(spa, space_map_histogram, tx);
 		bonuslen = sizeof (space_map_phys_t);
 		ASSERT3U(bonuslen, <=, dmu_bonus_max());
 	} else {
