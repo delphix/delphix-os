@@ -196,6 +196,26 @@ iscsit_add_declarative_keys(iscsit_conn_t *ict);
 uint64_t max_dataseglen_target = ISCSIT_MAX_RECV_DATA_SEGMENT_LENGTH;
 
 /*
+ * Tunable parameters setting limits on what clients can negotiate.
+ *
+ * IMPORTANT:
+ *
+ * These are all more restrictive (less than) the limits
+ * set in iscsi_protocol.h, and should not be tuned upwards without checking
+ * that there are no technical restrictions on doing so in the code.
+ *
+ * Technically, section 5.2 of RFC3720 allows either the target or the
+ * initiator to propose an operational parameter during negotiation, but a quick
+ * look over the code doesn't seem to reveal that we're trying to do this.  If
+ * we do want to try to propose non-default values in the target, we'd need to
+ * make those tunable too.
+ */
+uint64_t iscsit_max_first_burst_length = ISCSIT_MAX_FIRST_BURST_LENGTH;
+uint64_t iscsit_max_burst_length = ISCSIT_MAX_BURST_LENGTH;
+uint64_t iscsit_max_connections = ISCSIT_MAX_CONNECTIONS;
+uint64_t iscsit_max_outstanding_r2t = ISCSIT_MAX_OUTSTANDING_R2T;
+
+/*
  * global mutex defined in iscsit.c to enforce
  * login_sm_session_bind as a critical section
  */
@@ -2322,9 +2342,9 @@ iscsit_handle_operational_key(iscsit_conn_t *ict, nvpair_t *nvp,
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
 		    ISCSI_MIN_CONNECTIONS,
 		    ISCSI_MAX_CONNECTIONS,
-		    ISCSIT_MAX_CONNECTIONS);
+		    iscsit_max_connections);
 		break;
-		/* this is a declartive param */
+		/* this is a declarative param */
 	case KI_MAX_RECV_DATA_SEGMENT_LENGTH:
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
 		    ISCSI_MIN_RECV_DATA_SEGMENT_LENGTH,
@@ -2335,13 +2355,13 @@ iscsit_handle_operational_key(iscsit_conn_t *ict, nvpair_t *nvp,
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
 		    ISCSI_MIN_MAX_BURST_LENGTH,
 		    ISCSI_MAX_BURST_LENGTH,
-		    ISCSIT_MAX_BURST_LENGTH);
+		    iscsit_max_burst_length);
 		break;
 	case KI_FIRST_BURST_LENGTH:
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
 		    ISCSI_MIN_FIRST_BURST_LENGTH,
 		    ISCSI_MAX_FIRST_BURST_LENGTH,
-		    ISCSIT_MAX_FIRST_BURST_LENGTH);
+		    iscsit_max_first_burst_length);
 		break;
 	case KI_DEFAULT_TIME_2_WAIT:
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
@@ -2359,7 +2379,7 @@ iscsit_handle_operational_key(iscsit_conn_t *ict, nvpair_t *nvp,
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
 		    ISCSI_MIN_MAX_OUTSTANDING_R2T,
 		    ISCSI_MAX_OUTSTANDING_R2T,
-		    ISCSIT_MAX_OUTSTANDING_R2T);
+		    iscsit_max_outstanding_r2t);
 		break;
 	case KI_ERROR_RECOVERY_LEVEL:
 		kvrc = iscsit_handle_numerical(ict, nvp, num_val, ikvx,
