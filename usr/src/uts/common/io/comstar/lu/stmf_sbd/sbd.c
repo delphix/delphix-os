@@ -50,8 +50,6 @@
 #include "stmf_sbd.h"
 #include "sbd_impl.h"
 
-#define	SBD_IS_ZVOL(zvol)	(strncmp("/dev/zvol", zvol, 9))
-
 extern sbd_status_t sbd_pgr_meta_init(sbd_lu_t *sl);
 extern sbd_status_t sbd_pgr_meta_load(sbd_lu_t *sl);
 extern void sbd_pgr_reset(sbd_lu_t *sl);
@@ -96,7 +94,7 @@ sbd_status_t sbd_read_zfs_meta(sbd_lu_t *sl, uint8_t *buf, uint64_t sz,
 sbd_status_t sbd_write_zfs_meta(sbd_lu_t *sl, uint8_t *buf, uint64_t sz,
     uint64_t off);
 sbd_status_t sbd_update_zfs_prop(sbd_lu_t *sl);
-int sbd_is_zvol(char *path);
+boolean_t sbd_is_zvol(char *path);
 int sbd_zvolget(char *zvol_name, char **comstarprop);
 int sbd_zvolset(char *zvol_name, char *comstarprop);
 char sbd_ctoi(char c);
@@ -110,12 +108,23 @@ static dev_info_t	*sbd_dip;
 static uint32_t		sbd_lu_count = 0;
 
 /* Global property settings for the logical unit */
-char sbd_vendor_id[]	= "SUN     ";
+
+#define SBD_VENDOR_ID_LEN  8
+#define SBD_PRODUCT_ID_LEN 16
+#define SBD_REVISION_LEN   4
+char sbd_vendor_id[]	= "DELPHIX ";
 char sbd_product_id[]	= "COMSTAR         ";
 char sbd_revision[]	= "1.0 ";
 char *sbd_mgmt_url = NULL;
 uint16_t sbd_mgmt_url_alloc_size = 0;
 krwlock_t sbd_global_prop_lock;
+/*
+ * When sbd_lu_busy_deadman_enabled is B_TRUE we will trigger a panic if we
+ * are unabled to retrieve a LU in the specified timeout in
+ * sbd_find_and_lock_lu_wait.
+ */
+boolean_t sbd_lu_busy_deadman_enabled = B_TRUE;
+int sbd_lu_busy_deadman_timeout = 1000; /* seconds */
 
 static char sbd_name[] = "sbd";
 
@@ -540,7 +549,28 @@ sbd_lp_cb(stmf_lu_provider_t *lp, int cmd, void *arg, uint32_t flags)
 	}
 }
 
-sbd_status_t
+static sbd_lu_t *
+sbd_find_lu(uint8_t *guid, char *meta_name)
+{
+	sbd_lu_t *sl;
+	boolean_t found;
+
+	ASSERT(mutex_owner(&sbd_lock));
+
+	for (sl = sbd_lu_list; sl != NULL; sl = sl->sl_next) {
+		if (guid != NULL) {
+			found = bcmp(sl->sl_device_id + 4, guid, 16) == 0;
+		} else {
+			found = strcmp(sl->sl_name, meta_name) == 0;
+		}
+		if (found)
+			return (sl);
+	}
+
+	return (NULL);
+}
+
+static sbd_status_t
 sbd_link_lu(sbd_lu_t *sl)
 {
 	sbd_lu_t *nsl;
@@ -554,10 +584,7 @@ sbd_link_lu(sbd_lu_t *sl)
 		mutex_exit(&sl->sl_lock);
 		return (SBD_ALREADY);
 	}
-	for (nsl = sbd_lu_list; nsl; nsl = nsl->sl_next) {
-		if (strcmp(nsl->sl_name, sl->sl_name) == 0)
-			break;
-	}
+	nsl = sbd_find_lu(NULL, sl->sl_name);
 	if (nsl) {
 		mutex_exit(&sbd_lock);
 		mutex_exit(&sl->sl_lock);
@@ -571,7 +598,7 @@ sbd_link_lu(sbd_lu_t *sl)
 	return (SBD_SUCCESS);
 }
 
-void
+static void
 sbd_unlink_lu(sbd_lu_t *sl)
 {
 	sbd_lu_t **ppnsl;
@@ -592,38 +619,52 @@ sbd_unlink_lu(sbd_lu_t *sl)
 	mutex_exit(&sl->sl_lock);
 }
 
-sbd_status_t
-sbd_find_and_lock_lu(uint8_t *guid, uint8_t *meta_name, uint8_t op,
+static sbd_status_t
+sbd_find_and_lock_lu(uint8_t *guid, char *meta_name, uint8_t op,
     sbd_lu_t **ppsl)
 {
 	sbd_lu_t *sl;
-	int found = 0;
 	sbd_status_t sret;
 
 	mutex_enter(&sbd_lock);
-	for (sl = sbd_lu_list; sl; sl = sl->sl_next) {
-		if (guid) {
-			found = bcmp(sl->sl_device_id + 4, guid, 16) == 0;
-		} else {
-			found = strcmp(sl->sl_name, (char *)meta_name) == 0;
-		}
-		if (found)
-			break;
-	}
-	if (!found) {
+	sl = sbd_find_lu(guid, meta_name);
+	if (sl == NULL) {
 		mutex_exit(&sbd_lock);
 		return (SBD_NOT_FOUND);
 	}
+	*ppsl = sl;
 	mutex_enter(&sl->sl_lock);
 	if (sl->sl_trans_op == SL_OP_NONE) {
 		sl->sl_trans_op = op;
-		*ppsl = sl;
 		sret = SBD_SUCCESS;
 	} else {
 		sret = SBD_BUSY;
 	}
 	mutex_exit(&sl->sl_lock);
 	mutex_exit(&sbd_lock);
+	return (sret);
+}
+
+static sbd_status_t
+sbd_find_and_lock_lu_wait(uint8_t *guid, char *meta_name, uint8_t op,
+    sbd_lu_t **ppsl)
+{
+	clock_t start, deadline;
+	sbd_status_t sret;
+
+	start = ddi_get_lbolt();
+	deadline = start + SEC_TO_TICK(sbd_lu_busy_deadman_timeout);
+	while ((sret = sbd_find_and_lock_lu(guid, meta_name, op, ppsl))
+	    == SBD_BUSY) {
+		if (sbd_lu_busy_deadman_enabled &&
+		    ddi_get_lbolt() > deadline) {
+			cmn_err(CE_PANIC, "stmf_sbd: LU busy deadman hit on "
+			    "lu %p after %d seconds", (void *)*ppsl,
+			    sbd_lu_busy_deadman_timeout);
+		}
+		delay(MSEC_TO_TICK(10));
+	}
+
 	return (sret);
 }
 
@@ -1355,15 +1396,15 @@ sbd_write_lu_info(sbd_lu_t *sl)
 		sli->sli_flags |= SLI_WRITEBACK_CACHE_DISABLE;
 	}
 	if (sl->sl_flags & SL_VID_VALID) {
-		bcopy(sl->sl_vendor_id, sli->sli_vid, 8);
+		bcopy(sl->sl_vendor_id, sli->sli_vid, SBD_VENDOR_ID_LEN);
 		sli->sli_flags |= SLI_VID_VALID;
 	}
 	if (sl->sl_flags & SL_PID_VALID) {
-		bcopy(sl->sl_product_id, sli->sli_pid, 16);
+		bcopy(sl->sl_product_id, sli->sli_pid, SBD_PRODUCT_ID_LEN);
 		sli->sli_flags |= SLI_PID_VALID;
 	}
 	if (sl->sl_flags & SL_REV_VALID) {
-		bcopy(sl->sl_revision, sli->sli_rev, 4);
+		bcopy(sl->sl_revision, sli->sli_rev, SBD_REVISION_LEN);
 		sli->sli_flags |= SLI_REV_VALID;
 	}
 	if (sl->sl_serial_no_size) {
@@ -1649,13 +1690,10 @@ sbd_set_lu_standby(sbd_set_lu_standby_t *stlu, uint32_t *err_ret)
 	stmf_status_t stret;
 	uint8_t old_access_state;
 
-	sret = sbd_find_and_lock_lu(stlu->stlu_guid, NULL,
+	sret = sbd_find_and_lock_lu_wait(stlu->stlu_guid, NULL,
 	    SL_OP_MODIFY_LU, &sl);
 	if (sret != SBD_SUCCESS) {
-		if (sret == SBD_BUSY) {
-			*err_ret = SBD_RET_LU_BUSY;
-			return (EBUSY);
-		} else if (sret == SBD_NOT_FOUND) {
+		if (sret == SBD_NOT_FOUND) {
 			*err_ret = SBD_RET_NOT_FOUND;
 			return (ENOENT);
 		}
@@ -1685,8 +1723,8 @@ sbd_set_lu_standby(sbd_set_lu_standby_t *stlu, uint32_t *err_ret)
 	return (0);
 }
 
-int
-sbd_close_delete_lu(sbd_lu_t *sl, int ret)
+void
+sbd_close_delete_lu(sbd_lu_t *sl)
 {
 
 	/*
@@ -1716,7 +1754,6 @@ sbd_close_delete_lu(sbd_lu_t *sl, int ret)
 		kmem_free(sl->sl_mgmt_url, sl->sl_mgmt_url_alloc_size);
 	}
 	stmf_free(sl->sl_lu);
-	return (ret);
 }
 
 int
@@ -1828,15 +1865,15 @@ sbd_create_register_lu(sbd_create_and_reg_lu_t *slu, int struct_sz,
 	}
 	kmem_free(namebuf, sz);
 	if (slu->slu_vid_valid) {
-		bcopy(slu->slu_vid, sl->sl_vendor_id, 8);
+		bcopy(slu->slu_vid, sl->sl_vendor_id, SBD_VENDOR_ID_LEN);
 		sl->sl_flags |= SL_VID_VALID;
 	}
 	if (slu->slu_pid_valid) {
-		bcopy(slu->slu_pid, sl->sl_product_id, 16);
+		bcopy(slu->slu_pid, sl->sl_product_id, SBD_PRODUCT_ID_LEN);
 		sl->sl_flags |= SL_PID_VALID;
 	}
 	if (slu->slu_rev_valid) {
-		bcopy(slu->slu_rev, sl->sl_revision, 4);
+		bcopy(slu->slu_rev, sl->sl_revision, SBD_REVISION_LEN);
 		sl->sl_flags |= SL_REV_VALID;
 	}
 	if (slu->slu_write_protected) {
@@ -2023,7 +2060,8 @@ over_meta_open:
 	return (0);
 
 scm_err_out:
-	return (sbd_close_delete_lu(sl, ret));
+	sbd_close_delete_lu(sl);
+	return (ret);
 }
 
 stmf_status_t
@@ -2064,9 +2102,7 @@ sbd_proxy_reg_lu(uint8_t *luid, void *proxy_reg_arg, uint32_t proxy_reg_arg_len)
 		return (STMF_INVALID_ARG);
 	}
 
-	do {
-		sret = sbd_find_and_lock_lu(luid, NULL, SL_OP_MODIFY_LU, &sl);
-	} while (sret == SBD_BUSY);
+	sret = sbd_find_and_lock_lu_wait(luid, NULL, SL_OP_MODIFY_LU, &sl);
 
 	if (sret == SBD_NOT_FOUND) {
 		alloc_sz = sizeof (*stlu) + proxy_reg_arg_len - 8;
@@ -2197,7 +2233,8 @@ sbd_create_standby_lu(sbd_create_standby_lu_t *slu, uint32_t *err_ret)
 	return (0);
 
 scs_err_out:
-	return (sbd_close_delete_lu(sl, ret));
+	sbd_close_delete_lu(sl);
+	return (ret);
 }
 
 int
@@ -2261,7 +2298,7 @@ sbd_import_lu(sbd_import_lu_t *ilu, int struct_sz, uint32_t *err_ret,
 	 * For a standby logical unit, the meta filename is set. Use
 	 * that to search for an existing logical unit.
 	 */
-	sret = sbd_find_and_lock_lu(NULL, (uint8_t *)&(ilu->ilu_meta_fname),
+	sret = sbd_find_and_lock_lu_wait(NULL, (char *)&(ilu->ilu_meta_fname),
 	    SL_OP_IMPORT_LU, &sl);
 
 	if (sret == SBD_SUCCESS) {
@@ -2486,15 +2523,15 @@ sbd_import_lu(sbd_import_lu_t *ilu, int struct_sz, uint32_t *err_ret,
 	}
 	if (sli->sli_flags & SLI_VID_VALID) {
 		sl->sl_flags |= SL_VID_VALID;
-		bcopy(sli->sli_vid, sl->sl_vendor_id, 8);
+		bcopy(sli->sli_vid, sl->sl_vendor_id, SBD_VENDOR_ID_LEN);
 	}
 	if (sli->sli_flags & SLI_PID_VALID) {
 		sl->sl_flags |= SL_PID_VALID;
-		bcopy(sli->sli_pid, sl->sl_product_id, 16);
+		bcopy(sli->sli_pid, sl->sl_product_id, SBD_PRODUCT_ID_LEN);
 	}
 	if (sli->sli_flags & SLI_REV_VALID) {
 		sl->sl_flags |= SL_REV_VALID;
-		bcopy(sli->sli_rev, sl->sl_revision, 4);
+		bcopy(sli->sli_rev, sl->sl_revision, SBD_REVISION_LEN);
 	}
 	if (sli->sli_flags & SLI_WRITEBACK_CACHE_DISABLE) {
 		sl->sl_flags |= SL_WRITEBACK_CACHE_DISABLE;
@@ -2617,7 +2654,8 @@ sim_err_out:
 		sl->sl_trans_op = SL_OP_NONE;
 		return (EIO);
 	} else {
-		return (sbd_close_delete_lu(sl, ret));
+		sbd_close_delete_lu(sl);
+		return (0);
 	}
 }
 
@@ -2661,11 +2699,11 @@ sbd_modify_lu(sbd_modify_lu_t *mlu, int struct_sz, uint32_t *err_ret)
 	 * we'll still try to modify the unregistered device.
 	 */
 	if (mlu->mlu_by_guid) {
-		sret = sbd_find_and_lock_lu(mlu->mlu_input_guid, NULL,
+		sret = sbd_find_and_lock_lu_wait(mlu->mlu_input_guid, NULL,
 		    SL_OP_MODIFY_LU, &sl);
 	} else if (mlu->mlu_by_fname) {
-		sret = sbd_find_and_lock_lu(NULL,
-		    (uint8_t *)&(mlu->mlu_buf[mlu->mlu_fname_off]),
+		sret = sbd_find_and_lock_lu_wait(NULL,
+		    (char *)&(mlu->mlu_buf[mlu->mlu_fname_off]),
 		    SL_OP_MODIFY_LU, &sl);
 	} else {
 		return (EINVAL);
@@ -2673,10 +2711,7 @@ sbd_modify_lu(sbd_modify_lu_t *mlu, int struct_sz, uint32_t *err_ret)
 
 
 	if (sret != SBD_SUCCESS) {
-		if (sret == SBD_BUSY) {
-			*err_ret = SBD_RET_LU_BUSY;
-			return (EBUSY);
-		} else if (sret != SBD_NOT_FOUND) {
+		if (sret != SBD_NOT_FOUND) {
 			return (EIO);
 		} else if (!mlu->mlu_by_fname) {
 			return (EINVAL);
@@ -2848,7 +2883,7 @@ sbd_modify_lu(sbd_modify_lu_t *mlu, int struct_sz, uint32_t *err_ret)
 
 smm_err_out:
 	if (modify_unregistered) {
-		(void) sbd_close_delete_lu(sl, 0);
+		sbd_close_delete_lu(sl);
 	} else {
 		sl->sl_trans_op = SL_OP_NONE;
 	}
@@ -2958,9 +2993,11 @@ sbd_delete_locked_lu(sbd_lu_t *sl, uint32_t *err_ret,
 sdl_do_dereg:;
 	if (stmf_deregister_lu(sl->sl_lu) != STMF_SUCCESS)
 		return (EBUSY);
+
 	atomic_add_32(&sbd_lu_count, -1);
 
-	return (sbd_close_delete_lu(sl, 0));
+	sbd_close_delete_lu(sl);
+	return (0);
 }
 
 int
@@ -2973,17 +3010,14 @@ sbd_delete_lu(sbd_delete_lu_t *dlu, int struct_sz, uint32_t *err_ret)
 
 	if (dlu->dlu_by_meta_name) {
 		((char *)dlu)[struct_sz - 1] = 0;
-		sret = sbd_find_and_lock_lu(NULL, dlu->dlu_meta_name,
-		    SL_OP_DELETE_LU, &sl);
+		sret = sbd_find_and_lock_lu_wait(NULL,
+		    (char *)dlu->dlu_meta_name, SL_OP_DELETE_LU, &sl);
 	} else {
-		sret = sbd_find_and_lock_lu(dlu->dlu_guid, NULL,
+		sret = sbd_find_and_lock_lu_wait(dlu->dlu_guid, NULL,
 		    SL_OP_DELETE_LU, &sl);
 	}
 	if (sret != SBD_SUCCESS) {
-		if (sret == SBD_BUSY) {
-			*err_ret = SBD_RET_LU_BUSY;
-			return (EBUSY);
-		} else if (sret == SBD_NOT_FOUND) {
+		if (sret == SBD_NOT_FOUND) {
 			*err_ret = SBD_RET_NOT_FOUND;
 			return (ENOENT);
 		}
@@ -3169,18 +3203,15 @@ sbd_get_unmap_props(sbd_unmap_props_t *sup,
 	sbd_lu_t *sl = NULL;
 
 	if (sup->sup_guid_valid) {
-		sret = sbd_find_and_lock_lu(sup->sup_guid,
+		sret = sbd_find_and_lock_lu_wait(sup->sup_guid,
 		    NULL, SL_OP_LU_PROPS, &sl);
 	} else {
-		sret = sbd_find_and_lock_lu(NULL,
-		    (uint8_t *)sup->sup_zvol_path, SL_OP_LU_PROPS,
+		sret = sbd_find_and_lock_lu_wait(NULL,
+		    (char *)sup->sup_zvol_path, SL_OP_LU_PROPS,
 		    &sl);
 	}
 	if (sret != SBD_SUCCESS) {
-		if (sret == SBD_BUSY) {
-			*err_ret = SBD_RET_LU_BUSY;
-			return (EBUSY);
-		} else if (sret == SBD_NOT_FOUND) {
+		if (sret == SBD_NOT_FOUND) {
 			*err_ret = SBD_RET_NOT_FOUND;
 			return (ENOENT);
 		}
@@ -3211,18 +3242,15 @@ sbd_get_lu_props(sbd_lu_props_t *islp, uint32_t islp_sz,
 	uint16_t off;
 
 	if (islp->slp_input_guid) {
-		sret = sbd_find_and_lock_lu(islp->slp_guid, NULL,
+		sret = sbd_find_and_lock_lu_wait(islp->slp_guid, NULL,
 		    SL_OP_LU_PROPS, &sl);
 	} else {
 		((char *)islp)[islp_sz - 1] = 0;
-		sret = sbd_find_and_lock_lu(NULL, islp->slp_buf,
+		sret = sbd_find_and_lock_lu_wait(NULL, (char *)islp->slp_buf,
 		    SL_OP_LU_PROPS, &sl);
 	}
 	if (sret != SBD_SUCCESS) {
-		if (sret == SBD_BUSY) {
-			*err_ret = SBD_RET_LU_BUSY;
-			return (EBUSY);
-		} else if (sret == SBD_NOT_FOUND) {
+		if (sret == SBD_NOT_FOUND) {
 			*err_ret = SBD_RET_NOT_FOUND;
 			return (ENOENT);
 		}
@@ -3310,21 +3338,21 @@ sbd_get_lu_props(sbd_lu_props_t *islp, uint32_t islp_sz,
 
 	if (sl->sl_flags & SL_VID_VALID) {
 		oslp->slp_lu_vid = 1;
-		bcopy(sl->sl_vendor_id, oslp->slp_vid, 8);
+		bcopy(sl->sl_vendor_id, oslp->slp_vid, SBD_VENDOR_ID_LEN);
 	} else {
-		bcopy(sbd_vendor_id, oslp->slp_vid, 8);
+		bcopy(sbd_vendor_id, oslp->slp_vid, SBD_VENDOR_ID_LEN);
 	}
 	if (sl->sl_flags & SL_PID_VALID) {
 		oslp->slp_lu_pid = 1;
-		bcopy(sl->sl_product_id, oslp->slp_pid, 16);
+		bcopy(sl->sl_product_id, oslp->slp_pid, SBD_PRODUCT_ID_LEN);
 	} else {
-		bcopy(sbd_product_id, oslp->slp_pid, 16);
+		bcopy(sbd_product_id, oslp->slp_pid, SBD_PRODUCT_ID_LEN);
 	}
 	if (sl->sl_flags & SL_REV_VALID) {
 		oslp->slp_lu_rev = 1;
-		bcopy(sl->sl_revision, oslp->slp_rev, 4);
+		bcopy(sl->sl_revision, oslp->slp_rev, SBD_REVISION_LEN);
 	} else {
-		bcopy(sbd_revision, oslp->slp_rev, 4);
+		bcopy(sbd_revision, oslp->slp_rev, SBD_REVISION_LEN);
 	}
 	bcopy(sl->sl_device_id + 4, oslp->slp_guid, 16);
 
@@ -3355,9 +3383,7 @@ sbd_get_zvol_name(sbd_lu_t *sl)
 	else
 		src = sl->sl_meta_filename;
 	/* There has to be a better way */
-	if (SBD_IS_ZVOL(src) != 0) {
-		ASSERT(0);
-	}
+	ASSERT(sbd_is_zvol(src));
 	src += 14;	/* Past /dev/zvol/dsk/ */
 	if (*src == '/')
 		src++;	/* or /dev/zvol/rdsk/ */
@@ -3521,15 +3547,10 @@ sbd_update_zfs_prop(sbd_lu_t *sl)
 	return (ret);
 }
 
-int
+boolean_t
 sbd_is_zvol(char *path)
 {
-	int is_zfs = 0;
-
-	if (SBD_IS_ZVOL(path) == 0)
-		is_zfs = 1;
-
-	return (is_zfs);
+	return (strncmp("/dev/zvol/", path, 10) == 0);
 }
 
 /*
