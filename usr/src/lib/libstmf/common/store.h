@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 #ifndef	_STORE_H
 #define	_STORE_H
@@ -30,22 +31,8 @@ extern "C" {
 
 #include <libnvpair.h>
 
-/*
- * Error defines
- */
-#define	STMF_PS_SUCCESS			0
-#define	STMF_PS_ERROR			1
-#define	STMF_PS_ERROR_MEMBER_NOT_FOUND	2
-#define	STMF_PS_ERROR_GROUP_NOT_FOUND	3
-#define	STMF_PS_ERROR_NOT_FOUND		4
-#define	STMF_PS_ERROR_EXISTS		5
-#define	STMF_PS_ERROR_NOMEM		6
-#define	STMF_PS_ERROR_RETRY		7
-#define	STMF_PS_ERROR_BUSY		8
-#define	STMF_PS_ERROR_SERVICE_NOT_FOUND 9
-#define	STMF_PS_ERROR_INVALID_ARG	10
-#define	STMF_PS_ERROR_VERSION_MISMATCH	11
-#define	STMF_PS_ERROR_PROV_DATA_STALE	12
+/* size of ascii hex 16 byte guid with NULL */
+#define	GUID_STR_MIN_SIZE 33
 
 int psAddHostGroupMember(char *groupName, char *memberName);
 int psAddTargetGroupMember(char *groupName, char *memberName);
@@ -76,6 +63,7 @@ int psSetServicePersist(uint8_t persistType);
 int psGetServicePersist(uint8_t *persistType);
 int psSetStmfProp(int propType, char *propVal);
 int psGetStmfProp(int propType, char *propVal);
+int psFormatGuid(stmfGuid *guid, char *guidAsciiBuf, size_t guidAsciiBufSize);
 
 #ifdef	__cplusplus
 }
