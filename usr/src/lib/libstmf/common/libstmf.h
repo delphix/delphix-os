@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #ifndef	_LIBSTMF_H
@@ -61,6 +62,8 @@ extern "C" {
 
 /* API status return values */
 #define	STMF_STATUS_SUCCESS	    0x0000
+#define	STMF_STATUS_WARN	    0x4000
+#define	STMF_WARN_VIEW_ENTRY_LIST	(STMF_STATUS_WARN | 0x01)
 #define	STMF_STATUS_ERROR	    0x8000
 #define	STMF_ERROR_BUSY			(STMF_STATUS_ERROR | 0x01)
 #define	STMF_ERROR_NOT_FOUND		(STMF_STATUS_ERROR | 0x02)
@@ -94,6 +97,11 @@ extern "C" {
 #define	STMF_ERROR_NO_PROP_STANDBY	(STMF_STATUS_ERROR | 0x24)
 #define	STMF_ERROR_POST_MSG_FAILED	(STMF_STATUS_ERROR | 0x25)
 #define	STMF_ERROR_DOOR_INSTALLED	(STMF_STATUS_ERROR | 0x26)
+
+#define	STMF_STATUS_IS_ERROR(_stmf_stat_) \
+	(((_stmf_stat_) & STMF_STATUS_ERROR) != 0)
+#define	STMF_STATUS_IS_WARNING(_stmf_stat_) \
+	(((_stmf_stat_) & STMF_STATUS_WARN) != 0)
 
 /* Failures for stmfCreateLu */
 #define	STMF_ERROR_FILE_IN_USE		(STMF_STATUS_ERROR | 0x100)
@@ -306,7 +314,19 @@ typedef struct _stmfLocalPortProviderProperties
 	uchar_t	    rsvd[64];
 } stmfLocalPortProviderProperties;
 
-/* API prototypes */
+/*
+ * API prototypes
+ *
+ * Functions that return int return an stmf status as defined above.  Most of
+ * the functions below return either STMF_STATUS_SUCCESS or an error as
+ * defined above.  Functions that also return warning error codes are called out
+ * below.
+ *
+ * A return code may be tested for:
+ * success by testing for equality with STMF_STATUS_SUCCESS
+ * a warning with the macro STMF_STATUS_IS_WARNING
+ * an error with the macro STMF_STATUS_IS_ERROR
+ */
 int stmfAddToHostGroup(stmfGroupName *hostGroupName, stmfDevid *name);
 int stmfAddToTargetGroup(stmfGroupName *targetGroupName, stmfDevid *targetName);
 int stmfAddViewEntry(stmfGuid *lu, stmfViewEntry *viewEntry);
@@ -356,6 +376,11 @@ int stmfGetTargetProperties(stmfDevid *target,
 int stmfGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList);
 int stmfImportLu(uint16_t dType, char *fname, stmfGuid *luGuid);
 int stmfInitProxyDoor(int *hdl, int fd);
+
+/*
+ * stmfLoadConfig will return a WARNING when the configuration is non-fatally
+ * corrupted or misconfigured.
+ */
 int stmfLoadConfig(void);
 int stmfLuStandby(stmfGuid *luGuid);
 int stmfModifyLu(stmfGuid *luGuid, uint32_t prop, const char *propVal);

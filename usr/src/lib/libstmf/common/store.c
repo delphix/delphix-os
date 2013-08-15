@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <libscf.h>
@@ -150,6 +151,7 @@ static int iPsGetGroupList(char *, stmfGroupList **);
 static int iPsGetGroupMemberList(char *, char *, stmfGroupProperties **);
 static int iPsAddViewEntry(char *, char *, stmfViewEntry *);
 static int iPsAddRemoveLuViewEntry(char *, char *, int);
+static int iPsViewEntryScfToStmfStatus();
 static int iPsGetViewEntry(char *, stmfViewEntry *);
 static int iPsGetActualGroupName(char *, char *, char *);
 static int iPsGetServiceVersion(uint64_t *, scf_handle_t *, scf_service_t *);
@@ -281,8 +283,8 @@ sigHandler(int sig)
  * addRemoveFlag - ADD/REMOVE
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsAddRemoveGroupMember(char *pgName, char *groupName, char *memberName,
@@ -300,7 +302,7 @@ int addRemoveFlag)
 	int i = 0;
 	int lastAlloc;
 	int valueArraySize = 0;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	char buf[STMF_IDENT_LENGTH];
 	int commitRet;
 	boolean_t found = B_FALSE;
@@ -311,7 +313,7 @@ int addRemoveFlag)
 	 * Init the service handle
 	 */
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -325,7 +327,7 @@ int addRemoveFlag)
 	    ((valueIter = scf_iter_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -334,9 +336,9 @@ int addRemoveFlag)
 	 */
 	if (scf_service_get_pg(svc, pgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		syslog(LOG_ERR, "get pg %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
@@ -350,7 +352,7 @@ int addRemoveFlag)
 	if (scf_transaction_start(tran, pg) == -1) {
 		syslog(LOG_ERR, "start transaction for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -364,9 +366,9 @@ int addRemoveFlag)
 	if (scf_transaction_property_change(tran, entry, groupName,
 	    SCF_TYPE_USTRING) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_GROUP_NOT_FOUND;
+			ret = STMF_ERROR_GROUP_NOT_FOUND;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			syslog(LOG_ERR, "tran property change %s/%s "
 			    "failed - %s", pgName, groupName,
 			    scf_strerror(scf_error()));
@@ -380,7 +382,7 @@ int addRemoveFlag)
 	if (scf_pg_get_property(pg, groupName, prop) == -1) {
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    pgName, groupName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -391,7 +393,7 @@ int addRemoveFlag)
 	if (valueLookup == NULL) {
 		syslog(LOG_ERR, "scf value alloc for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -401,7 +403,7 @@ int addRemoveFlag)
 	if (scf_iter_property_values(valueIter, prop) == -1) {
 		syslog(LOG_ERR, "iter values for %s/%s failed - %s",
 		    pgName, groupName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -417,7 +419,7 @@ int addRemoveFlag)
 	valueSet = (scf_value_t **)calloc(1, sizeof (*valueSet)
 	    * (lastAlloc = GROUP_MEMBER_ALLOC));
 	if (valueSet == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -429,7 +431,7 @@ int addRemoveFlag)
 		if (scf_value_get_ustring(valueLookup, buf, MAXNAMELEN) == -1) {
 			syslog(LOG_ERR, "iter %s/%s value failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -442,7 +444,7 @@ int addRemoveFlag)
 		if ((strlen(buf) == strlen(memberName)) &&
 		    bcmp(buf, memberName, strlen(buf)) == 0) {
 			if (addRemoveFlag == ADD) {
-				ret = STMF_PS_ERROR_EXISTS;
+				ret = STMF_ERROR_EXISTS;
 				break;
 			} else {
 				found = B_TRUE;
@@ -457,7 +459,7 @@ int addRemoveFlag)
 		if (valueSet[i] == NULL) {
 			syslog(LOG_ERR, "scf value alloc for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -467,7 +469,7 @@ int addRemoveFlag)
 		if (scf_value_set_ustring(valueSet[i], buf) == -1) {
 			syslog(LOG_ERR, "set value for %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -477,7 +479,7 @@ int addRemoveFlag)
 		if (scf_entry_add_value(entry, valueSet[i]) == -1) {
 			syslog(LOG_ERR, "add value for %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -491,7 +493,7 @@ int addRemoveFlag)
 			valueSet = realloc(valueSet,
 			    sizeof (*valueSet) * lastAlloc);
 			if (valueSet == NULL) {
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				break;
 			}
 		}
@@ -504,10 +506,10 @@ int addRemoveFlag)
 	valueArraySize = i;
 
 	if (!found && (addRemoveFlag == REMOVE)) {
-		ret = STMF_PS_ERROR_MEMBER_NOT_FOUND;
+		ret = STMF_ERROR_MEMBER_NOT_FOUND;
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -523,7 +525,7 @@ int addRemoveFlag)
 		if (valueSet[i] == NULL) {
 			syslog(LOG_ERR, "scf value alloc for %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		} else {
 			valueArraySize++;
@@ -535,7 +537,7 @@ int addRemoveFlag)
 		if (scf_value_set_ustring(valueSet[i], memberName) == -1) {
 			syslog(LOG_ERR, "set value for %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -545,7 +547,7 @@ int addRemoveFlag)
 		if (scf_entry_add_value(entry, valueSet[i]) == -1) {
 			syslog(LOG_ERR, "add value for %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -559,9 +561,9 @@ int addRemoveFlag)
 		syslog(LOG_ERR, "transaction commit for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
 		if (commitRet == 0) {
-			ret = STMF_PS_ERROR_BUSY;
+			ret = STMF_ERROR_BUSY;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -625,8 +627,8 @@ out:
  * addRemoveFlag - ADD_VE/REMOVE_VE
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
@@ -642,7 +644,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	scf_transaction_entry_t *entryVeName = NULL;
 	boolean_t createVeCnt = B_FALSE;
 	uint64_t veCnt = 0;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	assert(luPgName != NULL || viewEntryPgName != NULL);
@@ -652,7 +654,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	 * Init the service handle
 	 */
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -666,7 +668,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -679,20 +681,20 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 			    SCF_GROUP_APPLICATION, 0, pg) == -1) {
 				syslog(LOG_ERR, "add pg %s failed - %s",
 				    luPgName, scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			} else {
 				/* we need to create the VE_CNT property */
 				createVeCnt = B_TRUE;
-				ret = STMF_PS_SUCCESS;
+				ret = STMF_STATUS_SUCCESS;
 			}
 		} else if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get lu pg %s failed - %s",
 			    luPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
-		if (ret != STMF_PS_SUCCESS) {
+		if (ret != STMF_STATUS_SUCCESS) {
 			goto out;
 		}
 	}
@@ -704,7 +706,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	if (scf_transaction_start(tran, pg) == -1) {
 		syslog(LOG_ERR, "start transaction for %s failed - %s",
 		    luPgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -717,13 +719,13 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_transaction_property_new(tran, entry, STMF_VE_CNT,
 		    SCF_TYPE_COUNT) == -1) {
 			if (scf_error() == SCF_ERROR_EXISTS) {
-				ret = STMF_PS_ERROR_EXISTS;
+				ret = STMF_ERROR_EXISTS;
 			} else {
 				syslog(LOG_ERR,
 				    "transaction property new %s/%s "
 				    "failed - %s", luPgName, STMF_VE_CNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
@@ -737,7 +739,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 			syslog(LOG_ERR, "transaction property %s/%s change "
 			    "failed - %s", luPgName, STMF_VE_CNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -747,7 +749,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_pg_get_property(pg, STMF_VE_CNT, prop) == -1) {
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -757,7 +759,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property %s/%s value failed - %s",
 			    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -767,7 +769,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_value_get_count(value, &veCnt) == -1) {
 			syslog(LOG_ERR, "get count value %s/%s failed - %s",
 			    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -790,7 +792,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 				syslog(LOG_ERR, "delete pg %s failed - %s",
 				    luPgName, scf_strerror(scf_error()));
 
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		} else {
@@ -810,7 +812,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	if (scf_entry_add_value(entry, value) == -1) {
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -821,7 +823,7 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 	if (entryVeName == NULL) {
 		syslog(LOG_ERR, "scf transaction entry alloc %s/%s failed - %s",
 		    luPgName, viewEntryPgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -832,13 +834,13 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_transaction_property_new(tran, entryVeName,
 		    viewEntryPgName, SCF_TYPE_USTRING) == -1) {
 			if (scf_error() == SCF_ERROR_EXISTS) {
-				ret = STMF_PS_ERROR_EXISTS;
+				ret = STMF_ERROR_EXISTS;
 			} else {
 				syslog(LOG_ERR,
 				    "transaction property new %s/%s "
 				    "failed - %s", luPgName, viewEntryPgName,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
@@ -850,13 +852,13 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		if (scf_transaction_property_delete(tran, entryVeName,
 		    viewEntryPgName) == -1) {
 			if (scf_error() == SCF_ERROR_NOT_FOUND) {
-				ret = STMF_PS_ERROR_NOT_FOUND;
+				ret = STMF_ERROR_NOT_FOUND;
 			} else {
 				syslog(LOG_ERR,
 				    "transaction property delete %s/%s "
 				    "failed - %s", luPgName, viewEntryPgName,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
@@ -869,9 +871,9 @@ iPsAddRemoveLuViewEntry(char *luPgName, char *viewEntryPgName,
 		syslog(LOG_ERR, "transaction commit for %s failed - %s",
 		    luPgName, scf_strerror(scf_error()));
 		if (commitRet == 0) {
-			ret = STMF_PS_ERROR_BUSY;
+			ret = STMF_ERROR_BUSY;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -945,7 +947,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	 * Init the service handle
 	 */
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -956,7 +958,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	    ((tran = scf_transaction_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -968,7 +970,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		    ((entry[i] = scf_entry_create(handle)) == NULL)) {
 			syslog(LOG_ERR, "scf alloc resource failed - %s",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -981,11 +983,11 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_service_add_pg(svc, viewEntryPgName, SCF_GROUP_APPLICATION,
 	    0, pg) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "add pg %s failed - %s",
 			    viewEntryPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1002,7 +1004,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_start(tran, pg) == -1) {
 		syslog(LOG_ERR, "start transaction for add %s failed - %s",
 		    viewEntryPgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1012,12 +1014,12 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_property_new(tran, entry[i],
 	    STMF_VE_ALLHOSTS, SCF_TYPE_BOOLEAN) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", viewEntryPgName, STMF_VE_ALLHOSTS,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1033,7 +1035,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLHOSTS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1045,12 +1047,12 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_property_new(tran, entry[i],
 	    STMF_VE_HOSTGROUP, SCF_TYPE_USTRING) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", viewEntryPgName, STMF_VE_HOSTGROUP,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1062,7 +1064,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "set value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_HOSTGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1073,7 +1075,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_HOSTGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1085,12 +1087,12 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_property_new(tran, entry[i],
 	    STMF_VE_ALLTARGETS, SCF_TYPE_BOOLEAN) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", viewEntryPgName, STMF_VE_ALLTARGETS,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1108,7 +1110,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLTARGETS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1120,12 +1122,12 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_property_new(tran, entry[i],
 	    STMF_VE_TARGETGROUP, SCF_TYPE_USTRING) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", viewEntryPgName,
 			    STMF_VE_TARGETGROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1137,7 +1139,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "set value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_TARGETGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1148,7 +1150,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_TARGETGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1160,12 +1162,12 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_transaction_property_new(tran, entry[i], STMF_VE_LUNBR,
 	    SCF_TYPE_OPAQUE) == -1) {
 		if (scf_error() == SCF_ERROR_EXISTS) {
-			ret = STMF_PS_ERROR_EXISTS;
+			ret = STMF_ERROR_EXISTS;
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", viewEntryPgName, STMF_VE_LUNBR,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1177,7 +1179,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	    sizeof (viewEntry->luNbr)) == -1) {
 		syslog(LOG_ERR, "set value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_LUNBR, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1187,7 +1189,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	if (scf_entry_add_value(entry[i], value[i]) == -1) {
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_LUNBR, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1202,7 +1204,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 	 * If we did not add the view entry name to the logical unit,
 	 * make sure we do not commit the transaction
 	 */
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1213,13 +1215,13 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "transaction commit for add %s failed - %s",
 		    viewEntryPgName, scf_strerror(scf_error()));
 		if (commitRet == 0) {
-			ret = STMF_PS_ERROR_BUSY;
+			ret = STMF_ERROR_BUSY;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		/*
 		 * If we did not commit, try to remove the view entry name
 		 * from the logical unit.
@@ -1228,7 +1230,7 @@ iPsAddViewEntry(char *luPgName, char *viewEntryPgName, stmfViewEntry *viewEntry)
 		backoutRet = iPsAddRemoveLuViewEntry(luPgName, viewEntryPgName,
 		    REMOVE);
 
-		if (backoutRet != STMF_PS_SUCCESS) {
+		if (backoutRet != STMF_STATUS_SUCCESS) {
 			syslog(LOG_ERR, "remove lu view entry %s failed"
 			    "possible inconsistency - %s", luPgName,
 			    scf_strerror(scf_error()));
@@ -1251,7 +1253,7 @@ out:
 		scf_service_destroy(svc);
 	}
 	/* if there was an error, delete the created pg if one was created */
-	if ((ret != STMF_PS_SUCCESS) && createdVePg) {
+	if ((ret != STMF_STATUS_SUCCESS) && createdVePg) {
 		if (scf_pg_delete(pg) == -1) {
 			syslog(LOG_ERR, "delete VE pg %s failed - %s",
 			    viewEntryPgName, scf_strerror(scf_error()));
@@ -1289,17 +1291,17 @@ psClearProviderData(char *providerName, int providerType)
 	scf_service_t	*svc = NULL;
 	scf_propertygroup_t	*pg = NULL;
 	char pgName[MAXPATHLEN];
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	boolean_t pgNotFound = B_FALSE;
 
 	if (providerName == NULL || (providerType != STMF_LU_PROVIDER_TYPE &&
 	    providerType != STMF_PORT_PROVIDER_TYPE)) {
-		ret = STMF_PS_ERROR_INVALID_ARG;
+		ret = STMF_ERROR_INVALID_ARG;
 		goto out;
 	}
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1309,7 +1311,7 @@ psClearProviderData(char *providerName, int providerType)
 	if ((pg = scf_pg_create(handle)) == NULL) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1326,7 +1328,7 @@ psClearProviderData(char *providerName, int providerType)
 		if (scf_error() != SCF_ERROR_NOT_FOUND) {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		} else {
 			pgNotFound = B_TRUE;
@@ -1336,12 +1338,12 @@ psClearProviderData(char *providerName, int providerType)
 	if (!pgNotFound && (scf_pg_delete(pg) == -1)) {
 		syslog(LOG_ERR, "delete pg %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	if (pgNotFound) {
-		ret = STMF_PS_ERROR_NOT_FOUND;
+		ret = STMF_ERROR_NOT_FOUND;
 	}
 
 out:
@@ -1374,8 +1376,8 @@ out:
  * addRemoveFlag - ADD_GROUP/REMOVE_GROUP
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
@@ -1394,13 +1396,13 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 	char buf2[MAXNAMELEN];
 	char tmpbuf[MAXNAMELEN];
 	boolean_t found = B_FALSE;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	assert(groupName != NULL);
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1416,7 +1418,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1430,18 +1432,18 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 			    SCF_GROUP_APPLICATION, 0, pg) == -1) {
 				syslog(LOG_ERR, "add pg %s failed - %s",
 				    pgRefName, scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 		} else if (scf_error() == SCF_ERROR_NOT_FOUND) {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgRefName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgRefName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
-		if (ret != STMF_PS_SUCCESS) {
+		if (ret != STMF_STATUS_SUCCESS) {
 			goto out;
 		}
 	}
@@ -1452,7 +1454,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 	if (scf_iter_pg_properties(propIter, pg) == -1) {
 		syslog(LOG_ERR, "iter properties for %s failed - %s",
 		    pgRefName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1464,7 +1466,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 		if (scf_property_get_name(prop, buf1, sizeof (buf1)) == -1) {
 			syslog(LOG_ERR, "get name from %s iter failed - %s",
 			    pgRefName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -1476,21 +1478,21 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgRefName, buf1, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		if (scf_value_get_ustring(value, tmpbuf,
 		    sizeof (tmpbuf)) == -1) {
 			syslog(LOG_ERR, "get ustring %s/%s failed - %s",
 			    pgRefName, buf1, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
 		if ((strlen(tmpbuf) == strlen(groupName)) &&
 		    bcmp(tmpbuf, groupName, strlen(tmpbuf)) == 0) {
 			if (addRemoveFlag == ADD) {
-				ret = STMF_PS_ERROR_EXISTS;
+				ret = STMF_ERROR_EXISTS;
 			}
 			found = B_TRUE;
 			/*
@@ -1500,14 +1502,14 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 		}
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
 	scf_value_reset(value);
 
 	if (!found && addRemoveFlag == REMOVE) {
-		ret = STMF_PS_ERROR_NOT_FOUND;
+		ret = STMF_ERROR_NOT_FOUND;
 		goto out;
 	}
 
@@ -1522,7 +1524,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 				syslog(LOG_ERR,
 				    "buffer overflow on property name %s",
 				    buf1);
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				break;
 			}
 			if (scf_pg_get_property(pg, buf1, prop) == -1) {
@@ -1530,7 +1532,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 					syslog(LOG_ERR, "get property %s/%s "
 					    "failed - %s", pgRefName, buf1,
 					    scf_strerror(scf_error()));
-					ret = STMF_PS_ERROR;
+					ret = STMF_STATUS_ERROR;
 				}
 				break;
 			}
@@ -1544,7 +1546,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 	    STMF_MEMBER_LIST_SUFFIX) > sizeof (buf2)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    buf1);
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1558,7 +1560,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 	if (scf_transaction_start(tran, pg) == -1) {
 		syslog(LOG_ERR, "start transaction for %s failed - %s",
 		    pgRefName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1572,19 +1574,19 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", pgRefName, buf1,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if (scf_value_set_ustring(value, groupName) == -1) {
 			syslog(LOG_ERR, "set ustring %s/%s failed - %s",
 			    pgRefName, buf1, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if (scf_entry_add_value(entry1, value) == -1) {
 			syslog(LOG_ERR, "add value %s/%s failed - %s",
 			    pgRefName, buf1, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		/*
@@ -1596,7 +1598,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", pgRefName, buf2,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	} else {
@@ -1608,7 +1610,7 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 			syslog(LOG_ERR,
 			    "transaction property delete %s/%s failed - %s",
 			    pgRefName, buf1, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		/*
@@ -1619,12 +1621,12 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 			syslog(LOG_ERR, "transaction property delete %s/%s "
 			    "failed - %s", pgRefName, buf2,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1632,9 +1634,9 @@ iPsCreateDeleteGroup(char *pgRefName, char *groupName, int addRemoveFlag)
 		syslog(LOG_ERR, "transaction commit for %s failed - %s",
 		    pgRefName, scf_strerror(scf_error()));
 		if (commitRet == 0) {
-			ret = STMF_PS_ERROR_BUSY;
+			ret = STMF_ERROR_BUSY;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 	}
 
@@ -1681,8 +1683,8 @@ out:
  * contains the list of groups
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsGetGroupList(char *pgName, stmfGroupList **groupList)
@@ -1696,12 +1698,12 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 	char buf[MAXNAMELEN];
 	int memberCnt = 0;
 	int i = 0;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 
 	assert(groupList != NULL);
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1714,7 +1716,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1722,11 +1724,11 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -1737,7 +1739,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 	if (scf_iter_pg_properties(propIter, pg) == -1) {
 		syslog(LOG_ERR, "iter properties for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1745,7 +1747,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 		if (scf_property_get_name(prop, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get name from %s iter failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -1763,7 +1765,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 	if (scf_iter_pg_properties(propIter, pg) == -1) {
 		syslog(LOG_ERR, "iter properties for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1771,7 +1773,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 	    memberCnt * sizeof (stmfGroupName));
 
 	if (*groupList == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -1788,7 +1790,7 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 		if (scf_property_get_name(prop, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get name from %s iter failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -1800,20 +1802,20 @@ iPsGetGroupList(char *pgName, stmfGroupList **groupList)
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgName, buf, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		if (scf_value_get_ustring(value, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get ustring %s/%s failed - %s",
 			    pgName, buf, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		bcopy(buf, (*groupList)->name[i++], strlen(buf));
 		(*groupList)->cnt++;
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		free(*groupList);
 		goto out;
 	}
@@ -1853,8 +1855,8 @@ out:
  * success, contains the list of group members
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsGetGroupMemberList(char *pgName, char *groupName,
@@ -1869,7 +1871,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	int i = 0;
 	int memberCnt;
 	int len;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	char buf[MAXNAMELEN];
 
 	assert(pgName != NULL && groupName != NULL);
@@ -1878,7 +1880,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	 * init the service handle
 	 */
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -1891,7 +1893,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	    ((valueLookup = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1900,9 +1902,9 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	 */
 	if (scf_service_get_pg(svc, pgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		syslog(LOG_ERR, "get pg %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
@@ -1916,7 +1918,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	if (scf_pg_get_property(pg, groupName, prop) == -1) {
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    pgName, groupName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1926,7 +1928,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	if (scf_iter_property_values(valueIter, prop) == -1) {
 		syslog(LOG_ERR, "iter value %s/%s failed - %s",
 		    pgName, groupName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1934,7 +1936,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 		if (scf_value_get_ustring(valueLookup, buf, MAXNAMELEN) == -1) {
 			syslog(LOG_ERR, "iter value %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		i++;
@@ -1946,7 +1948,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	if (scf_iter_property_values(valueIter, prop) == -1) {
 		syslog(LOG_ERR, "iter value %s/%s failed - %s",
 		    pgName, groupName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -1955,7 +1957,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 	*groupMemberList = (stmfGroupProperties *)calloc(1,
 	    sizeof (stmfGroupProperties) + memberCnt * sizeof (stmfDevid));
 	if (*groupMemberList == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -1966,7 +1968,7 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 		    == -1) {
 			syslog(LOG_ERR, "iter value %s/%s failed - %s",
 			    pgName, groupName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		if (len < sizeof (stmfDevid) - 1) {
@@ -1975,12 +1977,12 @@ iPsGetGroupMemberList(char *pgName, char *groupName,
 			    (*groupMemberList)->name[i++].ident, len);
 			(*groupMemberList)->cnt++;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		free(*groupMemberList);
 		goto out;
 	}
@@ -2020,8 +2022,8 @@ psGetServicePersist(uint8_t *persistType)
 
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
-		return (STMF_PS_ERROR);
+	if (ret != STMF_STATUS_SUCCESS) {
+		return (STMF_STATUS_ERROR);
 	}
 
 	ret = iPsGetSetPersistType(persistType, handle, svc, GET);
@@ -2047,8 +2049,8 @@ psSetServicePersist(uint8_t persistType)
 
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
-		return (STMF_PS_ERROR);
+	if (ret != STMF_STATUS_SUCCESS) {
+		return (STMF_STATUS_ERROR);
 	}
 
 	ret = iPsGetSetPersistType(&persistType, handle, svc, SET);
@@ -2076,7 +2078,7 @@ scf_service_t *svc, int getSet)
 	scf_transaction_entry_t *entry = NULL;
 	char iPersistTypeGet[MAXNAMELEN] = {0};
 	char *iPersistType;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	if (((pg = scf_pg_create(handle)) == NULL) ||
@@ -2086,7 +2088,7 @@ scf_service_t *svc, int getSet)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -2102,7 +2104,7 @@ scf_service_t *svc, int getSet)
 		} else if (*persistType == STMF_PERSIST_NONE) {
 			iPersistType = STMF_PS_PERSIST_NONE;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2112,9 +2114,9 @@ scf_service_t *svc, int getSet)
 	 */
 	if (scf_service_get_pg(svc, STMF_DATA_GROUP, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		syslog(LOG_ERR, "get pg %s failed - %s",
 		    STMF_DATA_GROUP, scf_strerror(scf_error()));
@@ -2128,18 +2130,18 @@ scf_service_t *svc, int getSet)
 	 */
 	if (scf_pg_get_property(pg, STMF_PERSIST_TYPE, prop) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_PERSIST_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
 
 	/* no persist property found */
-	if (ret == STMF_PS_ERROR_NOT_FOUND || getSet == SET) {
+	if (ret == STMF_ERROR_NOT_FOUND || getSet == SET) {
 		/*
 		 * If we have no persistType property, go ahead
 		 * and create it with the user specified value or
@@ -2151,7 +2153,7 @@ scf_service_t *svc, int getSet)
 		if (scf_transaction_start(tran, pg) == -1) {
 			syslog(LOG_ERR, "start transaction for %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2163,7 +2165,7 @@ scf_service_t *svc, int getSet)
 				    "%s/%s failed - %s", STMF_DATA_GROUP,
 				    STMF_PERSIST_TYPE,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		} else {
@@ -2173,7 +2175,7 @@ scf_service_t *svc, int getSet)
 				    "%s/%s failed - %s", STMF_DATA_GROUP,
 				    STMF_PERSIST_TYPE,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		}
@@ -2185,7 +2187,7 @@ scf_service_t *svc, int getSet)
 			syslog(LOG_ERR, "set value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_PERSIST_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2196,28 +2198,28 @@ scf_service_t *svc, int getSet)
 			syslog(LOG_ERR, "add value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_PERSIST_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if ((commitRet = scf_transaction_commit(tran)) != 1) {
 			syslog(LOG_ERR, "transaction commit for %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
 			if (commitRet == 0) {
-				ret = STMF_PS_ERROR_BUSY;
+				ret = STMF_ERROR_BUSY;
 			} else {
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
 		/* reset return value */
-		ret = STMF_PS_SUCCESS;
+		ret = STMF_STATUS_SUCCESS;
 	} else if (getSet == GET) {
 		/* get the persist property */
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_PERSIST_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2229,7 +2231,7 @@ scf_service_t *svc, int getSet)
 			syslog(LOG_ERR, "get string value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_PERSIST_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2240,7 +2242,7 @@ scf_service_t *svc, int getSet)
 		} else if (strcmp(iPersistTypeGet, STMF_PS_PERSIST_SMF) == 0) {
 			*persistType = STMF_PERSIST_SMF;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2280,6 +2282,17 @@ psGetStmfProp(int propType, char *propVal)
 	return (iPsGetSetStmfProp(propType, propVal, GET));
 }
 
+int
+psFormatGuid(stmfGuid *guid, char *guidAsciiBuf, size_t guidAsciiBufSize)
+{
+	return snprintf(guidAsciiBuf, guidAsciiBufSize,
+	    "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+	    guid->guid[0], guid->guid[1], guid->guid[2], guid->guid[3],
+	    guid->guid[4], guid->guid[5], guid->guid[6], guid->guid[7],
+	    guid->guid[8], guid->guid[9], guid->guid[10], guid->guid[11],
+	    guid->guid[12], guid->guid[13], guid->guid[14], guid->guid[15]);
+}
+
 static int
 iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 {
@@ -2293,11 +2306,11 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 	char *psStmfPropVal;
 	char *psStmfProp;
 	char stmfPropGet[MAXNAMELEN] = {0};
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	if (propVal == NULL || (getSet != GET && getSet != SET)) {
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -2306,7 +2319,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 	 */
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -2321,7 +2334,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 	if (getSet == GET) {
@@ -2337,7 +2350,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 				(void) strcpy(stmfPropGet, psStmfPropVal);
 				break;
 			default :
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 		}
 	}
@@ -2351,7 +2364,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 				    "offline") == 0) {
 					psStmfPropVal = STMF_PS_LU_OFFLINE;
 				} else {
-					ret = STMF_PS_ERROR;
+					ret = STMF_STATUS_ERROR;
 					goto out;
 				}
 				break;
@@ -2365,12 +2378,12 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 					psStmfPropVal =
 					    STMF_PS_TARGET_PORT_OFFLINE;
 				} else {
-					ret = STMF_PS_ERROR;
+					ret = STMF_STATUS_ERROR;
 					goto out;
 				}
 				break;
 			default :
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 		}
 	}
@@ -2381,9 +2394,9 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 
 	if (scf_service_get_pg(svc, STMF_DATA_GROUP, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		syslog(LOG_ERR, "get pg %s failed - %s",
 		    STMF_DATA_GROUP, scf_strerror(scf_error()));
@@ -2396,26 +2409,26 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 
 	if (scf_pg_get_property(pg, psStmfProp, prop) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "start transaction for %s/%s "
 			    "failed - %s", STMF_DATA_GROUP, psStmfProp,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
 
 	/* if stmf prop is not found or while setting the prop */
 
-	if (ret == STMF_PS_ERROR_NOT_FOUND || getSet == SET) {
+	if (ret == STMF_ERROR_NOT_FOUND || getSet == SET) {
 		/*
 		 * Begin the transaction
 		 */
 		if (scf_transaction_start(tran, pg) == -1) {
 			syslog(LOG_ERR, "start transaction for %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if (ret) {
@@ -2424,7 +2437,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 				syslog(LOG_ERR, "transaction property new "
 				    "%s/%s failed - %s", STMF_DATA_GROUP,
 				    psStmfProp, scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		} else {
@@ -2435,7 +2448,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 					    "%s/%s failed - %s",
 					    STMF_DATA_GROUP, psStmfProp,
 					    scf_strerror(scf_error()));
-					ret = STMF_PS_ERROR;
+					ret = STMF_STATUS_ERROR;
 					goto out;
 			}
 		}
@@ -2448,7 +2461,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 			syslog(LOG_ERR, "set value %s/%s failed - %s",
 			    STMF_DATA_GROUP, psStmfProp,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2460,7 +2473,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 			syslog(LOG_ERR, "add value %s/%s failed - %s",
 			    STMF_DATA_GROUP, psStmfProp,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if ((commitRet = scf_transaction_commit(tran)) != 1) {
@@ -2468,20 +2481,20 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 			    "failed - %s", STMF_DATA_GROUP,
 			    scf_strerror(scf_error()));
 			if (commitRet == 0) {
-				ret = STMF_PS_ERROR_BUSY;
+				ret = STMF_ERROR_BUSY;
 			} else {
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
-		ret = STMF_PS_SUCCESS;
+		ret = STMF_STATUS_SUCCESS;
 	} else if (getSet == GET) {
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property value "
 			    "%s/%s failed - %s",
 			    STMF_DATA_GROUP, psStmfProp,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2492,7 +2505,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 			syslog(LOG_ERR, "get string value %s/%s failed - %s",
 			    STMF_DATA_GROUP, psStmfProp,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2508,7 +2521,7 @@ iPsGetSetStmfProp(int propType, char *propVal, int getSet)
 		    == 0) {
 			(void) strcpy(propVal, "offline");
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2560,42 +2573,42 @@ iPsInit(scf_handle_t **handle, scf_service_t **service)
 	if ((*handle = scf_handle_create(SCF_VERSION)) == NULL) {
 		syslog(LOG_ERR, "scf_handle_create failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto err;
 	}
 
 	if (scf_handle_bind(*handle) == -1) {
 		syslog(LOG_ERR, "scf_handle_bind failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto err;
 	}
 
 	if ((*service = scf_service_create(*handle)) == NULL) {
 		syslog(LOG_ERR, "scf_service_create failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto err;
 	}
 
 	if ((scope = scf_scope_create(*handle)) == NULL) {
 		syslog(LOG_ERR, "scf_scope_create failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto err;
 	}
 
 	if (scf_handle_get_scope(*handle, SCF_SCOPE_LOCAL, scope) == -1) {
 		syslog(LOG_ERR, "scf_handle_get_scope failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto err;
 	}
 
 	if (scf_scope_get_service(scope, STMF_SERVICE, *service) == -1) {
 		syslog(LOG_ERR, "scf_scope_get_service failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR_SERVICE_NOT_FOUND;
+		ret = STMF_ERROR_SERVICE_NOT_FOUND;
 		goto err;
 	}
 
@@ -2604,19 +2617,19 @@ iPsInit(scf_handle_t **handle, scf_service_t **service)
 	 * Get and check the version number
 	 */
 	ret = iPsGetServiceVersion(&version, *handle, *service);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto err;
 	}
 
 	if (version != STMF_SMF_VERSION) {
-		ret = STMF_PS_ERROR_VERSION_MISMATCH;
+		ret = STMF_ERROR_SERVICE_DATA_VERSION;
 		goto err;
 	}
 
 	/* we only need destroy the scope here */
 	scf_scope_destroy(scope);
 
-	return (STMF_PS_SUCCESS);
+	return (STMF_STATUS_SUCCESS);
 
 err:
 	if (*handle != NULL) {
@@ -2646,7 +2659,7 @@ scf_service_t *svc)
 	scf_value_t	*value = NULL;
 	scf_transaction_t *tran = NULL;
 	scf_transaction_entry_t *entry = NULL;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	if (((pg = scf_pg_create(handle)) == NULL) ||
@@ -2656,7 +2669,7 @@ scf_service_t *svc)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -2667,17 +2680,17 @@ scf_service_t *svc)
 	 */
 	if (scf_service_get_pg(svc, STMF_DATA_GROUP, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
 
 	/* create the group */
-	if (ret == STMF_PS_ERROR_NOT_FOUND) {
+	if (ret == STMF_ERROR_NOT_FOUND) {
 		/*
 		 * create the property group.
 		 */
@@ -2685,11 +2698,11 @@ scf_service_t *svc)
 		    SCF_GROUP_APPLICATION, 0, pg) == -1) {
 			syslog(LOG_ERR, "add pg %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		/* reset return value */
-		ret = STMF_PS_SUCCESS;
+		ret = STMF_STATUS_SUCCESS;
 	}
 
 	/* find version property */
@@ -2698,18 +2711,18 @@ scf_service_t *svc)
 	 */
 	if (scf_pg_get_property(pg, STMF_VERSION_NAME, prop) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
 
 	/* no version property found */
-	if (ret == STMF_PS_ERROR_NOT_FOUND) {
+	if (ret == STMF_ERROR_NOT_FOUND) {
 		/*
 		 * If we have no version property, go ahead
 		 * and create it. We're obviously making an assumption
@@ -2726,7 +2739,7 @@ scf_service_t *svc)
 		if (scf_transaction_start(tran, pg) == -1) {
 			syslog(LOG_ERR, "start transaction for %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2736,7 +2749,7 @@ scf_service_t *svc)
 			    "transaction property new %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2752,28 +2765,28 @@ scf_service_t *svc)
 			syslog(LOG_ERR, "add value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		if ((commitRet = scf_transaction_commit(tran)) != 1) {
 			syslog(LOG_ERR, "transaction commit for %s failed - %s",
 			    STMF_DATA_GROUP, scf_strerror(scf_error()));
 			if (commitRet == 0) {
-				ret = STMF_PS_ERROR_BUSY;
+				ret = STMF_ERROR_BUSY;
 			} else {
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 			}
 			goto out;
 		}
 		/* reset return value */
-		ret = STMF_PS_SUCCESS;
+		ret = STMF_STATUS_SUCCESS;
 	} else {
 		/* get the version property */
 		if (scf_pg_get_property(pg, STMF_VERSION_NAME, prop) == -1) {
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2781,7 +2794,7 @@ scf_service_t *svc)
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -2792,7 +2805,7 @@ scf_service_t *svc)
 			syslog(LOG_ERR, "get count value %s/%s failed - %s",
 			    STMF_DATA_GROUP, STMF_VERSION_NAME,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -2831,8 +2844,8 @@ out:
  * actualName - actual group name to reference (len must be >= MAXNAMELEN)
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
@@ -2847,7 +2860,7 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 	int ret;
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -2860,7 +2873,7 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -2869,11 +2882,11 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 	 */
 	if (scf_service_get_pg(svc, pgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_GROUP_NOT_FOUND;
+			ret = STMF_ERROR_GROUP_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -2884,7 +2897,7 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 	if (scf_iter_pg_properties(propIter, pg) == -1) {
 		syslog(LOG_ERR, "iter properties for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -2895,12 +2908,12 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 	 */
 
 	/* initialize to not found */
-	ret = STMF_PS_ERROR_GROUP_NOT_FOUND;
+	ret = STMF_ERROR_GROUP_NOT_FOUND;
 	while (scf_iter_next_property(propIter, prop) == 1) {
 		if (scf_property_get_name(prop, actualName, MAXNAMELEN) == -1) {
 			syslog(LOG_ERR, "get name from %s iter failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -2912,13 +2925,13 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 		if (scf_property_get_value(prop, value) == -1) {
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgName, actualName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		if (scf_value_get_ustring(value, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get ustring %s/%s failed - %s",
 			    pgName, actualName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -2927,13 +2940,13 @@ iPsGetActualGroupName(char *pgName, char *groupName, char *actualName)
 		 */
 		if ((strlen(buf) == strlen(groupName)) &&
 		    bcmp(buf, groupName, strlen(buf)) == 0) {
-			ret = STMF_PS_SUCCESS;
+			ret = STMF_STATUS_SUCCESS;
 			break;
 		}
 	}
 
 	/*
-	 * if we didn't find it, ret is set to STMF_PS_ERROR_GROUP_NOT_FOUND
+	 * if we didn't find it, ret is set to STMF_ERROR_GROUP_NOT_FOUND
 	 */
 
 out:
@@ -2979,7 +2992,7 @@ psAddHostGroupMember(char *groupName, char *memberName)
 
 	ret = iPsGetActualGroupName(STMF_HOST_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -2988,7 +3001,7 @@ psAddHostGroupMember(char *groupName, char *memberName)
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsAddRemoveGroupMember(STMF_HOST_GROUPS, groupPropListName,
@@ -3012,7 +3025,7 @@ psAddTargetGroupMember(char *groupName, char *memberName)
 
 	ret = iPsGetActualGroupName(STMF_TARGET_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -3021,7 +3034,7 @@ psAddTargetGroupMember(char *groupName, char *memberName)
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsAddRemoveGroupMember(STMF_TARGET_GROUPS, groupPropListName,
@@ -3037,8 +3050,8 @@ psAddTargetGroupMember(char *groupName, char *memberName)
  *             the values to set for this view entry
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psAddViewEntry(stmfGuid *lu, stmfViewEntry *viewEntry)
@@ -3046,10 +3059,10 @@ psAddViewEntry(stmfGuid *lu, stmfViewEntry *viewEntry)
 	scf_handle_t	*handle = NULL;
 	scf_service_t	*svc = NULL;
 	scf_propertygroup_t	*pg = NULL;
-	char guidAsciiBuf[33]; /* size of ascii hex 16 byte guid with NULL */
+	char guidAsciiBuf[GUID_STR_MIN_SIZE];
 	char viewEntryPgName[VIEW_ENTRY_PG_SIZE];
 	char scfLuPgName[LOGICAL_UNIT_PG_SIZE];
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	sigset_t sigmaskRestore;
 
 	/* grab the signal hold lock */
@@ -3060,11 +3073,11 @@ psAddViewEntry(stmfGuid *lu, stmfViewEntry *viewEntry)
 	 */
 	if (holdSignal(&sigmaskRestore) != 0) {
 		(void) pthread_mutex_unlock(&sigSetLock);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -3072,18 +3085,11 @@ psAddViewEntry(stmfGuid *lu, stmfViewEntry *viewEntry)
 	if (pg == NULL) {
 		syslog(LOG_ERR, "scf pg alloc failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
-	/* Convert to ASCII uppercase hexadecimal string */
-	(void) snprintf(guidAsciiBuf, sizeof (guidAsciiBuf),
-	    "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-	    lu->guid[0], lu->guid[1], lu->guid[2], lu->guid[3], lu->guid[4],
-	    lu->guid[5], lu->guid[6], lu->guid[7], lu->guid[8], lu->guid[9],
-	    lu->guid[10], lu->guid[11], lu->guid[12], lu->guid[13],
-	    lu->guid[14], lu->guid[15]);
-
+	(void) psFormatGuid(lu, guidAsciiBuf, sizeof (guidAsciiBuf));
 	(void) snprintf(scfLuPgName, sizeof (scfLuPgName), "%s-%s",
 	    STMF_LU_PREFIX, guidAsciiBuf);
 
@@ -3103,7 +3109,7 @@ out:
 	 */
 	if (releaseSignal(&sigmaskRestore) != 0) {
 		/*
-		 * Don't set this as an STMF_PS_ERROR_*. We succeeded
+		 * Don't set this as an STMF_ERROR_*. We succeeded
 		 * the requested operation. But we do need to log it.
 		 */
 		syslog(LOG_ERR, "Unable to release one or more signals - %s",
@@ -3163,8 +3169,8 @@ psCheckService()
  * groupName - name of group to create
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psCreateHostGroup(char *groupName)
@@ -3178,8 +3184,8 @@ psCreateHostGroup(char *groupName)
  * groupName - name of group to create
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psCreateTargetGroup(char *groupName)
@@ -3193,8 +3199,8 @@ psCreateTargetGroup(char *groupName)
  * groupName - name of group to delete
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psDeleteHostGroup(char *groupName)
@@ -3208,8 +3214,8 @@ psDeleteHostGroup(char *groupName)
  * groupName - name of group to delete
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psDeleteTargetGroup(char *groupName)
@@ -3225,8 +3231,8 @@ psDeleteTargetGroup(char *groupName)
  *             of host groups on successful return.
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psGetHostGroupList(stmfGroupList **groupList)
@@ -3249,14 +3255,14 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 	char buf[MAXNAMELEN];
 	int guidCnt = 0;
 	int i = 0, j;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	unsigned int guid[sizeof (stmfGuid)];
 	stmfGuid outGuid;
 
 	assert(guidList != NULL);
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -3267,7 +3273,7 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 	    ((pgIter = scf_iter_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -3277,7 +3283,7 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 	if (scf_iter_service_pgs(pgIter, svc) == -1) {
 		syslog(LOG_ERR, "iter property groups failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -3285,7 +3291,7 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 		if (scf_pg_get_name(pg, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get pg name failed - %s",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -3302,14 +3308,14 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 	if (scf_iter_service_pgs(pgIter, svc) == -1) {
 		syslog(LOG_ERR, "iter property groups failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	*guidList = (stmfGuidList *)calloc(1, sizeof (stmfGuidList) +
 	    guidCnt * sizeof (stmfGuid));
 	if (*guidList == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -3322,7 +3328,7 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 		if (scf_pg_get_name(pg, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get pg name failed - %s",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -3348,7 +3354,7 @@ psGetLogicalUnitList(stmfGuidList **guidList)
 		(*guidList)->cnt++;
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		free(*guidList);
 		goto out;
 	}
@@ -3380,8 +3386,8 @@ out:
  *             of target groups on successful return.
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psGetTargetGroupList(stmfGroupList **groupList)
@@ -3396,8 +3402,8 @@ psGetTargetGroupList(stmfGroupList **groupList)
  * groupMemberList - pointer to pointer to stmfGroupProperties list
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psGetHostGroupMemberList(char *groupName, stmfGroupProperties **groupMemberList)
@@ -3408,7 +3414,7 @@ psGetHostGroupMemberList(char *groupName, stmfGroupProperties **groupMemberList)
 
 	ret = iPsGetActualGroupName(STMF_HOST_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -3417,7 +3423,7 @@ psGetHostGroupMemberList(char *groupName, stmfGroupProperties **groupMemberList)
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsGetGroupMemberList(STMF_HOST_GROUPS, groupPropListName,
@@ -3431,8 +3437,8 @@ psGetHostGroupMemberList(char *groupName, stmfGroupProperties **groupMemberList)
  * groupMemberList - pointer to pointer to stmfGroupProperties list
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psGetTargetGroupMemberList(char *groupName,
@@ -3444,7 +3450,7 @@ psGetTargetGroupMemberList(char *groupName,
 
 	ret = iPsGetActualGroupName(STMF_TARGET_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -3453,7 +3459,7 @@ psGetTargetGroupMemberList(char *groupName,
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsGetGroupMemberList(STMF_TARGET_GROUPS,
@@ -3484,8 +3490,8 @@ viewEntryCompare(const void *p1, const void *p2)
  *                 on successful return.
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
@@ -3496,16 +3502,17 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	scf_property_t	*prop = NULL;
 	scf_value_t *value = NULL;
 	scf_iter_t  *propIter = NULL;
-	char guidAsciiBuf[33]; /* size of ascii hex 16 byte guid with NULL */
+	char guidAsciiBuf[GUID_STR_MIN_SIZE];
 	char viewEntryPgName[VIEW_ENTRY_PG_SIZE];
 	char luPgName[LOGICAL_UNIT_PG_SIZE];
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	uint64_t i = 0;
 	uint64_t veCnt;
 
+	*viewEntryList = NULL;
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -3518,17 +3525,12 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	/* Convert to ASCII uppercase hexadecimal string */
-	(void) snprintf(guidAsciiBuf, sizeof (guidAsciiBuf),
-	    "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-	    lu->guid[0], lu->guid[1], lu->guid[2], lu->guid[3], lu->guid[4],
-	    lu->guid[5], lu->guid[6], lu->guid[7], lu->guid[8], lu->guid[9],
-	    lu->guid[10], lu->guid[11], lu->guid[12], lu->guid[13],
-	    lu->guid[14], lu->guid[15]);
+	(void) psFormatGuid(lu, guidAsciiBuf, sizeof (guidAsciiBuf));
 
 	/* form the LU property group name (LU-<guid>) */
 	(void) snprintf(luPgName, sizeof (luPgName), "%s-%s",
@@ -3537,11 +3539,11 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	/* get the property group associated with this LU */
 	if (scf_service_get_pg(svc, luPgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    luPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -3550,14 +3552,14 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	if (scf_pg_get_property(pg, STMF_VE_CNT, prop) == -1) {
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
 	if (scf_property_get_value(prop, value) == -1) {
 		syslog(LOG_ERR, "get property value %s/%s failed - %s",
 		    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3567,7 +3569,7 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	if (scf_value_get_count(value, &veCnt) == -1) {
 		syslog(LOG_ERR, "get integer value %s/%s failed - %s",
 		    luPgName, STMF_VE_CNT, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3577,7 +3579,7 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	if (scf_iter_pg_properties(propIter, pg) == -1) {
 		syslog(LOG_ERR, "iter properties for %s failed - %s",
 		    luPgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3587,7 +3589,7 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 	*viewEntryList = (stmfViewEntryList *)calloc(1,
 	    sizeof (stmfViewEntryList) + veCnt * sizeof (stmfViewEntry));
 	if (*viewEntryList == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -3609,13 +3611,20 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 			 * break with error
 			 */
 			if (i == veCnt) {
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				break;
 			}
 
-			if ((ret = iPsGetViewEntry(viewEntryPgName,
-			    &((*viewEntryList)->ve[i]))) != STMF_PS_SUCCESS) {
+			ret = iPsGetViewEntry(viewEntryPgName,
+			    &((*viewEntryList)->ve[i]));
+			if (STMF_STATUS_IS_ERROR(ret)) {
+				syslog(LOG_ERR, "View %s has fatal errors, "
+				    "exiting", viewEntryPgName);
 				break;
+			} else if (STMF_STATUS_IS_WARNING(ret)) {
+				syslog(LOG_ERR, "View %s has non-fatal errors, "
+				    "skipping", viewEntryPgName);
+				continue;
 			}
 
 			i++;
@@ -3625,13 +3634,13 @@ psGetViewEntryList(stmfGuid *lu, stmfViewEntryList **viewEntryList)
 		} else {
 			syslog(LOG_ERR, "scf iter %s properties failed - %s",
 			    luPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		free(*viewEntryList);
 		goto out;
 	}
@@ -3671,14 +3680,42 @@ out:
 }
 
 /*
+ * iPsViewEntryScfToStmfStatus
+ *
+ * Purpose: convert an scf_error into a STMF_* warning or error as
+ * appropriate.
+ *
+ * returns:
+ *  STMF_STATUS_SUCCESS if scf_error() returns SCF_ERROR_NONE.
+ *  STMF_WARN_VIEW_ENTRY_LIST for scf errors that indicate an incomplete
+ *    or corrupted configuration in the scf database.
+ *  STMF_STATUS_ERROR for scf errors that indicate a serious error in scf or an
+ *    unexpected error code (an error code that happens on modification,
+ *    rather than reading, for example).
+ */
+static int
+iPsViewEntryScfToStmfStatus()
+{
+	switch (scf_error()) {
+		case SCF_ERROR_NONE:
+			return (STMF_STATUS_SUCCESS);
+		case SCF_ERROR_NOT_FOUND:
+		case SCF_ERROR_TYPE_MISMATCH:
+			return (STMF_WARN_VIEW_ENTRY_LIST);
+		default:
+			return (STMF_STATUS_ERROR);
+	}
+}
+
+/*
  * iPsGetViewEntry
  *
  * viewEntryPgName - view entry property group name to retrieve
  * viewEntry - pointer to stmfViewEntry structure allocated by the caller
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 static int
 iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
@@ -3690,12 +3727,12 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 	scf_value_t *value = NULL;
 	uint8_t scfBool;
 	char *indexPtr;
+	char *endptr;
 	char groupName[sizeof (stmfGroupName)];
-	int ret = STMF_PS_SUCCESS;
-
+	int ret = STMF_STATUS_SUCCESS;
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -3707,7 +3744,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 	    ((value = scf_value_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -3718,15 +3755,14 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 	 */
 	if (scf_service_get_pg(svc, viewEntryPgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    viewEntryPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
-
 
 	/*
 	 * get index
@@ -3734,12 +3770,26 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 	 */
 	indexPtr = strchr(viewEntryPgName, '-');
 	if (!indexPtr) {
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
-	/* Set the index */
-	viewEntry->veIndex = atoi(strtok(++indexPtr, "-"));
+	errno = 0;
+	viewEntry->veIndex = strtol(indexPtr, &endptr, 10);
+	/*
+	 * ensure there was actually a number in the veIndex position of
+	 * viewEntryPgName.
+	 */
+	if (errno != 0) {
+		ret = STMF_STATUS_ERROR;
+		goto out;
+	}
+
+	/* verify there's a - after veIndex per the above format */
+	if (*endptr != '-') {
+		ret = STMF_STATUS_ERROR;
+		goto out;
+	}
 
 	viewEntry->veIndexValid = B_TRUE;
 
@@ -3749,7 +3799,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLHOSTS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3757,7 +3807,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLHOSTS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3766,7 +3816,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLHOSTS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 	viewEntry->allHosts = scfBool;
@@ -3777,7 +3827,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_HOSTGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3785,7 +3835,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_HOSTGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3794,7 +3844,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_HOSTGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 	/* set hostGroup */
@@ -3806,7 +3856,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLTARGETS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3814,7 +3864,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLTARGETS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3823,7 +3873,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_ALLTARGETS,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 	viewEntry->allTargets = scfBool;
@@ -3833,7 +3883,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_TARGETGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3841,7 +3891,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_TARGETGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3850,7 +3900,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_TARGETGROUP,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 	/* set targetGroup */
@@ -3862,7 +3912,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_LUNBR,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3870,7 +3920,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get property value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_LUNBR,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 
@@ -3880,7 +3930,7 @@ iPsGetViewEntry(char *viewEntryPgName, stmfViewEntry *viewEntry)
 		syslog(LOG_ERR, "get opaque value %s/%s failed - %s",
 		    viewEntryPgName, STMF_VE_LUNBR,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = iPsViewEntryScfToStmfStatus();
 		goto out;
 	}
 	/* set luNbrValid to true since we just got it */
@@ -3919,8 +3969,8 @@ out:
  * memberName - name of group member to remove
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psRemoveHostGroupMember(char *groupName, char *memberName)
@@ -3931,7 +3981,7 @@ psRemoveHostGroupMember(char *groupName, char *memberName)
 
 	ret = iPsGetActualGroupName(STMF_HOST_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -3940,7 +3990,7 @@ psRemoveHostGroupMember(char *groupName, char *memberName)
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsAddRemoveGroupMember(STMF_HOST_GROUPS, groupPropListName,
@@ -3956,8 +4006,8 @@ psRemoveHostGroupMember(char *groupName, char *memberName)
  * memberName - name of group member to remove
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psRemoveTargetGroupMember(char *groupName, char *memberName)
@@ -3968,7 +4018,7 @@ psRemoveTargetGroupMember(char *groupName, char *memberName)
 
 	ret = iPsGetActualGroupName(STMF_TARGET_GROUPS, groupName,
 	    groupPropName);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		return (ret);
 	}
 
@@ -3977,7 +4027,7 @@ psRemoveTargetGroupMember(char *groupName, char *memberName)
 	    sizeof (groupPropListName)) {
 		syslog(LOG_ERR, "buffer overflow on property name %s",
 		    groupPropName);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	return (iPsAddRemoveGroupMember(STMF_TARGET_GROUPS, groupPropListName,
@@ -4011,16 +4061,16 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 	ssize_t nvlistEncodedSize = 0;
 	boolean_t foundSetCnt = B_TRUE;
 	int i;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 
 	if (providerName == NULL || (providerType != STMF_LU_PROVIDER_TYPE &&
 	    providerType != STMF_PORT_PROVIDER_TYPE)) {
-		ret = STMF_PS_ERROR_INVALID_ARG;
+		ret = STMF_ERROR_INVALID_ARG;
 		goto out;
 	}
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -4038,7 +4088,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 	    ((prop = scf_property_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4049,10 +4099,10 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 		if (scf_error() != SCF_ERROR_NOT_FOUND) {
 			syslog(LOG_ERR, "get pg %s failed - %s", pgName,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		} else {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 			goto out;
 		}
 	}
@@ -4065,7 +4115,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 		syslog(LOG_ERR, "get property %s/%s failed - %s",
 		    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4076,7 +4126,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 		syslog(LOG_ERR, "get property value %s/%s failed - %s",
 		    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4087,7 +4137,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 		syslog(LOG_ERR, "get integer value %s/%s failed - %s",
 		    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4107,7 +4157,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 				    "failed - %s", pgName,
 				    STMF_PROVIDER_DATA_PROP_SET_COUNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		}
@@ -4121,7 +4171,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 				    "get property value %s/%s failed - %s",
 				    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 
@@ -4134,7 +4184,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 				    "get integer value %s/%s failed - %s",
 				    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		}
@@ -4144,7 +4194,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 	    blockCnt * STMF_PROVIDER_DATA_PROP_SIZE);
 	if (nvlistEncoded == NULL) {
 		syslog(LOG_ERR, "nvlistEncoded alloc failed");
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -4160,7 +4210,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    pgName, dataPropertyName,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4168,7 +4218,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgName, dataPropertyName,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4182,7 +4232,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 			syslog(LOG_ERR, "get opaque property value %s/%s "
 			    "failed - %s", pgName, dataPropertyName,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 		nvlistEncodedSize += actualBlockSize;
@@ -4190,7 +4240,7 @@ psGetProviderData(char *providerName, nvlist_t **nvl, int providerType,
 
 	if (nvlist_unpack(nvlistEncoded, nvlistEncodedSize, nvl, 0) != 0) {
 		syslog(LOG_ERR, "unable to unpack nvlist");
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4243,10 +4293,10 @@ psGetProviderDataList(stmfProviderList **providerList)
 	int providerCnt = 0;
 	int64_t providerType;
 	int i = 0, j;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -4261,7 +4311,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 	    ((pgIter = scf_iter_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4271,19 +4321,20 @@ psGetProviderDataList(stmfProviderList **providerList)
 	if (scf_iter_service_pgs(pgIter, svc) == -1) {
 		syslog(LOG_ERR, "iter property groups failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
+	/* count the provider property groups */
 	while (scf_iter_next_pg(pgIter, pg) == 1) {
 		if (scf_pg_get_name(pg, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get name failed - %s",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
-		 * Only count LU property groups
+		 * Only count provider property groups
 		 */
 		if (strncmp(buf, STMF_PROVIDER_DATA_PREFIX,
 		    strlen(STMF_PROVIDER_DATA_PREFIX)) == 0) {
@@ -4297,14 +4348,14 @@ psGetProviderDataList(stmfProviderList **providerList)
 	if (scf_iter_service_pgs(pgIter, svc) == -1) {
 		syslog(LOG_ERR, "iter property groups failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	*providerList = (stmfProviderList *)calloc(1,
 	    sizeof (stmfProviderList) + providerCnt * sizeof (stmfProvider));
 	if (*providerList == NULL) {
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -4317,7 +4368,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 		if (scf_pg_get_name(pg, buf, sizeof (buf)) == -1) {
 			syslog(LOG_ERR, "get name failed - %s",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 		/*
@@ -4336,7 +4387,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    buf, STMF_PROVIDER_DATA_PROP_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -4347,7 +4398,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    buf, STMF_PROVIDER_DATA_PROP_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -4358,7 +4409,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 			syslog(LOG_ERR, "get integer value %s/%s failed - %s",
 			    buf, STMF_PROVIDER_DATA_PROP_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			break;
 		}
 
@@ -4374,7 +4425,7 @@ psGetProviderDataList(stmfProviderList **providerList)
 		(*providerList)->cnt++;
 	}
 
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		free(*providerList);
 		goto out;
 	}
@@ -4457,17 +4508,17 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	uint64_t blockCnt = 0;
 	uint64_t setCnt = 0;
 	boolean_t foundSetCnt = B_TRUE;
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	int commitRet;
 
 	if (providerName == NULL || (providerType != STMF_LU_PROVIDER_TYPE &&
 	    providerType != STMF_PORT_PROVIDER_TYPE)) {
-		ret = STMF_PS_ERROR_INVALID_ARG;
+		ret = STMF_ERROR_INVALID_ARG;
 		goto out;
 	}
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -4495,7 +4546,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	    ((tran = scf_transaction_create(handle)) == NULL)) {
 		syslog(LOG_ERR, "scf alloc resource failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4506,7 +4557,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (scf_error() != SCF_ERROR_NOT_FOUND) {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		} else {
 			/*
@@ -4516,7 +4567,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			    SCF_GROUP_APPLICATION, 0, pg) == -1) {
 				syslog(LOG_ERR, "add pg %s failed - %s",
 				    pgName, scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 			newPg = B_TRUE;
@@ -4529,7 +4580,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	if (scf_transaction_start(tran, pg) == -1) {
 		syslog(LOG_ERR, "start transaction for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4542,7 +4593,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4553,7 +4604,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4564,7 +4615,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get integer value %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4582,7 +4633,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get property %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4595,7 +4646,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get property value %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4606,7 +4657,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "get integer value %s/%s failed - %s",
 			    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4614,7 +4665,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		 * Compare the setCnt prop to the caller's.
 		 */
 		if (setToken && (*setToken != setCnt)) {
-			ret = STMF_PS_ERROR_PROV_DATA_STALE;
+			ret = STMF_ERROR_PROV_DATA_STALE;
 			goto out;
 		}
 	}
@@ -4628,7 +4679,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	    NV_ENCODE_XDR, 0) != 0) {
 		syslog(LOG_ERR, "nvlist_pack for %s failed",
 		    pgName);
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -4642,7 +4693,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	    * blockCnt);
 	if (addEntry == NULL) {
 		syslog(LOG_ERR, "addEntry alloc for %s failed", pgName);
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -4650,7 +4701,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 	    * blockCnt);
 	if (addValue == NULL) {
 		syslog(LOG_ERR, "value alloc for %s failed", pgName);
-		ret = STMF_PS_ERROR_NOMEM;
+		ret = STMF_ERROR_NOMEM;
 		goto out;
 	}
 
@@ -4666,7 +4717,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (deleteEntry == NULL) {
 			syslog(LOG_ERR, "deleteEntry alloc for %s failed",
 			    pgName);
-			ret = STMF_PS_ERROR_NOMEM;
+			ret = STMF_ERROR_NOMEM;
 			goto out;
 		}
 		deleteEntryAlloc = oldBlockCnt - blockCnt;
@@ -4681,7 +4732,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (addEntry[i] == NULL) {
 			syslog(LOG_ERR, "scf value alloc for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4707,7 +4758,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 					    "change %s/%s failed - %s",
 					    pgName, dataPropertyName,
 					    scf_strerror(scf_error()));
-					ret = STMF_PS_ERROR;
+					ret = STMF_STATUS_ERROR;
 					goto out;
 				}
 			} else {
@@ -4715,7 +4766,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 				    "transaction property new %s/%s "
 				    "failed - %s", pgName, dataPropertyName,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		}
@@ -4726,7 +4777,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (addValue[i] == NULL) {
 			syslog(LOG_ERR, "scf value alloc for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4749,7 +4800,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		    &nvlistEncoded[blockOffset], blockSize) == -1) {
 			syslog(LOG_ERR, "set value for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4759,7 +4810,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (scf_entry_add_value(addEntry[i], addValue[i]) == -1) {
 			syslog(LOG_ERR, "add value for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4776,7 +4827,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		if (deleteEntry[j] == NULL) {
 			syslog(LOG_ERR, "scf value alloc for %s failed - %s",
 			    pgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4794,7 +4845,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "delete property %s/%s failed - %s",
 			    pgName, dataPropertyName,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4809,7 +4860,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "transaction property %s/%s new "
 			    "failed - %s", pgName, "read_authorization",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4817,7 +4868,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "set value %s/%s failed - %s",
 			    pgName, "read_authorization",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 
@@ -4825,7 +4876,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			syslog(LOG_ERR, "add value %s/%s failed - %s",
 			    pgName, "read_authorization",
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4841,7 +4892,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 				    "%s/%s failed - %s", pgName,
 				    STMF_PROVIDER_DATA_PROP_COUNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		} else {
@@ -4849,7 +4900,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			    "failed - %s", pgName,
 			    STMF_PROVIDER_DATA_PROP_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4860,7 +4911,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    pgName, STMF_PROVIDER_DATA_PROP_COUNT,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4876,7 +4927,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 				    "failed - %s", pgName,
 				    STMF_PROVIDER_DATA_PROP_SET_COUNT,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		} else {
@@ -4884,7 +4935,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			    "failed - %s", pgName,
 			    STMF_PROVIDER_DATA_PROP_SET_COUNT,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4897,7 +4948,7 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		syslog(LOG_ERR, "add value %s/%s failed - %s",
 		    pgName, STMF_PROVIDER_DATA_PROP_SET_COUNT,
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4913,14 +4964,14 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 				    "failed - %s", pgName,
 				    STMF_PROVIDER_DATA_PROP_TYPE,
 				    scf_strerror(scf_error()));
-				ret = STMF_PS_ERROR;
+				ret = STMF_STATUS_ERROR;
 				goto out;
 			}
 		} else {
 			syslog(LOG_ERR, "transaction property new %s/%s "
 			    "failed - %s", pgName, STMF_PROVIDER_DATA_PROP_TYPE,
 			    scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 		}
 	}
@@ -4931,14 +4982,14 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 			scf_value_set_integer(value3, providerType);
 			break;
 		default:
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 			goto out;
 	}
 
 	if (scf_entry_add_value(entry3, value3) == -1) {
 		syslog(LOG_ERR, "add value %s/%s failed - %s", pgName,
 		    STMF_PROVIDER_DATA_PROP_TYPE, scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -4947,15 +4998,15 @@ psSetProviderData(char *providerName, nvlist_t *nvl, int providerType,
 		syslog(LOG_ERR, "transaction commit for %s failed - %s",
 		    pgName, scf_strerror(scf_error()));
 		if (commitRet == 0) {
-			ret = STMF_PS_ERROR_BUSY;
+			ret = STMF_ERROR_BUSY;
 		} else {
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
 
 	/* pass the new token back to the caller if requested */
-	if (ret == STMF_PS_SUCCESS && setToken) {
+	if (ret == STMF_STATUS_SUCCESS && setToken) {
 		*setToken = setCnt;
 	}
 
@@ -5041,13 +5092,13 @@ psGetViewEntry(stmfGuid *lu, uint32_t viewEntryIndex, stmfViewEntry *ve)
 	scf_handle_t	*handle = NULL;
 	scf_service_t	*svc = NULL;
 	scf_propertygroup_t	*pg = NULL;
-	char guidAsciiBuf[33]; /* size of ascii hex 16 byte guid with NULL */
+	char guidAsciiBuf[GUID_STR_MIN_SIZE];
 	char viewEntryPgName[VIEW_ENTRY_PG_SIZE];
 	char luPgName[LOGICAL_UNIT_PG_SIZE];
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -5055,17 +5106,12 @@ psGetViewEntry(stmfGuid *lu, uint32_t viewEntryIndex, stmfViewEntry *ve)
 	if (pg == NULL) {
 		syslog(LOG_ERR, "scf pg alloc failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	/* Convert to ASCII uppercase hexadecimal string */
-	(void) snprintf(guidAsciiBuf, sizeof (guidAsciiBuf),
-	    "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-	    lu->guid[0], lu->guid[1], lu->guid[2], lu->guid[3], lu->guid[4],
-	    lu->guid[5], lu->guid[6], lu->guid[7], lu->guid[8], lu->guid[9],
-	    lu->guid[10], lu->guid[11], lu->guid[12], lu->guid[13],
-	    lu->guid[14], lu->guid[15]);
+	(void) psFormatGuid(lu, guidAsciiBuf, sizeof (guidAsciiBuf));
 
 	(void) snprintf(luPgName, sizeof (luPgName), "%s-%s",
 	    STMF_LU_PREFIX, guidAsciiBuf);
@@ -5079,18 +5125,19 @@ psGetViewEntry(stmfGuid *lu, uint32_t viewEntryIndex, stmfViewEntry *ve)
 
 	if (scf_service_get_pg(svc, viewEntryPgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    viewEntryPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
 
 
-	if ((ret = iPsGetViewEntry(viewEntryPgName, ve)) != STMF_PS_SUCCESS) {
-		ret = STMF_PS_ERROR;
+	if ((ret = iPsGetViewEntry(viewEntryPgName, ve)) !=
+	    STMF_STATUS_SUCCESS) {
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -5120,8 +5167,8 @@ out:
  * viewEntryIndex - view entry name to remove
  *
  * returns:
- *  STMF_PS_SUCCESS on success
- *  STMF_PS_ERROR_* on failure
+ *  STMF_STATUS_SUCCESS on success
+ *  STMF_ERROR_* on failure
  */
 int
 psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
@@ -5129,10 +5176,10 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 	scf_handle_t	*handle = NULL;
 	scf_service_t	*svc = NULL;
 	scf_propertygroup_t	*pg = NULL;
-	char guidAsciiBuf[33]; /* size of ascii hex 16 byte guid with NULL */
+	char guidAsciiBuf[GUID_STR_MIN_SIZE];
 	char viewEntryPgName[VIEW_ENTRY_PG_SIZE];
 	char luPgName[LOGICAL_UNIT_PG_SIZE];
-	int ret = STMF_PS_SUCCESS;
+	int ret = STMF_STATUS_SUCCESS;
 	sigset_t sigmaskRestore;
 
 	/* grab the signal hold lock */
@@ -5143,11 +5190,11 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 	 */
 	if (holdSignal(&sigmaskRestore) != 0) {
 		(void) pthread_mutex_unlock(&sigSetLock);
-		return (STMF_PS_ERROR);
+		return (STMF_STATUS_ERROR);
 	}
 
 	ret = iPsInit(&handle, &svc);
-	if (ret != STMF_PS_SUCCESS) {
+	if (ret != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -5155,17 +5202,12 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 	if (pg == NULL) {
 		syslog(LOG_ERR, "scf pg alloc failed - %s",
 		    scf_strerror(scf_error()));
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
 	/* Convert to ASCII uppercase hexadecimal string */
-	(void) snprintf(guidAsciiBuf, sizeof (guidAsciiBuf),
-	    "%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-	    lu->guid[0], lu->guid[1], lu->guid[2], lu->guid[3], lu->guid[4],
-	    lu->guid[5], lu->guid[6], lu->guid[7], lu->guid[8], lu->guid[9],
-	    lu->guid[10], lu->guid[11], lu->guid[12], lu->guid[13],
-	    lu->guid[14], lu->guid[15]);
+	(void) psFormatGuid(lu, guidAsciiBuf, sizeof (guidAsciiBuf));
 
 	(void) snprintf(luPgName, sizeof (luPgName), "%s-%s",
 	    STMF_LU_PREFIX, guidAsciiBuf);
@@ -5179,11 +5221,11 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 
 	if (scf_service_get_pg(svc, viewEntryPgName, pg) == -1) {
 		if (scf_error() == SCF_ERROR_NOT_FOUND) {
-			ret = STMF_PS_ERROR_NOT_FOUND;
+			ret = STMF_ERROR_NOT_FOUND;
 		} else {
 			syslog(LOG_ERR, "get pg %s failed - %s",
 			    viewEntryPgName, scf_strerror(scf_error()));
-			ret = STMF_PS_ERROR;
+			ret = STMF_STATUS_ERROR;
 		}
 		goto out;
 	}
@@ -5195,7 +5237,7 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 	 * we maintain consistency.
 	 */
 	if ((ret = iPsAddRemoveLuViewEntry(luPgName, viewEntryPgName,
-	    REMOVE)) != STMF_PS_SUCCESS) {
+	    REMOVE)) != STMF_STATUS_SUCCESS) {
 		goto out;
 	}
 
@@ -5208,12 +5250,12 @@ psRemoveViewEntry(stmfGuid *lu, uint32_t viewEntryIndex)
 		syslog(LOG_ERR, "delete pg %s failed - %s", viewEntryPgName,
 		    scf_strerror(scf_error()));
 		if ((ret = iPsAddRemoveLuViewEntry(luPgName, viewEntryPgName,
-		    ADD)) != STMF_PS_SUCCESS) {
+		    ADD)) != STMF_STATUS_SUCCESS) {
 			syslog(LOG_ERR, "add of view entry %s failed, possible"
 			    "inconsistency - %s", viewEntryPgName,
 			    scf_strerror(scf_error()));
 		}
-		ret = STMF_PS_ERROR;
+		ret = STMF_STATUS_ERROR;
 		goto out;
 	}
 
@@ -5223,7 +5265,7 @@ out:
 	 */
 	if (releaseSignal(&sigmaskRestore) != 0) {
 		/*
-		 * Don't set this as an STMF_PS_ERROR_*. We succeeded
+		 * Don't set this as an STMF_ERROR_*. We succeeded
 		 * the requested operation. But we do need to log it.
 		 */
 		syslog(LOG_ERR, "Unable to release one or more signals - %s",

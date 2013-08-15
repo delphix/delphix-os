@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <stdlib.h>
@@ -34,6 +35,7 @@
 #include <assert.h>
 #include <getopt.h>
 #include <cmdparse.h>
+#include <libscf.h>
 #include <libstmf.h>
 #include <signal.h>
 #include <pthread.h>
@@ -148,42 +150,58 @@ svcStart(int operandLen, char *operands[], cmdOptions_t *options,
     void *args)
 {
 	int stmfRet;
-	int ret = 0;
 	(void) stmfLoadStmfProps();
-	if ((stmfRet = stmfLoadConfig()) != STMF_STATUS_SUCCESS) {
-		switch (stmfRet) {
-			case STMF_ERROR_PERM:
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("permission denied"));
-				break;
-			case STMF_ERROR_SERVICE_NOT_FOUND:
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("STMF service not found"));
-				break;
-			case STMF_ERROR_SERVICE_ONLINE:
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("STMF service must be offline"));
-				break;
-			default:
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("Unable to load the configuration. "
-				    "See /var/adm/messages for details"));
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("For information on reverting the "
-				    "stmf:default instance to a previously "
-				    "running configuration see the man page "
-				    "for svccfg(1M)"));
-				(void) fprintf(stderr, "%s: %s\n", cmdName,
-				    gettext("After reverting the instance "
-				    "you must clear the service maintenance "
-				    "state. See the man page for svcadm(1M)"));
-				break;
-		}
-		return (1);
+	stmfRet = stmfLoadConfig();
+	switch (stmfRet) {
+		case STMF_STATUS_SUCCESS:
+			break;
+		case STMF_ERROR_PERM:
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("permission denied"));
+			return (SMF_EXIT_ERR_PERM);
+		case STMF_ERROR_SERVICE_NOT_FOUND:
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("STMF service not found"));
+			return (SMF_EXIT_ERR_FATAL);
+		case STMF_ERROR_SERVICE_ONLINE:
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("STMF service must be offline"));
+			return (1);
+		case STMF_WARN_VIEW_ENTRY_LIST:
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("STMF service online, but there are"
+			    " non-fatal errors in the configuration.  "
+			    "See /var/adm/messages for details."));
+			/*
+			 * Should really set ret = SMF_EXIT_MON_DEGRADE or
+			 * something that gives an indication that the service
+			 * is up, but the configuration needs to be checked.
+			 * Unfortunately svc.startd's implementation for the
+			 * degraded state seems to be a little shaky, and
+			 * returing SMF_EXIT_MON_DEGRADE puts the service in
+			 * maintenance mode.
+			 *
+			 * We do want to continue bringing up the stack for the
+			 * properly configured iSCSI LUs, so don't return from
+			 * here once the degraded state is sorted out.
+			 */
+			break;
+		default:
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("Unable to load the configuration. "
+			    "See /var/adm/messages for details"));
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("For information on reverting the "
+			    "stmf:default instance to a previously "
+			    "running configuration see the man page "
+			    "for svccfg(1M)"));
+			(void) fprintf(stderr, "%s: %s\n", cmdName,
+			    gettext("After reverting the instance "
+			    "you must clear the service maintenance "
+			    "state. See the man page for svcadm(1M)"));
+			return (SMF_EXIT_ERR_CONFIG);
 	}
-	ret = online();
-	return (ret);
-
+	return (online());
 }
 
 /*
