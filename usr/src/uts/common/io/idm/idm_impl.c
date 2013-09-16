@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -496,6 +497,38 @@ idm_conn_destroy_common(idm_conn_t *ic)
 	idm_cid_free(ic->ic_internal_cid);
 
 	kmem_free(ic, sizeof (idm_conn_t));
+}
+
+boolean_t
+idm_conn_raddr_equals(idm_conn_t *c1, idm_conn_t *c2)
+{
+	struct sockaddr_storage *c1_addr = &c1->ic_raddr;
+	struct sockaddr_storage *c2_addr = &c2->ic_raddr;
+
+	struct sockaddr_in *c1_in_addr;
+	struct sockaddr_in *c2_in_addr;
+	struct sockaddr_in6 *c1_in6_addr;
+	struct sockaddr_in6 *c2_in6_addr;
+
+	if (c1_addr->ss_family != c2_addr->ss_family) {
+		return (B_FALSE);
+	}
+
+	switch (c1_addr->ss_family) {
+	case AF_INET:
+		c1_in_addr = (struct sockaddr_in *)c1_addr;
+		c2_in_addr = (struct sockaddr_in *)c2_addr;
+		return (c1_in_addr->sin_addr.s_addr ==
+		    c2_in_addr->sin_addr.s_addr);
+	case AF_INET6:
+		c1_in6_addr = (struct sockaddr_in6 *)c1_addr;
+		c2_in6_addr = (struct sockaddr_in6 *)c2_addr;
+		return (IN6_ARE_ADDR_EQUAL(&c1_in6_addr->sin6_addr,
+		    &c2_in6_addr->sin6_addr));
+	default:
+		panic("Unrecognized address family: %d", c1_addr->ss_family);
+		/*NOTREACHED*/
+	}
 }
 
 /*

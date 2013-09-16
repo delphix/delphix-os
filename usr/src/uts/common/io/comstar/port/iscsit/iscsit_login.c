@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -54,6 +55,11 @@ typedef struct {
 	idm_pdu_t		*le_pdu;
 } login_event_ctx_t;
 
+/*
+ * Some of the ISCSI_DEFAULT_XXX definitions in iscsi_default.h (which we
+ * include by way of iscsi.h) are #defined as TRUE and FALSE, which are not
+ * defined in iscsi_default.h.
+ */
 #ifndef TRUE
 #define	TRUE B_TRUE
 #endif
@@ -192,6 +198,31 @@ login_resp_complete_cb(idm_pdu_t *pdu, idm_status_t status);
 
 static idm_status_t
 iscsit_add_declarative_keys(iscsit_conn_t *ict);
+
+/*
+ * This is a highly temporary fix to a deeper problem, and the code for it
+ * should not be pushed upstream.
+ *
+ * There's a not-yet root-caused bug (27256) in the stack where if multiple
+ * machines have the same iqn and try to connect to the iSCSI target, they'll
+ * get into a loop where they get repeatedly get disconnected and reconnect.
+ * Eventually, this brings down the iSCSI target and makes the system
+ * unavailable for all initiators, including properly configured ones.  We've
+ * seen this in the field when somebody clones a VM that has the iSCSI initator
+ * configured.
+ *
+ * As a workaround, we've added the option to deny incoming connections to a
+ * target from a different IP address when there's an established session.
+ *
+ * Alarm bells should be going off now.
+ *
+ * This breaks MC/S, which is the primary reason the behavior is configurable
+ * by this variable.  It probably also breaks reinstatement if a host loses a
+ * DHCP lease, gets a new IP address, and tries to reinstate the connection.
+ * We're less worried about that since hopefully nobody has their server on
+ * DHCP.
+ */
+boolean_t deny_duplicate_iqn_sessions = B_TRUE;
 
 uint64_t max_dataseglen_target = ISCSIT_MAX_RECV_DATA_SEGMENT_LENGTH;
 
@@ -1219,11 +1250,41 @@ initial_params_done:
 }
 
 
+
+/*
+ * Map an <ipv6,port> address to an <ipv4,port> address if possible.
+ * Returns:
+ *    1 - success
+ *    0 - address not mapable
+ */
+static int
+iscsit_is_v4_mapped(struct sockaddr_storage *sa, struct sockaddr_storage *v4sa)
+{
+	struct sockaddr_in *sin;
+	struct in_addr *in;
+	struct sockaddr_in6 *sin6;
+	struct in6_addr *in6;
+	int ret = 0;
+
+	sin6 = (struct sockaddr_in6 *)sa;
+	in6 = &sin6->sin6_addr;
+	if ((sa->ss_family == AF_INET6) &&
+	    (IN6_IS_ADDR_V4MAPPED(in6) || IN6_IS_ADDR_V4COMPAT(in6))) {
+		sin = (struct sockaddr_in *)v4sa;
+		in = &sin->sin_addr;
+		v4sa->ss_family = AF_INET;
+		sin->sin_port = sin6->sin6_port;
+		IN6_V4MAPPED_TO_INADDR(in6, in);
+		ret = 1;
+	}
+	return (ret);
+}
+
 /*
  * login_sm_session_bind
  *
  * This function looks at the data from the initial login request
- * of a new connection and either looks up and existing session,
+ * of a new connection and either looks up an existing session,
  * creates a new session, or returns an error.  RFC3720 section 5.3.1
  * defines these rules:
  *
@@ -1249,37 +1310,6 @@ initial_params_done:
  * +------------------------------------------------------------------+
  *
  */
-
-/*
- * Map an <ipv6,port> address to an <ipv4,port> address if possible.
- * Returns:
- *    1 - success
- *    0 - address not mapable
- */
-
-static int
-iscsit_is_v4_mapped(struct sockaddr_storage *sa, struct sockaddr_storage *v4sa)
-{
-	struct sockaddr_in *sin;
-	struct in_addr *in;
-	struct sockaddr_in6 *sin6;
-	struct in6_addr *in6;
-	int ret = 0;
-
-	sin6 = (struct sockaddr_in6 *)sa;
-	in6 = &sin6->sin6_addr;
-	if ((sa->ss_family == AF_INET6) &&
-	    (IN6_IS_ADDR_V4MAPPED(in6) || IN6_IS_ADDR_V4COMPAT(in6))) {
-		sin = (struct sockaddr_in *)v4sa;
-		in = &sin->sin_addr;
-		v4sa->ss_family = AF_INET;
-		sin->sin_port = sin6->sin6_port;
-		IN6_V4MAPPED_TO_INADDR(in6, in);
-		ret = 1;
-	}
-	return (ret);
-}
-
 static idm_status_t
 login_sm_session_bind(iscsit_conn_t *ict)
 {
@@ -1403,6 +1433,28 @@ login_sm_session_bind(iscsit_conn_t *ict)
 	if (existing_sess != NULL) {
 		existing_ict = iscsit_sess_lookup_conn(existing_sess,
 		    ict->ict_cid);
+	}
+
+	/*
+	 * See the block comment where deny_duplicate_iqn_sessions is declared
+	 * for further information about this.
+	 */
+	if (deny_duplicate_iqn_sessions && existing_ict != NULL) {
+		/*
+		 * Oddly enough, the iSCSI standard doesn't provide an error
+		 * code for "we're denying a perfectly valid (though possibly
+		 * unwanted because of a misconfigured initiator) connection
+		 * attempt for reasons related to target flakiness."  The
+		 * generic error will have to suffice.
+		 */
+		if (!idm_conn_raddr_equals(ict->ict_ic, existing_ict->ict_ic)) {
+			DTRACE_PROBE3(login__deny__dup__iqn,
+			    iscsit_tgt_t *, tgt, iscsit_conn_t *, existing_ict,
+			    iscsit_conn_t *, ict);
+			SET_LOGIN_ERROR(ict, ISCSI_STATUS_CLASS_INITIATOR_ERR,
+			    ISCSI_LOGIN_STATUS_INIT_ERR);
+			goto session_bind_error;
+		}
 	}
 
 	/*
