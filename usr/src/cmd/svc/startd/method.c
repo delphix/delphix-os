@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Joyent Inc.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 /*
@@ -895,8 +896,8 @@ method_run(restarter_inst_t **instp, int type, int *exit_code)
 
 	} else {
 		int r, err;
-		time_t start_time;
-		time_t end_time;
+		hrtime_t start_time;
+		hrtime_t end_time;
 
 		/*
 		 * Because on upgrade/live-upgrade we may have no chance
@@ -905,7 +906,7 @@ method_run(restarter_inst_t **instp, int type, int *exit_code)
 		 * import are treated the same as INFINITE timeout services.
 		 */
 
-		start_time = time(NULL);
+		start_time = gethrtime();
 		if (timeout != METHOD_TIMEOUT_INFINITE && !is_timeout_ovr(inst))
 			timeout_insert(inst, ctid, timeout);
 		else
@@ -997,11 +998,11 @@ method_run(restarter_inst_t **instp, int type, int *exit_code)
 		if (*exit_code != 0)
 			goto contract_out;
 
-		end_time = time(NULL);
+		end_time = gethrtime();
 
 		/* Give service contract remaining seconds to empty */
 		if (timeout != METHOD_TIMEOUT_INFINITE)
-			timeout -= (end_time - start_time);
+			timeout -= (end_time - start_time) / NANOSEC;
 	}
 
 assured_kill:
