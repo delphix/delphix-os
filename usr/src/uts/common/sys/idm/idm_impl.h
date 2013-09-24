@@ -20,9 +20,8 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- */
-/*
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #ifndef	_IDM_IMPL_H_
@@ -516,6 +515,8 @@ idm_conn_t *idm_conn_create_common(idm_conn_type_t conn_type,
     idm_transport_type_t tt, idm_conn_ops_t *conn_ops);
 
 void idm_conn_destroy_common(idm_conn_t *ic);
+
+boolean_t idm_conn_raddr_equals(idm_conn_t *c1, idm_conn_t *c2);
 
 void idm_conn_close(idm_conn_t *ic);
 
