@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -650,7 +651,7 @@ iscsit_tgt_dereg_retry(void *arg)
 	 * If it fails we'll setup another timeout and try again later.
 	 */
 	if (taskq_dispatch(iscsit_global.global_dispatch_taskq,
-	    iscsit_tgt_dereg_task, tgt, DDI_NOSLEEP) == NULL) {
+	    iscsit_tgt_dereg_task, tgt, TQ_NOSLEEP) == NULL) {
 		/* Dispatch failed, try again later */
 		(void) timeout(iscsit_tgt_dereg_retry, tgt,
 		    drv_usectohz(TGT_DEREG_RETRY_SECONDS * 1000000));

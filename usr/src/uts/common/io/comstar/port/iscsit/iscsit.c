@@ -22,6 +22,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
  * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -1208,6 +1209,7 @@ iscsit_conn_accept(idm_conn_t *ic)
 	mutex_init(&ict->ict_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&ict->ict_statsn_mutex, NULL, MUTEX_DRIVER, NULL);
 	idm_refcnt_init(&ict->ict_refcnt, ict);
+	idm_refcnt_init(&ict->ict_dispatch_refcnt, ict);
 
 	/*
 	 * Initialize login state machine
@@ -1358,25 +1360,11 @@ iscsit_conn_lost(idm_conn_t *ic)
 	return (IDM_STATUS_SUCCESS);
 }
 
-static idm_status_t
-iscsit_conn_destroy(idm_conn_t *ic)
+void
+iscsit_conn_destroy_async_cb(void *ict_void)
 {
-	iscsit_conn_t *ict = ic->ic_handle;
+	iscsit_conn_t *ict = ict_void;
 
-	mutex_enter(&ict->ict_mutex);
-	ict->ict_destroyed = B_TRUE;
-	mutex_exit(&ict->ict_mutex);
-
-	/* Generate session state machine event */
-	if (ict->ict_sess != NULL) {
-		/*
-		 * Session state machine will call iscsit_conn_destroy_done()
-		 * when it has removed references to this connection.
-		 */
-		iscsit_sess_sm_event(ict->ict_sess, SE_CONN_FAIL, ict);
-	}
-
-	idm_refcnt_wait_ref(&ict->ict_refcnt);
 	/*
 	 * The session state machine does not need to post
 	 * events to IDM any longer, so it is safe to set
@@ -1395,6 +1383,42 @@ iscsit_conn_destroy(idm_conn_t *ic)
 	kmem_free(ict, sizeof (*ict));
 
 	iscsit_global_rele();
+}
+
+static idm_status_t
+iscsit_conn_destroy(idm_conn_t *ic)
+{
+	iscsit_conn_t *ict = ic->ic_handle;
+
+	mutex_enter(&ict->ict_mutex);
+	ict->ict_destroyed = B_TRUE;
+	mutex_exit(&ict->ict_mutex);
+
+	/* Generate session state machine event */
+	if (ict->ict_sess != NULL) {
+		/*
+		 * Session state machine will call iscsit_sess_unbind_conn()
+		 * when it has removed references to this connection.
+		 */
+		iscsit_sess_sm_event(ict->ict_sess, SE_CONN_FAIL, ict);
+	}
+
+	/*
+	 * Force the state machine to completion. iscsit_login_sm_event is a
+	 * no-op if the state machine is already in a terminal state.
+	 * iscsit_login_sm_event_locked ends processing when the terminal state
+	 * is reached.
+	 */
+	iscsit_login_sm_event(ict, ILE_LOGIN_CONN_ERROR, NULL);
+
+	/*
+	 * Destroy ict when its ref count drops to zero. iscsit_conn_destroy is
+	 * processed by the single threaded idm_global_taskq. Complete this
+	 * asyncronously to avoid blocking other cleanup processing by the
+	 * taskq.
+	 */
+	idm_refcnt_async_wait_ref(&ict->ict_refcnt,
+	    iscsit_conn_destroy_async_cb);
 
 	return (IDM_STATUS_SUCCESS);
 }

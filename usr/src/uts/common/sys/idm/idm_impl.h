@@ -104,19 +104,20 @@ struct idm_refcnt_s;
 
 typedef void (idm_refcnt_cb_t)(void *ref_obj);
 
-typedef enum {
-	REF_NOWAIT,
-	REF_WAIT_SYNC,
-	REF_WAIT_ASYNC
-} idm_refcnt_wait_t;
+typedef struct idm_async_wait_ctx_s {
+	list_node_t		iawc_link;
+	idm_refcnt_cb_t		*iawc_cb;
+	void			*iawc_cb_ctx;
+} idm_async_wait_ctx_t;
 
 typedef struct idm_refcnt_s {
 	int			ir_refcnt;
 	void			*ir_referenced_obj;
-	idm_refcnt_wait_t	ir_waiting;
 	kmutex_t		ir_mutex;
 	kcondvar_t		ir_cv;
-	idm_refcnt_cb_t		*ir_cb;
+	list_t			ir_async_waiters;
+	boolean_t		ir_sync_waiters;
+	boolean_t		ir_wait_taken;
 	refcnt_audit_buf_t	ir_audit_buf;
 } idm_refcnt_t;
 

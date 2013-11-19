@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -476,6 +477,7 @@ sess_sm_event_locked(iscsit_sess_t *ist, iscsit_session_event_t event,
 {
 	sess_event_ctx_t *ctx;
 
+	ASSERT(mutex_owned(&ist->ist_mutex));
 	iscsit_sess_hold(ist);
 
 	ctx = kmem_zalloc(sizeof (*ctx), KM_SLEEP);

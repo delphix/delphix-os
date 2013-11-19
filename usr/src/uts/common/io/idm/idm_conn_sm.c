@@ -271,8 +271,11 @@ idm_conn_event_locked(idm_conn_t *ic, idm_conn_event_t event,
 	event_ctx->iec_info = event_info;
 	event_ctx->iec_pdu_event_type = pdu_event_type;
 
-	(void) taskq_dispatch(ic->ic_state_taskq, &idm_conn_event_handler,
-	    event_ctx, TQ_SLEEP);
+	if (taskq_dispatch(ic->ic_state_taskq, &idm_conn_event_handler,
+	    event_ctx, TQ_SLEEP) == NULL) {
+		cmn_err(CE_PANIC, "idm_conn_event_locked: "
+		    "Couldn't dispatch task");
+	}
 }
 
 static void

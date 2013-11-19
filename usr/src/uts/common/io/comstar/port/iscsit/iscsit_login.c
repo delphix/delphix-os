@@ -370,6 +370,7 @@ iscsit_login_sm_event(iscsit_conn_t *ict, iscsit_login_event_t event,
 	iscsit_login_sm_event_locked(ict, event, pdu);
 	mutex_exit(&ict->ict_login_sm.icl_mutex);
 }
+
 void
 iscsit_login_sm_event_locked(iscsit_conn_t *ict, iscsit_login_event_t event,
     idm_pdu_t *pdu)
@@ -427,8 +428,9 @@ iscsit_login_sm_event_locked(iscsit_conn_t *ict, iscsit_login_event_t event,
 		if (lsm->icl_login_complete) {
 			lsm->icl_busy = B_TRUE;
 			if (taskq_dispatch(iscsit_global.global_dispatch_taskq,
-			    login_sm_complete, ict, DDI_SLEEP) == NULL) {
-				cmn_err(CE_WARN, "iscsit_login_sm_event_locked:"
+			    login_sm_complete, ict, TQ_SLEEP) == NULL) {
+				cmn_err(CE_PANIC,
+				    "iscsit_login_sm_event_locked:"
 				    " Failed to dispatch task");
 			}
 		}

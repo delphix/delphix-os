@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -257,7 +258,7 @@ idm_ini_conn_destroy(idm_conn_t *ic)
 
 	if (taskq_dispatch(idm.idm_global_taskq,
 	    &idm_ini_conn_destroy_task, ic, TQ_SLEEP) == NULL) {
-		cmn_err(CE_WARN,
+		cmn_err(CE_PANIC,
 		    "idm_ini_conn_destroy: Couldn't dispatch task");
 	}
 }
@@ -2102,13 +2103,22 @@ idm_sm_audit_state_change(sm_audit_buf_t *audit_buf,
  * Object reference tracking
  */
 
+static void
+idm_refcnt_clear(idm_refcnt_t *refcnt)
+{
+	refcnt->ir_refcnt = 0;
+	refcnt->ir_wait_taken = B_FALSE;
+	refcnt->ir_sync_waiters = B_FALSE;
+	list_create(&refcnt->ir_async_waiters, sizeof (idm_async_wait_ctx_t),
+	    offsetof(idm_async_wait_ctx_t, iawc_link));
+}
+
 void
 idm_refcnt_init(idm_refcnt_t *refcnt, void *referenced_obj)
 {
 	bzero(refcnt, sizeof (*refcnt));
-	idm_refcnt_reset(refcnt);
+	idm_refcnt_clear(refcnt);
 	refcnt->ir_referenced_obj = referenced_obj;
-	bzero(&refcnt->ir_audit_buf, sizeof (refcnt_audit_buf_t));
 	refcnt->ir_audit_buf.anb_max_index = REFCNT_AUDIT_BUF_MAX_REC - 1;
 	mutex_init(&refcnt->ir_mutex, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&refcnt->ir_cv, NULL, CV_DEFAULT, NULL);
@@ -2124,6 +2134,7 @@ idm_refcnt_destroy(idm_refcnt_t *refcnt)
 	 */
 	mutex_enter(&refcnt->ir_mutex);
 	ASSERT(refcnt->ir_refcnt == 0);
+	list_destroy(&refcnt->ir_async_waiters);
 	cv_destroy(&refcnt->ir_cv);
 	mutex_destroy(&refcnt->ir_mutex);
 }
@@ -2131,8 +2142,9 @@ idm_refcnt_destroy(idm_refcnt_t *refcnt)
 void
 idm_refcnt_reset(idm_refcnt_t *refcnt)
 {
-	refcnt->ir_waiting = REF_NOWAIT;
-	refcnt->ir_refcnt = 0;
+	ASSERT(list_is_empty(&refcnt->ir_async_waiters));
+	ASSERT(!refcnt->ir_sync_waiters);
+	idm_refcnt_clear(refcnt);
 }
 
 void
@@ -2142,21 +2154,63 @@ idm_refcnt_hold(idm_refcnt_t *refcnt)
 	 * Nothing should take a hold on an object after a call to
 	 * idm_refcnt_wait_ref or idm_refcnd_async_wait_ref
 	 */
-	ASSERT(refcnt->ir_waiting == REF_NOWAIT);
-
 	mutex_enter(&refcnt->ir_mutex);
+	ASSERT(!refcnt->ir_wait_taken);
 	refcnt->ir_refcnt++;
 	REFCNT_AUDIT(refcnt);
 	mutex_exit(&refcnt->ir_mutex);
 }
 
+/*
+ * Async wait tasks can be queued on the refcnt structure. Proccessing of these
+ * tasks will be deferred until the refcnt drops to zero. Tasks will be
+ * dispatched in the order that they were queued to the refcnt structure.
+ */
 static void
-idm_refcnt_unref_task(void *refcnt_void)
+idm_async_wait_task(void *iawc_void)
 {
-	idm_refcnt_t *refcnt = refcnt_void;
+	idm_async_wait_ctx_t *ctx = iawc_void;
 
+	(*ctx->iawc_cb)(ctx->iawc_cb_ctx);
+	kmem_free(ctx, sizeof (*ctx));
+}
+
+static void
+idm_queue_async_waiter(idm_refcnt_t *refcnt, idm_refcnt_cb_t *cb)
+{
+	idm_async_wait_ctx_t *ctx = kmem_zalloc(sizeof (*ctx), KM_SLEEP);
+
+	ASSERT(mutex_owned(&refcnt->ir_mutex));
 	REFCNT_AUDIT(refcnt);
-	(*refcnt->ir_cb)(refcnt->ir_referenced_obj);
+	refcnt->ir_wait_taken = B_TRUE;
+	list_link_init(&ctx->iawc_link);
+	ctx->iawc_cb = cb;
+	ctx->iawc_cb_ctx = refcnt->ir_referenced_obj;
+	list_insert_tail(&refcnt->ir_async_waiters, ctx);
+}
+
+static void
+idm_dispatch_async_waiter(idm_refcnt_t *refcnt, idm_async_wait_ctx_t *ctx)
+{
+	REFCNT_AUDIT(refcnt);
+	if (taskq_dispatch(idm.idm_global_taskq,
+	    &idm_async_wait_task, ctx, TQ_SLEEP) == NULL) {
+		cmn_err(CE_PANIC, "idm_dispatch_async_waiter: "
+			"Couldn't dispatch task");
+	}
+}
+
+static void
+idm_dispatch_async_waiters(idm_refcnt_t *refcnt)
+{
+	idm_async_wait_ctx_t *ctx;
+
+	ASSERT(mutex_owned(&refcnt->ir_mutex));
+
+	while (!list_is_empty(&refcnt->ir_async_waiters)) {
+		ctx = list_remove_head(&refcnt->ir_async_waiters);
+		idm_dispatch_async_waiter(refcnt, ctx);
+	}
 }
 
 void
@@ -2166,27 +2220,17 @@ idm_refcnt_rele(idm_refcnt_t *refcnt)
 	ASSERT(refcnt->ir_refcnt > 0);
 	refcnt->ir_refcnt--;
 	REFCNT_AUDIT(refcnt);
-	if (refcnt->ir_waiting == REF_NOWAIT) {
-		/* No one is waiting on this object */
-		mutex_exit(&refcnt->ir_mutex);
-		return;
-	}
 
 	/*
-	 * Someone is waiting for this object to go idle so check if
+	 * Someone may be waiting for this object to go idle so check if
 	 * refcnt is 0.  Waiting on an object then later grabbing another
 	 * reference is not allowed so we don't need to handle that case.
 	 */
 	if (refcnt->ir_refcnt == 0) {
-		if (refcnt->ir_waiting == REF_WAIT_ASYNC) {
-			if (taskq_dispatch(idm.idm_global_taskq,
-			    &idm_refcnt_unref_task, refcnt, TQ_SLEEP) == NULL) {
-				cmn_err(CE_WARN,
-				    "idm_refcnt_rele: Couldn't dispatch task");
-			}
-		} else if (refcnt->ir_waiting == REF_WAIT_SYNC) {
-			cv_signal(&refcnt->ir_cv);
-		}
+		idm_dispatch_async_waiters(refcnt);
+		if (refcnt->ir_sync_waiters)
+			cv_broadcast(&refcnt->ir_cv);
+		refcnt->ir_sync_waiters = B_FALSE;
 	}
 	mutex_exit(&refcnt->ir_mutex);
 }
@@ -2200,18 +2244,13 @@ idm_refcnt_rele_and_destroy(idm_refcnt_t *refcnt, idm_refcnt_cb_t *cb_func)
 	REFCNT_AUDIT(refcnt);
 
 	/*
-	 * Someone is waiting for this object to go idle so check if
+	 * Someone may be waiting for this object to go idle so check if
 	 * refcnt is 0.  Waiting on an object then later grabbing another
 	 * reference is not allowed so we don't need to handle that case.
 	 */
 	if (refcnt->ir_refcnt == 0) {
-		refcnt->ir_cb = cb_func;
-		refcnt->ir_waiting = REF_WAIT_ASYNC;
-		if (taskq_dispatch(idm.idm_global_taskq,
-		    &idm_refcnt_unref_task, refcnt, TQ_SLEEP) == NULL) {
-			cmn_err(CE_WARN,
-			    "idm_refcnt_rele: Couldn't dispatch task");
-		}
+		idm_queue_async_waiter(refcnt, cb_func);
+		idm_dispatch_async_waiters(refcnt);
 	}
 	mutex_exit(&refcnt->ir_mutex);
 }
@@ -2220,7 +2259,9 @@ void
 idm_refcnt_wait_ref(idm_refcnt_t *refcnt)
 {
 	mutex_enter(&refcnt->ir_mutex);
-	refcnt->ir_waiting = REF_WAIT_SYNC;
+	refcnt->ir_wait_taken = B_TRUE;
+	if (refcnt->ir_refcnt > 0)
+		refcnt->ir_sync_waiters = B_TRUE;
 	REFCNT_AUDIT(refcnt);
 	while (refcnt->ir_refcnt != 0)
 		cv_wait(&refcnt->ir_cv, &refcnt->ir_mutex);
@@ -2231,22 +2272,16 @@ void
 idm_refcnt_async_wait_ref(idm_refcnt_t *refcnt, idm_refcnt_cb_t *cb_func)
 {
 	mutex_enter(&refcnt->ir_mutex);
-	refcnt->ir_waiting = REF_WAIT_ASYNC;
-	refcnt->ir_cb = cb_func;
-	REFCNT_AUDIT(refcnt);
+	idm_queue_async_waiter(refcnt, cb_func);
+
 	/*
 	 * It's possible we don't have any references.  To make things easier
 	 * on the caller use a taskq to call the callback instead of
 	 * calling it synchronously
 	 */
-	if (refcnt->ir_refcnt == 0) {
-		if (taskq_dispatch(idm.idm_global_taskq,
-		    &idm_refcnt_unref_task, refcnt, TQ_SLEEP) == NULL) {
-			cmn_err(CE_WARN,
-			    "idm_refcnt_async_wait_ref: "
-			    "Couldn't dispatch task");
-		}
-	}
+	if (refcnt->ir_refcnt == 0)
+		idm_dispatch_async_waiters(refcnt);
+
 	mutex_exit(&refcnt->ir_mutex);
 }
 

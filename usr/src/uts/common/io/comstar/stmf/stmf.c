@@ -7255,8 +7255,10 @@ stmf_svc_init()
 	stmf_state.stmf_svc_tailp = &stmf_state.stmf_svc_active;
 	stmf_state.stmf_svc_taskq = ddi_taskq_create(0, "STMF_SVC_TASKQ", 1,
 	    TASKQ_DEFAULTPRI, 0);
-	(void) ddi_taskq_dispatch(stmf_state.stmf_svc_taskq,
-	    stmf_svc, 0, DDI_SLEEP);
+	if (ddi_taskq_dispatch(stmf_state.stmf_svc_taskq, stmf_svc, 0,
+	    DDI_SLEEP) != DDI_SUCCESS) {
+		cmn_err(CE_PANIC, "stmf_svc_init: Couldn't dispatch task");
+	}
 }
 
 stmf_status_t

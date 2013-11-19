@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <mdb/mdb_modapi.h>
@@ -54,6 +55,8 @@
 #include <iscsit.h>
 #include <iscsit_isns.h>
 #include <sys/ib/clients/iser/iser.h>
+
+#define list_empty(a) ((a)->list_head.list_next == &(a)->list_head)
 
 /*
  * We want to be able to print multiple levels of object hierarchy with a
@@ -2167,12 +2170,10 @@ iscsi_print_idm_conn_data(idm_conn_t *ic)
 	    ic->ic_state);
 	mdb_printf("%20s: %d\n", "Last State",
 	    ic->ic_last_state);
-	mdb_printf("%20s: %d %s\n", "Refcount",
+	mdb_printf("%20s: %d sync waiters %s, async waiters %s\n", "Refcount",
 	    ic->ic_refcnt.ir_refcnt,
-	    (ic->ic_refcnt.ir_waiting == REF_NOWAIT) ? "" :
-	    ((ic->ic_refcnt.ir_waiting == REF_WAIT_SYNC) ? "REF_WAIT_SYNC" :
-	    ((ic->ic_refcnt.ir_waiting == REF_WAIT_ASYNC) ? "REF_WAIT_ASYNC" :
-	    "UNKNOWN")));
+	    ic->ic_refcnt.ir_sync_waiters ? "true" : "false",
+	    list_empty(&ic->ic_refcnt.ir_async_waiters) ? "false" : "true");
 }
 
 static int
