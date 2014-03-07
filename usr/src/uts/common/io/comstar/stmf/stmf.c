@@ -770,6 +770,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__set__stmf__state,
+		    int, cmd, stmf_state_desc_t *, ibuf);
+
 		ret = stmf_set_stmf_state((stmf_state_desc_t *)ibuf);
 		break;
 
@@ -788,6 +792,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__set__alua__state, int, cmd,
+		    stmf_alua_state_desc_t *, ibuf);
+
 		ret = stmf_set_alua_state((stmf_alua_state_desc_t *)ibuf);
 		break;
 
@@ -804,11 +812,16 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 		ssi.st_rflags = STMF_RFLAG_USER_REQUEST;
 		ssi.st_additional_info = NULL;
 		std = (stmf_state_desc_t *)ibuf;
+
 		if ((ibuf == NULL) ||
 		    (iocd->stmf_ibuf_size < sizeof (stmf_state_desc_t))) {
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__set__lu__state, int, cmd,
+		    stmf_state_desc_t *, std);
+
 		p_id = std->ident;
 		mutex_enter(&stmf_state.stmf_lock);
 		if (stmf_state.stmf_inventory_locked) {
@@ -848,6 +861,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			break;
 		}
 		stmf_set_props = (stmf_set_props_t *)ibuf;
+
+		DTRACE_PROBE2(stmf__ioctl__set__stmf__props, int, cmd,
+		    stmf_set_props_t *, stmf_set_props);
+
 		mutex_enter(&stmf_state.stmf_lock);
 		if ((stmf_set_props->default_lu_state_value ==
 		    STMF_STATE_OFFLINE) ||
@@ -876,6 +893,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__set__target__port__state, int, cmd,
+		    stmf_state_desc_t *, std)
+
 		p_id = std->ident;
 		mutex_enter(&stmf_state.stmf_lock);
 		if (stmf_state.stmf_inventory_locked) {
@@ -931,6 +952,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__add__hgtg__entry, int, cmd,
+		    stmf_group_op_data_t *, grp_entry);
+
 		if (grp_entry->group.name[0] == '*') {
 			ret = EINVAL;
 			break; /* not allowed */
@@ -962,6 +987,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__remove__hgtg__entry, int, cmd,
+		    stmf_group_op_data_t *, grp_entry);
+
 		if (grp_entry->group.name[0] == '*') {
 			ret = EINVAL;
 			break; /* not allowed */
@@ -993,6 +1022,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__create__hgtg, int, cmd,
+		    stmf_group_name_t *, grpname);
+
 		if (grpname->name[0] == '*') {
 			ret = EINVAL;
 			break; /* not allowed */
@@ -1019,6 +1052,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__remove__hgtg, int, cmd,
+		    stmf_group_name_t *, grpname);
+
 		if (grpname->name[0] == '*') {
 			ret = EINVAL;
 			break; /* not allowed */
@@ -1041,6 +1078,15 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		/*
+		 * Expose the arguments as passed, prior to the changes that
+		 * happen below.  There are probes below to expose the
+		 * as-configured information.
+		 */
+		DTRACE_PROBE2(stmf__ioctl__av__view__entry, int, cmd,
+			    stmf_view_op_entry_t *, ve);
+
 		if (!ve->ve_lu_number_valid)
 			ve->ve_lu_nbr[2] = 0xFF;
 		if (ve->ve_all_hosts) {
@@ -1057,6 +1103,8 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			veid = 0xffffffff;
 		mutex_enter(&stmf_state.stmf_lock);
 		if (cmd == STMF_IOCTL_ADD_VIEW_ENTRY) {
+			DTRACE_PROBE2(stmf__ioctl__add__view__entry__pre__add,
+			    int, cmd, stmf_view_op_entry_t *, ve);
 			ret = stmf_add_ve(ve->ve_host_group.name,
 			    ve->ve_host_group.name_size,
 			    ve->ve_target_group.name,
@@ -1065,7 +1113,18 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			    &veid,
 			    ve->ve_lu_nbr,
 			    &iocd->stmf_error);
+			/*
+			 * Adding a view entry with an auto-numbered LUN will
+			 * result in the value of the view entry's lu_nbr
+			 * changing.  Provide the information in the ve
+			 * post-add unconditionally here.
+			 */
+			DTRACE_PROBE2(stmf__ioctl__add__view__entry__post__add,
+			    int, cmd, stmf_view_op_entry_t *, ve);
+
 		} else {  /* STMF_IOCTL_VALIDATE_VIEW */
+			DTRACE_PROBE2(stmf__ioctl__validate__view, int, cmd,
+			    stmf_view_op_entry_t *, ve);
 			ret = stmf_validate_lun_ve(ve->ve_host_group.name,
 			    ve->ve_host_group.name_size,
 			    ve->ve_target_group.name,
@@ -1073,6 +1132,7 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			    ve->ve_lu_nbr,
 			    &iocd->stmf_error);
 		}
+
 		mutex_exit(&stmf_state.stmf_lock);
 		if (ret == 0 &&
 		    (!ve->ve_ndx_valid || !ve->ve_lu_number_valid) &&
@@ -1089,6 +1149,12 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 				ve_ret->ve_lu_number_valid = 1;
 				bcopy(ve->ve_lu_nbr, ve_ret->ve_lu_nbr, 8);
 			}
+			/*
+			 * and also expose the information conditionally
+			 * returned to the caller.
+			 */
+			DTRACE_PROBE2(stmf__ioctl__add__view__entry__ve__ret,
+			    int, cmd, stmf_view_op_entry_t *, ve_ret);
 		}
 		break;
 	case STMF_IOCTL_REMOVE_VIEW_ENTRY:
@@ -1103,6 +1169,10 @@ stmf_ioctl(dev_t dev, int cmd, intptr_t data, int mode,
 			ret = EINVAL;
 			break;
 		}
+
+		DTRACE_PROBE2(stmf__ioctl__remove__view__entry, int, cmd,
+		    stmf_view_op_entry_t *, ve);
+
 		if (!ve->ve_ndx_valid) {
 			ret = EINVAL;
 			break;
