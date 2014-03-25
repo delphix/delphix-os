@@ -14,7 +14,7 @@
  *
  *********************************************************/
 /*
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3_solaris.h>
@@ -179,26 +179,22 @@ vmxnet3_getstat(void *data, uint_t stat, uint64_t *val)
          *val = 0;
          break;
       case MAC_STAT_RBYTES:
-         *val = rxStats->LROBytesRxOK +
-                rxStats->ucastBytesRxOK +
+         *val = rxStats->ucastBytesRxOK +
                 rxStats->mcastBytesRxOK +
                 rxStats->bcastBytesRxOK;
          break;
       case MAC_STAT_IPACKETS:
-         *val = rxStats->LROPktsRxOK +
-                rxStats->ucastPktsRxOK +
+         *val = rxStats->ucastPktsRxOK +
                 rxStats->mcastPktsRxOK +
                 rxStats->bcastPktsRxOK;
          break;
       case MAC_STAT_OBYTES:
-         *val = txStats->TSOBytesTxOK +
-                txStats->ucastBytesTxOK +
+         *val = txStats->ucastBytesTxOK +
                 txStats->mcastBytesTxOK +
                 txStats->bcastBytesTxOK;
          break;
       case MAC_STAT_OPACKETS:
-         *val = txStats->TSOPktsTxOK +
-                txStats->ucastPktsTxOK +
+         *val = txStats->ucastPktsTxOK +
                 txStats->mcastPktsTxOK +
                 txStats->bcastPktsTxOK;
          break;
