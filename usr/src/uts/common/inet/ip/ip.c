@@ -23,7 +23,7 @@
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 1990 Mentat Inc.
  * Copyright (c) 2012 Joyent, Inc. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -9137,6 +9137,15 @@ ip_input_local_options(mblk_t *mp, ipha_t *ipha, ip_recv_attr_t *ira)
 			uint32_t off;
 		case IPOPT_SSRR:
 		case IPOPT_LSRR:
+			if (!ipst->ips_ip_accept_src_routed) {
+				DB_CKSUMFLAGS(mp) = 0;
+				ip_drop_input("ICMP_DEST_HOST_UNREACH_ADMIN",
+				    mp, ill);
+				icmp_unreachable(mp,
+				    ICMP_DEST_HOST_UNREACH_ADMIN, ira);
+				return (B_FALSE);
+			}
+
 			off = opt[IPOPT_OFFSET];
 			off--;
 			if (optlen < IP_ADDR_LEN ||
@@ -12856,7 +12865,8 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 	uint8_t		optval;
 	uint8_t		optlen;
 	ipaddr_t	dst;
-	intptr_t	code = 0;
+	intptr_t	pptr = 0;
+	uint8_t		code = ICMP_SOURCE_ROUTE_FAILED;
 	ire_t		*ire;
 	ip_stack_t	*ipst = ixa->ixa_ipst;
 	ip_recv_attr_t	iras;
@@ -12875,12 +12885,15 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 			uint32_t off;
 		case IPOPT_SSRR:
 		case IPOPT_LSRR:
+			if (!ipst->ips_ip_send_src_routed) {
+				code = ICMP_DEST_HOST_UNREACH_ADMIN;
+				goto bad_src_route;
+			}
 			if ((opts.ipoptp_flags & IPOPTP_ERROR) != 0) {
 				ip1dbg((
 				    "ip_output_options: bad option offset\n"));
-				code = (char *)&opt[IPOPT_OLEN] -
-				    (char *)ipha;
-				goto param_prob;
+				pptr = (char *)&opt[IPOPT_OLEN] - (char *)ipha;
+				goto bad_src_route;
 			}
 			off = opt[IPOPT_OFFSET];
 			ip1dbg(("ip_output_options: next hop 0x%x\n",
@@ -12908,9 +12921,8 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 			if ((opts.ipoptp_flags & IPOPTP_ERROR) != 0) {
 				ip1dbg((
 				    "ip_output_options: bad option offset\n"));
-				code = (char *)&opt[IPOPT_OLEN] -
-				    (char *)ipha;
-				goto param_prob;
+				pptr = (char *)&opt[IPOPT_OLEN] - (char *)ipha;
+				goto bad_src_route;
 			}
 			break;
 		case IPOPT_TS:
@@ -12919,16 +12931,16 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 			 * room for another timestamp or that the overflow
 			 * counter is not maxed out.
 			 */
-			code = (char *)&opt[IPOPT_OLEN] - (char *)ipha;
+			pptr = (char *)&opt[IPOPT_OLEN] - (char *)ipha;
 			if (optlen < IPOPT_MINLEN_IT) {
-				goto param_prob;
+				goto bad_src_route;
 			}
 			if ((opts.ipoptp_flags & IPOPTP_ERROR) != 0) {
 				ip1dbg((
 				    "ip_output_options: bad option offset\n"));
-				code = (char *)&opt[IPOPT_OFFSET] -
+				pptr = (char *)&opt[IPOPT_OFFSET] -
 				    (char *)ipha;
-				goto param_prob;
+				goto bad_src_route;
 			}
 			switch (opt[IPOPT_POS_OV_FLG] & 0x0F) {
 			case IPOPT_TS_TSONLY:
@@ -12940,9 +12952,9 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 				off = IP_ADDR_LEN + IPOPT_TS_TIMELEN;
 				break;
 			default:
-				code = (char *)&opt[IPOPT_POS_OV_FLG] -
+				pptr = (char *)&opt[IPOPT_POS_OV_FLG] -
 				    (char *)ipha;
-				goto param_prob;
+				goto bad_src_route;
 			}
 			if (opt[IPOPT_OFFSET] - 1 + off > optlen &&
 			    (opt[IPOPT_POS_OV_FLG] & 0xF0) == 0xF0) {
@@ -12950,7 +12962,7 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 				 * No room and the overflow counter is 15
 				 * already.
 				 */
-				goto param_prob;
+				goto bad_src_route;
 			}
 			break;
 		}
@@ -12960,19 +12972,7 @@ ip_output_options(mblk_t *mp, ipha_t *ipha, ip_xmit_attr_t *ixa, ill_t *ill)
 		return (0);
 
 	ip1dbg(("ip_output_options: error processing IP options."));
-	code = (char *)&opt[IPOPT_OFFSET] - (char *)ipha;
-
-param_prob:
-	bzero(&iras, sizeof (iras));
-	iras.ira_ill = iras.ira_rill = ill;
-	iras.ira_ruifindex = ill->ill_phyint->phyint_ifindex;
-	iras.ira_rifindex = iras.ira_ruifindex;
-	iras.ira_flags = IRAF_IS_IPV4;
-
-	ip_drop_output("ip_output_options", mp, ill);
-	icmp_param_problem(mp, (uint8_t)code, &iras);
-	ASSERT(!(iras.ira_flags & IRAF_IPSEC_SECURE));
-	return (-1);
+	pptr = (char *)&opt[IPOPT_OFFSET] - (char *)ipha;
 
 bad_src_route:
 	bzero(&iras, sizeof (iras));
@@ -12981,8 +12981,11 @@ bad_src_route:
 	iras.ira_rifindex = iras.ira_ruifindex;
 	iras.ira_flags = IRAF_IS_IPV4;
 
-	ip_drop_input("ICMP_SOURCE_ROUTE_FAILED", mp, ill);
-	icmp_unreachable(mp, ICMP_SOURCE_ROUTE_FAILED, &iras);
+	ip_drop_output("ICMP_SOURCE_ROUTE_FAILED", mp, ill);
+	if (pptr != 0)
+		icmp_param_problem(mp, pptr, &iras);
+	else
+		icmp_unreachable(mp, code, &iras);
 	ASSERT(!(iras.ira_flags & IRAF_IPSEC_SECURE));
 	return (-1);
 }

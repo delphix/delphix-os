@@ -23,6 +23,7 @@
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 1990 Mentat Inc.
+ * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
 #ifndef	_INET_IP_H
@@ -3042,6 +3043,9 @@ extern vmem_t *ip_minor_arena_la;
 #define	ips_ipv6_strict_src_multihoming	ips_propinfo_tbl[81].prop_cur_uval
 #define	ips_ipv6_drop_inbound_icmpv6	ips_propinfo_tbl[82].prop_cur_bval
 #define	ips_ip_dce_reclaim_threshold	ips_propinfo_tbl[83].prop_cur_uval
+#define	ips_ip_accept_src_routed	ips_propinfo_tbl[84].prop_cur_bval
+#define	ips_ip_send_src_routed		ips_propinfo_tbl[85].prop_cur_bval
+
 
 extern int	dohwcksum;	/* use h/w cksum if supported by the h/w */
 #ifdef ZC_TEST
