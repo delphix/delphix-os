@@ -2,6 +2,7 @@
 <!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
 <!--
  Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+ Copyright (c) 2014 by Delphix. All rights reserved.
 
  CDDL HEADER START
 
@@ -71,6 +72,11 @@
 			value='transient' />
 	</property_group>
 
+	<property_group name='general' type='framework'>
+		<propval name='action_authorization' type='astring' value='keymap.administrator'/>
+		<propval name='value_authorization' type='astring' value='keymap.administrator'/>
+	</property_group>
+
 	<instance name='default' enabled='false'>
 		<property_group name='keymap' type='system'>
 			<propval name='keyboard_abort' type='astring' value='enable' />
@@ -80,6 +86,7 @@
 			<propval name='layout' type='astring' value='US-English' />
 			<propval name='kbd_beeper_freq' type='integer' value='2000' />
 			<propval name='console_beeper_freq' type='integer' value='900' />
+			<propval name='value_authorization' type='astring' value='keymap.administrator'/>
 		</property_group>
 	</instance>
 

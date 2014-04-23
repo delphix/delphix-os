@@ -23,7 +23,7 @@
 #
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-# Copyright (c) 2011 by Delphix. All rights reserved.
+# Copyright (c) 2014 by Delphix. All rights reserved.
 #
 # This method script manages all vt logins including system
 # console login.
@@ -63,7 +63,8 @@ if [[ -x ${DELPHIX_SCREEN} ]]; then
         [[ "$dev" == '""' ]] && dev=/dev/console
 	term=`svcprop -p ttymon/terminal_type $SMF_FMRI`
         [[ "$term" == '""' ]] && term=sun-color
-	TERM=$term ${DELPHIX_SCREEN} <$dev >$dev
+	rm -f /tmp/dpx_startup_screen.log
+	su - console -c "TERM=$term ${DELPHIX_SCREEN}" <$dev >$dev
 fi
 
 args="-g"
