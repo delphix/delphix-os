@@ -24,7 +24,9 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright (c) 2014 by Delphix. All rights reserved.
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +100,13 @@ export(struct svc_req *rqstp)
 		grtail = &groups;
 
 		sh = shp->shl_sh;
+
+		/*
+		 * Gross hack to exclude /public from showmount -e.
+		 */
+		if (strcmp(sh->sh_path, "/public") == 0) {
+			continue;
+		}
 
 		/*
 		 * Check for "ro" or "rw" list without argument values.  This
