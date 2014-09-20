@@ -603,7 +603,7 @@ dbuf_read_mooch(dmu_buf_impl_t *db, uint64_t refd_obj, uint32_t flags,
 }
 
 static void
-dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
+dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 {
 	dnode_t *dn;
 	zbookmark_phys_t zb;
@@ -650,7 +650,6 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 		    db->db.db_size, db, type));
 		bzero(db->db.db_data, db->db.db_size);
 		db->db_state = DB_CACHED;
-		*flags |= DB_RF_CACHED;
 		mutex_exit(&db->db_mtx);
 		return;
 	}
@@ -659,8 +658,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 	    BPE_GET_ETYPE(db->db_blkptr) == BP_EMBEDDED_TYPE_MOOCH_BYTESWAP) {
 		uint64_t refd_obj = dn->dn_origin_obj_refd;
 		DB_DNODE_EXIT(db);
-		dbuf_read_mooch(db, refd_obj,
-		    (*flags) & ~DB_RF_HAVESTRUCT, zio);
+		dbuf_read_mooch(db, refd_obj, flags & ~DB_RF_HAVESTRUCT, zio);
 		return;
 	}
 
@@ -682,10 +680,8 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 
 	(void) arc_read(zio, db->db_objset->os_spa, db->db_blkptr,
 	    dbuf_read_done, db, ZIO_PRIORITY_SYNC_READ,
-	    (*flags & DB_RF_CANFAIL) ? ZIO_FLAG_CANFAIL : ZIO_FLAG_MUSTSUCCEED,
+	    (flags & DB_RF_CANFAIL) ? ZIO_FLAG_CANFAIL : ZIO_FLAG_MUSTSUCCEED,
 	    &aflags, &zb);
-	if (aflags & ARC_CACHED)
-		*flags |= DB_RF_CACHED;
 }
 
 int
@@ -718,8 +714,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 	if (db->db_state == DB_CACHED) {
 		mutex_exit(&db->db_mtx);
 		if (prefetch)
-			dmu_zfetch(&dn->dn_zfetch, db->db.db_offset,
-			    db->db.db_size, TRUE);
+			dmu_zfetch(&dn->dn_zfetch, db->db_blkid, 1);
 		if ((flags & DB_RF_HAVESTRUCT) == 0)
 			rw_exit(&dn->dn_struct_rwlock);
 		DB_DNODE_EXIT(db);
@@ -728,13 +723,12 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 
 		if (zio == NULL)
 			zio = zio_root(spa, NULL, NULL, ZIO_FLAG_CANFAIL);
-		dbuf_read_impl(db, zio, &flags);
+		dbuf_read_impl(db, zio, flags);
 
 		/* dbuf_read_impl has dropped db_mtx for us */
 
 		if (prefetch)
-			dmu_zfetch(&dn->dn_zfetch, db->db.db_offset,
-			    db->db.db_size, flags & DB_RF_CACHED);
+			dmu_zfetch(&dn->dn_zfetch, db->db_blkid, 1);
 
 		if ((flags & DB_RF_HAVESTRUCT) == 0)
 			rw_exit(&dn->dn_struct_rwlock);
@@ -753,8 +747,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		 */
 		mutex_exit(&db->db_mtx);
 		if (prefetch)
-			dmu_zfetch(&dn->dn_zfetch, db->db.db_offset,
-			    db->db.db_size, TRUE);
+			dmu_zfetch(&dn->dn_zfetch, db->db_blkid, 1);
 		if ((flags & DB_RF_HAVESTRUCT) == 0)
 			rw_exit(&dn->dn_struct_rwlock);
 		DB_DNODE_EXIT(db);
@@ -1999,19 +1992,23 @@ dbuf_destroy(dmu_buf_impl_t *db)
 }
 
 void
-dbuf_prefetch(dnode_t *dn, uint64_t blkid, zio_priority_t prio)
+dbuf_prefetch(dnode_t *dn, uint64_t blkid, zio_priority_t prio,
+    uint32_t aflags)
 {
-	dmu_buf_impl_t *db = NULL;
 	blkptr_t *bp = NULL;
 
 	ASSERT(blkid != DMU_BONUS_BLKID);
 	ASSERT(RW_LOCK_HELD(&dn->dn_struct_rwlock));
 
+	if (blkid > dn->dn_maxblkid)
+		return;
+
 	if (dnode_block_freed(dn, blkid))
 		return;
 
 	/* dbuf_find() returns with db_mtx held */
-	if (db = dbuf_find(dn, 0, blkid)) {
+	dmu_buf_impl_t *db = dbuf_find(dn, 0, blkid);
+	if (db != NULL) {
 		/*
 		 * This dbuf is already in the cache.  We assume that
 		 * it is already CACHED, or else about to be either
@@ -2033,8 +2030,9 @@ dbuf_prefetch(dnode_t *dn, uint64_t blkid, zio_priority_t prio)
 		}
 		if (bp && !BP_IS_HOLE(bp) && !BP_IS_EMBEDDED(bp)) {
 			dsl_dataset_t *ds = dn->dn_objset->os_dsl_dataset;
-			uint32_t aflags = ARC_NOWAIT | ARC_PREFETCH;
 			zbookmark_phys_t zb;
+
+			aflags |= ARC_NOWAIT | ARC_PREFETCH;
 
 			SET_BOOKMARK(&zb, ds ? ds->ds_object : DMU_META_OBJSET,
 			    dn->dn_object, 0, blkid);

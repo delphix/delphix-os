@@ -69,6 +69,7 @@ typedef enum arc_buf_contents {
 #define	ARC_CACHED	(1 << 4)	/* I/O was already in cache */
 #define	ARC_L2CACHE	(1 << 5)	/* cache in L2ARC */
 #define	ARC_L2COMPRESS	(1 << 6)	/* compress in L2ARC */
+#define	ARC_FLAG_PREDICTIVE_PREFETCH (1 << 7)
 
 /*
  * The following breakdows of arc_size exist for kstat only.

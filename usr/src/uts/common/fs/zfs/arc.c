@@ -324,6 +324,8 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_used;
 	kstat_named_t arcstat_meta_limit;
 	kstat_named_t arcstat_meta_max;
+	kstat_named_t arcstat_sync_wait_for_async;
+	kstat_named_t arcstat_demand_hit_predictive_prefetch;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -389,7 +391,9 @@ static arc_stats_t arc_stats = {
 	{ "duplicate_reads",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_used",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_limit",		KSTAT_DATA_UINT64 },
-	{ "arc_meta_max",		KSTAT_DATA_UINT64 }
+	{ "arc_meta_max",		KSTAT_DATA_UINT64 },
+	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
+	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -554,6 +558,7 @@ static boolean_t l2arc_write_eligible(uint64_t spa_guid, arc_buf_hdr_t *ab);
 #define	ARC_L2_WRITING		(1 << 16)	/* L2ARC write in progress */
 #define	ARC_L2_EVICTED		(1 << 17)	/* evicted during I/O */
 #define	ARC_L2_WRITE_HEAD	(1 << 18)	/* head of write list */
+#define	ARC_FLAG_PRIO_ASYNC_READ (1 << 19)
 
 #define	HDR_IN_HASH_TABLE(hdr)	((hdr)->b_flags & ARC_IN_HASH_TABLE)
 #define	HDR_IO_IN_PROGRESS(hdr)	((hdr)->b_flags & ARC_IO_IN_PROGRESS)
@@ -2931,6 +2936,36 @@ top:
 
 		if (HDR_IO_IN_PROGRESS(hdr)) {
 
+			if ((hdr->b_flags & ARC_FLAG_PRIO_ASYNC_READ) &&
+			    priority == ZIO_PRIORITY_SYNC_READ) {
+				/*
+				 * This sync read must wait for an
+				 * in-progress async read (e.g. a predictive
+				 * prefetch).  Async reads are queued
+				 * separately at the vdev_queue layer, so
+				 * this is a form of priority inversion.
+				 * Ideally, we would "inherit" the demand
+				 * i/o's priority by moving the i/o from
+				 * the async queue to the synchronous queue,
+				 * but there is currently no mechanism to do
+				 * so.  Track this so that we can evaluate
+				 * the magnitude of this potential performance
+				 * problem.
+				 *
+				 * Note that if the prefetch i/o is already
+				 * active (has been issued to the device),
+				 * the prefetch improved performance, because
+				 * we issued it sooner than we would have
+				 * without the prefetch.
+				 */
+				DTRACE_PROBE1(arc__sync__wait__for__async,
+				    arc_buf_hdr_t *, hdr);
+				ARCSTAT_BUMP(arcstat_sync_wait_for_async);
+			}
+			if (hdr->b_flags & ARC_FLAG_PREDICTIVE_PREFETCH) {
+				hdr->b_flags &= ~ARC_FLAG_PREDICTIVE_PREFETCH;
+			}
+
 			if (*arc_flags & ARC_WAIT) {
 				cv_wait(&hdr->b_cv, hash_lock);
 				mutex_exit(hash_lock);
@@ -2939,7 +2974,7 @@ top:
 			ASSERT(*arc_flags & ARC_NOWAIT);
 
 			if (done) {
-				arc_callback_t	*acb = NULL;
+				arc_callback_t *acb = NULL;
 
 				acb = kmem_zalloc(sizeof (arc_callback_t),
 				    KM_SLEEP);
@@ -2963,6 +2998,19 @@ top:
 		ASSERT(hdr->b_state == arc_mru || hdr->b_state == arc_mfu);
 
 		if (done) {
+			if (hdr->b_flags & ARC_FLAG_PREDICTIVE_PREFETCH) {
+				/*
+				 * This is a demand read which does not have to
+				 * wait for i/o because we did a predictive
+				 * prefetch i/o for it, which has completed.
+				 */
+				DTRACE_PROBE1(
+				    arc__demand__hit__predictive__prefetch,
+				    arc_buf_hdr_t *, hdr);
+				ARCSTAT_BUMP(
+				    arcstat_demand_hit_predictive_prefetch);
+				hdr->b_flags &= ~ARC_FLAG_PREDICTIVE_PREFETCH;
+			}
 			add_reference(hdr, hash_lock, private);
 			/*
 			 * If this block is already in use, create a new
@@ -3025,12 +3073,17 @@ top:
 				(void) arc_buf_remove_ref(buf, private);
 				goto top; /* restart the IO request */
 			}
-			/* if this is a prefetch, we don't have a reference */
-			if (*arc_flags & ARC_PREFETCH) {
+
+			/*
+			 * If there is a callback, we pass our reference to
+			 * it; otherwise we remove our reference.
+			 */
+			if (done == NULL) {
 				(void) remove_reference(hdr, hash_lock,
 				    private);
-				hdr->b_flags |= ARC_PREFETCH;
 			}
+			if (*arc_flags & ARC_PREFETCH)
+				hdr->b_flags |= ARC_PREFETCH;
 			if (*arc_flags & ARC_L2CACHE)
 				hdr->b_flags |= ARC_L2CACHE;
 			if (*arc_flags & ARC_L2COMPRESS)
@@ -3044,11 +3097,13 @@ top:
 			ASSERT0(refcount_count(&hdr->b_refcnt));
 			ASSERT(hdr->b_buf == NULL);
 
-			/* if this is a prefetch, we don't have a reference */
+			/*
+			 * If there is a callback, we pass a reference to it.
+			 */
+			if (done != NULL)
+				add_reference(hdr, hash_lock, private);
 			if (*arc_flags & ARC_PREFETCH)
 				hdr->b_flags |= ARC_PREFETCH;
-			else
-				add_reference(hdr, hash_lock, private);
 			if (*arc_flags & ARC_L2CACHE)
 				hdr->b_flags |= ARC_L2CACHE;
 			if (*arc_flags & ARC_L2COMPRESS)
@@ -3067,6 +3122,8 @@ top:
 		}
 
 		ASSERT(!GHOST_STATE(hdr->b_state));
+		if (*arc_flags & ARC_FLAG_PREDICTIVE_PREFETCH)
+			hdr->b_flags |= ARC_FLAG_PREDICTIVE_PREFETCH;
 
 		acb = kmem_zalloc(sizeof (arc_callback_t), KM_SLEEP);
 		acb->acb_done = done;
@@ -3104,6 +3161,11 @@ top:
 		ARCSTAT_CONDSTAT(!(hdr->b_flags & ARC_PREFETCH),
 		    demand, prefetch, hdr->b_type != ARC_BUFC_METADATA,
 		    data, metadata, misses);
+
+		if (priority == ZIO_PRIORITY_ASYNC_READ)
+			hdr->b_flags |= ARC_FLAG_PRIO_ASYNC_READ;
+		else
+			hdr->b_flags &= ~ARC_FLAG_PRIO_ASYNC_READ;
 
 		if (vd != NULL && l2arc_ndev != 0 && !(l2arc_norw && devw)) {
 			/*
