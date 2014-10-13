@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -40,6 +41,7 @@
 #include <sys/efi_partition.h>
 #include <sys/byteorder.h>
 #include <sys/ddi.h>
+#include <sys/debug.h>
 
 static struct uuid_to_ptag {
 	struct uuid	uuid;
@@ -766,6 +768,8 @@ efi_use_whole_disk(int fd)
 	uint_t			phy_last_slice = 0;
 	diskaddr_t		pl_start = 0;
 	diskaddr_t		pl_size;
+	diskaddr_t		delta = 0;
+	boolean_t		sync_needed = B_FALSE;
 
 	rval = efi_alloc_and_read(fd, &efi_label);
 	if (rval < 0) {
@@ -782,12 +786,25 @@ efi_use_whole_disk(int fd)
 	pl_size = efi_label->efi_parts[phy_last_slice].p_size;
 
 	/*
+	 * Determine if the EFI label is out of sync. We check that the last
+	 * physically non-zero partition ends at the reserved partition and
+	 * that the reserved partition is at the end of the usable region. If
+	 * neither of these conditions is true, then we need to resync the
+	 * label.
+	 */
+	if (pl_start + pl_size - 1 != efi_label->efi_last_u_lba -
+	    EFI_MIN_RESV_SIZE ||
+	    efi_label->efi_parts[efi_label->efi_nparts - 1].p_start !=
+	    efi_label->efi_last_u_lba - EFI_MIN_RESV_SIZE + 1)
+		sync_needed = B_TRUE;
+
+	/*
 	 * If alter_lba is 1, we are using the backup label.
 	 * Since we can locate the backup label by disk capacity,
 	 * there must be no unallocated space.
 	 */
 	if ((efi_label->efi_altern_lba == 1) || (efi_label->efi_altern_lba
-	    >= efi_label->efi_last_lba)) {
+	    >= efi_label->efi_last_lba && !sync_needed)) {
 		if (efi_debug) {
 			(void) fprintf(stderr,
 			    "efi_use_whole_disk: requested space not found\n");
@@ -796,16 +813,18 @@ efi_use_whole_disk(int fd)
 		return (VT_ENOSPC);
 	}
 
+	ASSERT3U(efi_label->efi_last_lba, >=, efi_label->efi_altern_lba);
+	delta = efi_label->efi_last_lba - efi_label->efi_altern_lba;
+	efi_label->efi_last_u_lba += delta;
+
 	/*
-	 * If there is space between the last physically non-zero partition
-	 * and the reserved partition, just add the unallocated space to this
-	 * area. Otherwise, the unallocated space is added to the last
-	 * physically non-zero partition.
+	 * Add the unallocated space to the last physically non-zero partition.
 	 */
-	if (pl_start + pl_size - 1 == efi_label->efi_last_u_lba -
+	if (pl_start + pl_size - 1 <= efi_label->efi_last_u_lba -
 	    EFI_MIN_RESV_SIZE) {
-		efi_label->efi_parts[phy_last_slice].p_size +=
-		    efi_label->efi_last_lba - efi_label->efi_altern_lba;
+		efi_label->efi_parts[phy_last_slice].p_size =
+		    efi_label->efi_last_u_lba - EFI_MIN_RESV_SIZE -
+		    pl_start + 1;
 	}
 
 	/*
@@ -813,10 +832,8 @@ efi_use_whole_disk(int fd)
 	 * here except fabricated devids (which get generated via
 	 * efi_write()). So there is no need to copy data.
 	 */
-	efi_label->efi_parts[efi_label->efi_nparts - 1].p_start +=
-	    efi_label->efi_last_lba - efi_label->efi_altern_lba;
-	efi_label->efi_last_u_lba += efi_label->efi_last_lba
-	    - efi_label->efi_altern_lba;
+	efi_label->efi_parts[efi_label->efi_nparts - 1].p_start =
+	    efi_label->efi_last_u_lba - EFI_MIN_RESV_SIZE + 1;
 
 	rval = efi_write(fd, efi_label);
 	if (rval < 0) {
