@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -762,7 +763,8 @@ i_ipadm_init_ifobj(ipadm_handle_t iph, const char *ifname, nvlist_t *ifnvl)
 
 /*
  * Retrieves the persistent configuration for the given interface(s) in `ifs'
- * by contacting the daemon and dumps the information in `allifs'.
+ * by contacting the daemon and dumps the information in `allifs'. The caller
+ * is responsible for freeing the allifs nvlist.
  */
 ipadm_status_t
 i_ipadm_init_ifs(ipadm_handle_t iph, const char *ifs, nvlist_t **allifs)
@@ -807,15 +809,15 @@ i_ipadm_init_ifs(ipadm_handle_t iph, const char *ifs, nvlist_t **allifs)
 		goto done;
 	}
 	nvlsize = rvalp->ir_nvlsize;
-	nvlbuf = (char *)rvalp + sizeof (ipmgmt_get_rval_t);
 
 	/*
-	 * nvlbuf contains a list of nvlists, each of which represents
-	 * configuration information for the given interface(s)
+	 * The packed nvlist in rvalp contains a list of nvlists, each of which
+	 * represents configuration information for the given interface(s).
 	 */
-	err = nvlist_unpack(nvlbuf, nvlsize, allifs, NV_ENCODE_NATIVE);
-	if (err != 0)
+	if ((err = nvlist_unpack((char *)rvalp + sizeof (ipmgmt_get_rval_t),
+	    nvlsize, allifs, 0)) != 0) {
 		status = ipadm_errno2status(err);
+	}
 done:
 	nvlist_free(nvl);
 	free(buf);
