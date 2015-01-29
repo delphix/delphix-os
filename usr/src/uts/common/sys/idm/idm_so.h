@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2015 by Delphix. All rights reserved.
+ */
 
 #ifndef _IDM_SO_H
 #define	_IDM_SO_H
@@ -37,8 +40,8 @@ extern "C" {
  * Define TCP window size (send and receive buffer sizes)
  */
 
-#define	IDM_RCVBUF_SIZE		(256 * 1024)
-#define	IDM_SNDBUF_SIZE		(256 * 1024)
+#define	IDM_RCVBUF_SIZE		(1024 * 1024)
+#define	IDM_SNDBUF_SIZE		(1024 * 1024)
 
 /*
  * Lower and upper bounds to use the 128k buffer cache.  Below the lower bound

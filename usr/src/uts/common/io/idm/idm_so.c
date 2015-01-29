@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -717,11 +717,18 @@ idm_set_postconnect_options(ksocket_t ks)
 {
 	const int	on = 1;
 
+	/*
+	 * ksocket_setsockopt modifies the parameter to reflect the value it
+	 * actually set.  Use a copy so as not to change the global tunable.
+	 */
+	int32_t sndbuf_size = idm_so_sndbuf;
+	int32_t rcvbuf_size = idm_so_rcvbuf;
+
 	/* Set connect options */
 	(void) ksocket_setsockopt(ks, SOL_SOCKET, SO_RCVBUF,
-	    (char *)&idm_so_rcvbuf, sizeof (idm_so_rcvbuf), CRED());
+	    (char *)&rcvbuf_size, sizeof (rcvbuf_size), CRED());
 	(void) ksocket_setsockopt(ks, SOL_SOCKET, SO_SNDBUF,
-	    (char *)&idm_so_sndbuf, sizeof (idm_so_sndbuf), CRED());
+	    (char *)&sndbuf_size, sizeof (sndbuf_size), CRED());
 	(void) ksocket_setsockopt(ks, IPPROTO_TCP, TCP_NODELAY,
 	    (char *)&on, sizeof (on), CRED());
 }
