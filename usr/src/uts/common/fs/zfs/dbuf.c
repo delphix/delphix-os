@@ -621,7 +621,12 @@ dbuf_read_mooch(dmu_buf_impl_t *db, uint64_t refd_obj, uint32_t flags,
 	pio = zio_null(pio, dmu_objset_spa(db->db_objset),
 	    NULL, mooch_read_done, mra, 0);
 
-	/* Issue asynchronous read of origin dbuf. */
+	/*
+	 * Issue asynchronous read of origin dbuf.  Note that unlike
+	 * dmu_buf_hold_array_by_dnode(), we do not have special code for
+	 * waiting for a concurrent reader, so we can not specify NEVERWAIT.
+	 */
+	flags &= ~DB_RF_NEVERWAIT;
 	VERIFY0(dbuf_read(mra->mra_origin_db, pio, flags));
 	zio_nowait(pio);
 
