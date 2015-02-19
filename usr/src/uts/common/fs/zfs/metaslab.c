@@ -155,7 +155,7 @@ int metaslab_df_free_pct = 4;
  * compensate by allowing more pending async writes.
  */
 int zfs_holefill_min_dirty_data_pct = 0;
-int zfs_holefill_max_dirty_data_pct = 30;
+int zfs_holefill_max_dirty_data_pct = 0;
 
 /*
  * A metaslab is considered "free" if it contains a contiguous
