@@ -1,9 +1,9 @@
 #
-# Copyright (c) 2014 by Delphix. All rights reserved.
+# Copyright (c) 2014, 2015 by Delphix. All rights reserved.
 #
 
 [build]
 build_machine=galaxy
-dcenter_group=dlpx-trunk
+dcenter_group=dlpx-4.2.0.0-release
 repo_dir=/data/{user}/dlpx-os-gate
 build_dir=/data/{user}/jenkins/{branch}
