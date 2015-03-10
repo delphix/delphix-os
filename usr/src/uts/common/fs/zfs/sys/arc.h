@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
 
@@ -42,6 +42,19 @@ extern "C" {
  * all available buffers from the arc state being passed in.
  */
 #define	ARC_EVICT_ALL	-1ULL
+
+#define	HDR_SET_LSIZE(hdr, x) do { \
+	ASSERT(IS_P2ALIGNED(x, 1U << SPA_MINBLOCKSHIFT)); \
+	(hdr)->b_lsize = ((x) >> SPA_MINBLOCKSHIFT); \
+_NOTE(CONSTCOND) } while (0)
+
+#define	HDR_SET_PSIZE(hdr, x) do { \
+	ASSERT(IS_P2ALIGNED((x), 1U << SPA_MINBLOCKSHIFT)); \
+	(hdr)->b_psize = ((x) >> SPA_MINBLOCKSHIFT); \
+_NOTE(CONSTCOND) } while (0)
+
+#define	HDR_GET_LSIZE(hdr)	((hdr)->b_lsize << SPA_MINBLOCKSHIFT)
+#define	HDR_GET_PSIZE(hdr)	((hdr)->b_psize << SPA_MINBLOCKSHIFT)
 
 typedef struct arc_buf_hdr arc_buf_hdr_t;
 typedef struct arc_buf arc_buf_t;

@@ -3476,6 +3476,310 @@ rrwlock(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	return (DCMD_OK);
 }
 
+typedef struct mdb_arc_buf_hdr_t {
+	uint16_t b_psize;
+	uint16_t b_lsize;
+	struct {
+		uintptr_t	b_state;
+	} b_l1hdr;
+} mdb_arc_buf_hdr_t;
+
+enum arc_cflags {
+	ARC_CFLAG_VERBOSE		= 1 << 0,
+	ARC_CFLAG_ANON			= 1 << 1,
+	ARC_CFLAG_MRU			= 1 << 2,
+	ARC_CFLAG_MFU			= 1 << 3,
+};
+
+typedef struct arc_compression_stats_data {
+	GElf_Sym anon_sym;	/* ARC_anon symbol */
+	GElf_Sym mru_sym;	/* ARC_mru symbol */
+	GElf_Sym mrug_sym;	/* ARC_mru_ghost symbol */
+	GElf_Sym mfu_sym;	/* ARC_mfu symbol */
+	GElf_Sym mfug_sym;	/* ARC_mfu_ghost symbol */
+	GElf_Sym l2c_sym;	/* ARC_l2c_only symbol */
+	uint64_t *anon_c_hist;	/* histogram of compressed sizes in anon */
+	uint64_t *anon_u_hist;	/* histogram of uncompressed sizes in anon */
+	uint64_t *mru_c_hist;	/* histogram of compressed sizes in mru */
+	uint64_t *mru_u_hist;	/* histogram of uncompressed sizes in mru */
+	uint64_t *mfu_c_hist;	/* histogram of compressed sizes in mfu */
+	uint64_t *mfu_u_hist;	/* histogram of uncompressed sizes in mfu */
+	uint64_t *all_c_hist;	/* histogram of compressed anon + mru + mfu */
+	uint64_t *all_u_hist;	/* histogram of uncompressed anon + mru + mfu */
+	int arc_cflags;		/* arc compression flags, specified by user */
+	int hist_nbuckets;	/* number of buckets in each histogram */
+} arc_compression_stats_data_t;
+
+int
+highbit64(uint64_t i)
+{
+	int h = 1;
+
+	if (i == 0)
+		return (0);
+	if (i & 0xffffffff00000000ULL) {
+		h += 32; i >>= 32;
+	}
+	if (i & 0xffff0000) {
+		h += 16; i >>= 16;
+	}
+	if (i & 0xff00) {
+		h += 8; i >>= 8;
+	}
+	if (i & 0xf0) {
+		h += 4; i >>= 4;
+	}
+	if (i & 0xc) {
+		h += 2; i >>= 2;
+	}
+	if (i & 0x2) {
+		h += 1;
+	}
+	return (h);
+}
+
+/* ARGSUSED */
+static int
+arc_compression_stats_cb(uintptr_t addr, const void *unknown, void *arg)
+{
+	arc_compression_stats_data_t *data = arg;
+	mdb_arc_buf_hdr_t hdr;
+	uint64_t cbucket;
+	uint64_t ubucket;
+
+	if (mdb_ctf_vread(&hdr, "arc_buf_hdr_t", "mdb_arc_buf_hdr_t",
+	    addr, 0) == -1) {
+		return (WALK_ERR);
+	}
+
+	/*
+	 * Headers in the ghost states, or the l2c_only state don't have
+	 * arc buffers linked off of them. Thus, their compressed size
+	 * is meaningless, so we skip these from the stats.
+	 */
+	if (hdr.b_l1hdr.b_state == data->mrug_sym.st_value ||
+	    hdr.b_l1hdr.b_state == data->mfug_sym.st_value ||
+	    hdr.b_l1hdr.b_state == data->l2c_sym.st_value) {
+		return (WALK_NEXT);
+	}
+
+	/*
+	 * The physical size (compressed) and logical size
+	 * (uncompressed) are in units of SPA_MINBLOCKSIZE. By default,
+	 * we use the log2 of this value (rounded down to the nearest
+	 * integer) to determine the bucket to assign this header to.
+	 * Thus, the histogram is logarithmic with respect to the size
+	 * of the header. For example, the following is a mapping of the
+	 * bucket numbers and the range of header sizes they correspond to:
+	 *
+	 *	0: 0 byte headers
+	 *	1: 512 byte headers
+	 *	2: [1024 - 2048) byte headers
+	 *	3: [2048 - 4096) byte headers
+	 *	4: [4096 - 8192) byte headers
+	 *	5: [8192 - 16394) byte headers
+	 *	6: [16384 - 32768) byte headers
+	 *	7: [32768 - 65536) byte headers
+	 *	8: [65536 - 131072) byte headers
+	 *	9: 131072 byte headers
+	 *
+	 * If the ARC_CFLAG_VERBOSE flag was specified, we use the
+	 * physical and logical sizes directly. Thus, the histogram will
+	 * no longer be logarithmic; instead it will be linear with
+	 * respect to the size of the header. The following is a mapping
+	 * of the first many bucket numbers and the header size they
+	 * correspond to:
+	 *
+	 *	0: 0 byte headers
+	 *	1: 512 byte headers
+	 *	2: 1024 byte headers
+	 *	3: 1536 byte headers
+	 *	4: 2048 byte headers
+	 *	5: 2560 byte headers
+	 *	6: 3072 byte headers
+	 *
+	 * And so on. Keep in mind that a range of sizes isn't used in
+	 * the case of linear scale because the headers can only
+	 * increment or decrement in sizes of 512 bytes. So, it's not
+	 * possible for a header to be sized in between whats listed
+	 * above.
+	 *
+	 * Also, the above mapping values were calculated assuming a
+	 * SPA_MINBLOCKSHIFT of 512 bytes and a SPA_MAXBLOCKSIZE of 128K.
+	 */
+
+	if (data->arc_cflags & ARC_CFLAG_VERBOSE) {
+		cbucket = hdr.b_psize;
+		ubucket = hdr.b_lsize;
+	} else {
+		cbucket = highbit64(hdr.b_psize);
+		ubucket = highbit64(hdr.b_lsize);
+	}
+
+	/* Ensure we stay within the bounds of the histogram array */
+	ASSERT3U(cbucket, <, data->hist_nbuckets);
+	ASSERT3U(ubucket, <, data->hist_nbuckets);
+
+	if (hdr.b_l1hdr.b_state == data->anon_sym.st_value) {
+		data->anon_c_hist[cbucket]++;
+		data->anon_u_hist[ubucket]++;
+	} else if (hdr.b_l1hdr.b_state == data->mru_sym.st_value) {
+		data->mru_c_hist[cbucket]++;
+		data->mru_u_hist[ubucket]++;
+	} else if (hdr.b_l1hdr.b_state == data->mfu_sym.st_value) {
+		data->mfu_c_hist[cbucket]++;
+		data->mfu_u_hist[ubucket]++;
+	}
+
+	data->all_c_hist[cbucket]++;
+	data->all_u_hist[ubucket]++;
+
+	return (WALK_NEXT);
+}
+
+/* ARGSUSED */
+static int
+arc_compression_stats(uintptr_t addr, uint_t flags, int argc,
+    const mdb_arg_t *argv)
+{
+	arc_compression_stats_data_t data = { 0 };
+	unsigned int max_shifted = SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT;
+	unsigned int hist_size;
+	char range[32];
+	int rc = DCMD_OK;
+
+	if (mdb_getopts(argc, argv,
+	    'v', MDB_OPT_SETBITS, ARC_CFLAG_VERBOSE, &data.arc_cflags,
+	    'a', MDB_OPT_SETBITS, ARC_CFLAG_ANON, &data.arc_cflags,
+	    'r', MDB_OPT_SETBITS, ARC_CFLAG_MRU, &data.arc_cflags,
+	    'f', MDB_OPT_SETBITS, ARC_CFLAG_MFU, &data.arc_cflags) != argc)
+		return (DCMD_USAGE);
+
+	if (mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_anon", &data.anon_sym) ||
+	    mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_mru", &data.mru_sym) ||
+	    mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_mru_ghost", &data.mrug_sym) ||
+	    mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_mfu", &data.mfu_sym) ||
+	    mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_mfu_ghost", &data.mfug_sym) ||
+	    mdb_lookup_by_obj(ZFS_OBJ_NAME, "ARC_l2c_only", &data.l2c_sym)) {
+		mdb_warn("can't find arc state symbol");
+		return (DCMD_ERR);
+	}
+
+	/*
+	 * Determine the maximum expected size for any header, and use
+	 * this to determine the number of buckets needed for each
+	 * histogram. If ARC_CFLAG_VERBOSE is specified, this value is
+	 * used directly; otherwise the log2 of the maximum size is
+	 * used. Thus, if using a log2 scale there's a maximum of 10
+	 * possible buckets, while the linear scale (when using
+	 * ARC_CFLAG_VERBOSE) has a maximum of 257 buckets.
+	 */
+	if (data.arc_cflags & ARC_CFLAG_VERBOSE)
+		data.hist_nbuckets = max_shifted + 1;
+	else
+		data.hist_nbuckets = highbit64(max_shifted) + 1;
+
+	hist_size = sizeof (uint64_t) * data.hist_nbuckets;
+
+	data.anon_c_hist = mdb_zalloc(hist_size, UM_SLEEP);
+	data.anon_u_hist = mdb_zalloc(hist_size, UM_SLEEP);
+
+	data.mru_c_hist = mdb_zalloc(hist_size, UM_SLEEP);
+	data.mru_u_hist = mdb_zalloc(hist_size, UM_SLEEP);
+
+	data.mfu_c_hist = mdb_zalloc(hist_size, UM_SLEEP);
+	data.mfu_u_hist = mdb_zalloc(hist_size, UM_SLEEP);
+
+	data.all_c_hist = mdb_zalloc(hist_size, UM_SLEEP);
+	data.all_u_hist = mdb_zalloc(hist_size, UM_SLEEP);
+
+	if (mdb_walk("arc_buf_hdr_t_full", arc_compression_stats_cb,
+	    &data) != 0) {
+		mdb_warn("can't walk arc_buf_hdr's");
+		rc = DCMD_ERR;
+		goto out;
+	}
+
+	if (data.arc_cflags & ARC_CFLAG_VERBOSE) {
+		rc = mdb_snprintf(range, sizeof (range),
+		    "[n*%llu, (n+1)*%llu)", SPA_MINBLOCKSIZE,
+		    SPA_MINBLOCKSIZE);
+	} else {
+		rc = mdb_snprintf(range, sizeof (range),
+		    "[2^(n-1)*%llu, 2^n*%llu)", SPA_MINBLOCKSIZE,
+		    SPA_MINBLOCKSIZE);
+	}
+
+	if (rc < 0) {
+		/* snprintf failed, abort the dcmd */
+		rc = DCMD_ERR;
+		goto out;
+	} else {
+		/* snprintf succeeded above, reset return code */
+		rc = DCMD_OK;
+	}
+
+	if (data.arc_cflags & ARC_CFLAG_ANON) {
+		mdb_printf("Histogram of compressed anon buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.anon_c_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+
+		mdb_printf("Histogram of uncompressed anon buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.anon_u_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+	}
+
+	if (data.arc_cflags & ARC_CFLAG_MRU) {
+		mdb_printf("Histogram of compressed mru buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.mru_c_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+
+		mdb_printf("Histogram of uncompressed mru buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.mru_u_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+	}
+
+	if (data.arc_cflags & ARC_CFLAG_MFU) {
+		mdb_printf("Histogram of compressed mfu buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.mfu_c_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+
+		mdb_printf("Histogram of uncompressed mfu buffers.\n"
+		    "Each bucket represents buffers of size: %s.\n", range);
+		dump_histogram(data.mfu_u_hist, data.hist_nbuckets, 0);
+		mdb_printf("\n");
+	}
+
+	mdb_printf("Histogram of all compressed buffers.\n"
+	    "Each bucket represents buffers of size: %s.\n", range);
+	dump_histogram(data.all_c_hist, data.hist_nbuckets, 0);
+	mdb_printf("\n");
+
+	mdb_printf("Histogram of all uncompressed buffers.\n"
+	    "Each bucket represents buffers of size: %s.\n", range);
+	dump_histogram(data.all_u_hist, data.hist_nbuckets, 0);
+
+out:
+	mdb_free(data.anon_c_hist, hist_size);
+	mdb_free(data.anon_u_hist, hist_size);
+
+	mdb_free(data.mru_c_hist, hist_size);
+	mdb_free(data.mru_u_hist, hist_size);
+
+	mdb_free(data.mfu_c_hist, hist_size);
+	mdb_free(data.mfu_u_hist, hist_size);
+
+	mdb_free(data.all_c_hist, hist_size);
+	mdb_free(data.all_u_hist, hist_size);
+
+	return (rc);
+}
+
 /*
  * MDB module linkage information:
  *
@@ -3551,6 +3855,13 @@ static const mdb_dcmd_t dcmds[] = {
 	    "print metaslab weight", metaslab_weight},
 	{ "metaslab_trace", ":",
 	    "print metaslab allocation trace records", metaslab_trace},
+	{ "arc_compression_stats", ":[-varf]\n"
+	    "\t-v verbose, display a linearly scaled histogram\n"
+	    "\t-a display ARC_anon state statistics individually\n"
+	    "\t-r display ARC_mru state statistics individually\n"
+	    "\t-f display ARC_mfu state statistics individually\n",
+	    "print a histogram of compressed arc buffer sizes",
+	    arc_compression_stats},
 	{ NULL }
 };
 
