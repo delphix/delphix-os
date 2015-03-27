@@ -1606,15 +1606,16 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 	ms->ms_tree = range_tree_create(&metaslab_rt_ops, ms, &ms->ms_lock);
 	metaslab_group_add(mg, ms);
 
-	mutex_enter(&ms->ms_lock);
-	ms->ms_weight = metaslab_weight(ms);
-	mutex_exit(&ms->ms_lock);
+	metaslab_set_fragmentation(ms);
 
 	/*
 	 * If we're opening an existing pool (txg == 0) or creating
 	 * a new one (txg == TXG_INITIAL), all space is available now.
 	 * If we're adding space to an existing pool, the new space
 	 * does not become available until after this txg has synced.
+	 * The metaslab's weight will also be initialized when we sync
+	 * out this txg. This ensures that we don't attempt to allocate
+	 * from it before we have initialized it completely.
 	 */
 	if (txg <= TXG_INITIAL)
 		metaslab_sync_done(ms, 0);
