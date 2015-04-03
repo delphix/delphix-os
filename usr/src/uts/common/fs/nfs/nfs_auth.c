@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -65,6 +66,7 @@ int nfsauth_cache_hit;
 int nfsauth_cache_miss;
 int nfsauth_cache_refresh;
 int nfsauth_cache_reclaim;
+int nfsauth_cache_reclaim_failed;
 
 /*
  * The lifetime of an auth cache entry:
@@ -1200,7 +1202,14 @@ exi_cache_trim(struct exportinfo *exi)
 
 	stale_time = gethrestime_sec() - NFSAUTH_CACHE_TRIM;
 
-	rw_enter(&exi->exi_cache_lock, RW_WRITER);
+	/*
+	 * We are being called by the kmem subsystem to reclaim
+	 * memory so don't block if we can't get the lock.
+	 */
+	if (rw_tryenter(&exi->exi_cache_lock, RW_WRITER) == 0) {
+		nfsauth_cache_reclaim_failed++;
+		return;
+	}
 
 	for (i = 0; i < AUTH_TABLESIZE; i++) {
 
