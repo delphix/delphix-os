@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  */
 
 /*
@@ -2170,11 +2170,19 @@ kmem_depot_ws_update(kmem_cache_t *cp)
 }
 
 /*
+ * Setting it this high (1GB) casues the explicit kpreempt to have
+ * very little effect.  Setting it to 1MB causes us to call
+ * kpreempt() approximately every 2 milliseconds.
+ */
+size_t kmem_reap_preempt_bytes = 1024 * 1024 * 1024;
+
+/*
  * Reap all magazines that have fallen out of the depot's working set.
  */
 static void
 kmem_depot_ws_reap(kmem_cache_t *cp)
 {
+	size_t bytes = 0;
 	long reap;
 	kmem_magazine_t *mp;
 
@@ -2182,12 +2190,26 @@ kmem_depot_ws_reap(kmem_cache_t *cp)
 	    taskq_member(kmem_taskq, curthread));
 
 	reap = MIN(cp->cache_full.ml_reaplimit, cp->cache_full.ml_min);
-	while (reap-- && (mp = kmem_depot_alloc(cp, &cp->cache_full)) != NULL)
+	while (reap-- &&
+	    (mp = kmem_depot_alloc(cp, &cp->cache_full)) != NULL) {
 		kmem_magazine_destroy(cp, mp, cp->cache_magtype->mt_magsize);
+		bytes += cp->cache_magtype->mt_magsize * cp->cache_bufsize;
+		if (bytes > kmem_reap_preempt_bytes) {
+			kpreempt(KPREEMPT_SYNC);
+			bytes = 0;
+		}
+	}
 
 	reap = MIN(cp->cache_empty.ml_reaplimit, cp->cache_empty.ml_min);
-	while (reap-- && (mp = kmem_depot_alloc(cp, &cp->cache_empty)) != NULL)
+	while (reap-- &&
+	    (mp = kmem_depot_alloc(cp, &cp->cache_empty)) != NULL) {
 		kmem_magazine_destroy(cp, mp, 0);
+		bytes += cp->cache_magtype->mt_magsize * cp->cache_bufsize;
+		if (bytes > kmem_reap_preempt_bytes) {
+			kpreempt(KPREEMPT_SYNC);
+			bytes = 0;
+		}
+	}
 }
 
 static void

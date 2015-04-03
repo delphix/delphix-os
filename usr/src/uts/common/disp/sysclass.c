@@ -23,11 +23,13 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2015 by Delphix. All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"	/* from SVr4.0 1.12 */
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -53,8 +55,25 @@
  * Class specific code for the sys class. There are no
  * class specific data structures associated with
  * the sys class and the scheduling policy is trivially
- * simple. There is no time slicing.
+ * simple. By default, there is no time slicing.
  */
+
+/*
+ * If enabled, SYS class (i.e. kernel) threads will be rescheduled
+ * every tick based on their priority.  This allows higher-priority kernel
+ * threads to run even if there is a lower-priority kernel thread on CPU.
+ */
+boolean_t sysclass_priority_enable = B_FALSE;
+
+/*
+ * If enabled, SYS class (i.e. kernel) threads will be rescheduled
+ * every tick based on their priority, and multiple runnable threads of
+ * equal priority will timeslice, running for one tick each.  This allows
+ * higher-priority kernel threads to run even if there is a lower-priority
+ * kernel thread on CPU, and all kernel threads of the highest runnable
+ * priority to periodically run.
+ */
+boolean_t sysclass_timeslice_enable = B_FALSE;
 
 pri_t		sys_init(id_t, int, classfuncs_t **);
 static int	sys_getclpri(pcpri_t *);
@@ -65,6 +84,7 @@ static int	sys_nosys();
 static int	sys_donice(kthread_t *, cred_t *, int, int *);
 static int	sys_doprio(kthread_t *, cred_t *, int, int *);
 static void	sys_forkret(kthread_t *, kthread_t *);
+static void	sys_tick(kthread_t *);
 static void	sys_nullsys();
 static pri_t	sys_swappri(kthread_t *, int);
 static int	sys_alloc(void **, int);
@@ -101,7 +121,7 @@ struct classfuncs sys_classfuncs = {
 		setfrontdq,	/* preempt */
 		setbackdq,	/* setrun */
 		sys_nullsys,	/* sleep */
-		sys_nullsys,	/* tick */
+		sys_tick,	/* tick */
 		setbackdq,	/* wakeup */
 		sys_donice,
 		(pri_t (*)())sys_nosys,	/* globpri */
@@ -192,6 +212,26 @@ sys_forkret(t, ct)
 	mutex_enter(&pp->p_lock);
 	continuelwps(pp);
 	mutex_exit(&pp->p_lock);
+}
+
+static void
+sys_tick(kthread_t *t)
+{
+	thread_lock(t);
+	if (t->t_cid != syscid) {
+		thread_unlock(t);
+		return;
+	}
+	if (t->t_state == TS_ONPROC) {
+		pri_t maxrunpri = t->t_disp_queue->disp_maxrunpri;
+
+		if (sysclass_priority_enable && t->t_pri < maxrunpri) {
+			cpu_surrender(t);
+		} else if (sysclass_timeslice_enable && t->t_pri <= maxrunpri) {
+			cpu_surrender(t);
+		}
+	}
+	thread_unlock_nopreempt(t);
 }
 
 /* ARGSUSED */

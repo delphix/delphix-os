@@ -26,6 +26,10 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
+/*
+ * Copyright (c) 2015 by Delphix. All rights reserved.
+ */
+
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -1810,7 +1814,7 @@ cpu_surrender(kthread_t *tp)
 	if (max_pri < max_run_pri)
 		max_pri = max_run_pri;
 
-	if (tp->t_cid == sysdccid) {
+	if (tp->t_cid == sysdccid || tp->t_cid == syscid) {
 		uint_t t_pri = DISP_PRIO(tp);
 		if (t_pri > max_pri)
 			return;		/* we are not competing w/ anyone */

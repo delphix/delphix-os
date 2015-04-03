@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc.  All rights reserverd.
+ * Copyright (c) 2015 by Delphix. All rights reserved.
  */
 
 /*
@@ -471,6 +472,7 @@
 #include <sys/hypervisor.h>
 #endif
 
+boolean_t kernel_preempt_enable = B_FALSE;
 
 #if defined(__xpv) && defined(DEBUG)
 
@@ -1477,7 +1479,8 @@ loop:
 	 * Here if we are returning to supervisor mode.
 	 * Check for a kernel preemption request.
 	 */
-	if (CPU->cpu_kprunrun && (rp->r_ps & PS_IE)) {
+	if ((CPU->cpu_kprunrun || (CPU->cpu_runrun && kernel_preempt_enable)) &&
+	    (rp->r_ps & PS_IE)) {
 
 		/*
 		 * Do nothing if already in kpreempt
