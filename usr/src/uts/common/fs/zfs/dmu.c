@@ -661,14 +661,6 @@ dmu_free_long_range_impl(objset_t *os, dnode_t *dn, uint64_t offset,
 	if (offset >= object_size)
 		return (0);
 
-	/*
-	 * If we are freeing all blocks of the file, it is more efficient
-	 * to discard all of its dbufs up front, rather than making
-	 * dbuf_free_range() find and discard those in each chunk separately.
-	 */
-	if (length == DMU_OBJECT_END && offset == 0)
-		dnode_evict_dbufs(dn);
-
 	if (length == DMU_OBJECT_END || offset + length > object_size)
 		length = object_size - offset;
 

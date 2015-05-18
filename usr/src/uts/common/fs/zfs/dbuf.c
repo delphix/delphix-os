@@ -1431,6 +1431,16 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	dbuf_dirty_record_t *dr, **drp;
 
 	ASSERT(txg != 0);
+
+	/*
+	 * Due to our use of dn_nlevels below, this can only be called
+	 * in open context, unless we are operating on the MOS.
+	 * From syncing context, dn_nlevels may be different from the
+	 * dn_nlevels used when dbuf was dirtied.
+	 */
+	ASSERT(db->db_objset ==
+	    dmu_objset_pool(db->db_objset)->dp_meta_objset ||
+	    txg != spa_syncing_txg(dmu_objset_spa(db->db_objset)));
 	ASSERT(db->db_blkid != DMU_BONUS_BLKID);
 	ASSERT0(db->db_level);
 	ASSERT(MUTEX_HELD(&db->db_mtx));
@@ -1453,11 +1463,8 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 
 	ASSERT(db->db.db_size != 0);
 
-	/*
-	 * Any space we accounted for in dp_dirty_* will be cleaned up by
-	 * dsl_pool_sync().  This is relatively rare so the discrepancy
-	 * is not a big deal.
-	 */
+	dsl_pool_undirty_space(dmu_objset_pool(dn->dn_objset),
+	    dr->dr_accounted, txg);
 
 	*drp = dr->dr_next;
 
@@ -1472,7 +1479,7 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		list_remove(&dr->dr_parent->dt.di.dr_children, dr);
 		mutex_exit(&dr->dr_parent->dt.di.dr_mtx);
 	} else if (db->db_blkid == DMU_SPILL_BLKID ||
-	    db->db_level+1 == dn->dn_nlevels) {
+	    db->db_level + 1 == dn->dn_nlevels) {
 		ASSERT(db->db_blkptr == NULL || db->db_parent == dn->dn_dbuf);
 		mutex_enter(&dn->dn_mtx);
 		list_remove(&dn->dn_dirty_records[txg & TXG_MASK], dr);
@@ -1487,11 +1494,6 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		ASSERT(dr->dt.dl.dr_data != NULL);
 		if (dr->dt.dl.dr_data != db->db_buf)
 			VERIFY(arc_buf_remove_ref(dr->dt.dl.dr_data, db));
-	}
-
-	if (db->db_level != 0) {
-		mutex_destroy(&dr->dt.di.dr_mtx);
-		list_destroy(&dr->dt.di.dr_children);
 	}
 
 	kmem_free(dr, sizeof (dbuf_dirty_record_t));
@@ -2751,7 +2753,7 @@ dbuf_sync_indirect(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 
 	zio = dr->dr_zio;
 	mutex_enter(&dr->dt.di.dr_mtx);
-	dbuf_sync_list(&dr->dt.di.dr_children, tx);
+	dbuf_sync_list(&dr->dt.di.dr_children, db->db_level - 1, tx);
 	ASSERT(list_head(&dr->dt.di.dr_children) == NULL);
 	mutex_exit(&dr->dt.di.dr_mtx);
 	zio_nowait(zio);
@@ -2892,7 +2894,7 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 }
 
 void
-dbuf_sync_list(list_t *list, dmu_tx_t *tx)
+dbuf_sync_list(list_t *list, int level, dmu_tx_t *tx)
 {
 	dbuf_dirty_record_t *dr;
 
@@ -2908,6 +2910,10 @@ dbuf_sync_list(list_t *list, dmu_tx_t *tx)
 			ASSERT3U(dr->dr_dbuf->db.db_object, ==,
 			    DMU_META_DNODE_OBJECT);
 			break;
+		}
+		if (dr->dr_dbuf->db_blkid != DMU_BONUS_BLKID &&
+		    dr->dr_dbuf->db_blkid != DMU_SPILL_BLKID) {
+			VERIFY3U(dr->dr_dbuf->db_level, ==, level);
 		}
 		list_remove(list, dr);
 		if (dr->dr_dbuf->db_level > 0)
