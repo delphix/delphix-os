@@ -1523,19 +1523,16 @@ clock_tick(kthread_t *t, int pending)
 
 	ASSERT(pending > 0);
 
-	/*
-	 * Note: we want to do the class-specific tick processing even if
-	 * there is no LWP.  This applies to most kernel threads in the
-	 * SYS scheduling class -- we want to call sys_tick() on them.
-	 */
+	/* Must be operating on a lwp/thread */
+	if ((lwp = ttolwp(t)) == NULL) {
+		panic("clock_tick: no lwp");
+		/*NOTREACHED*/
+	}
+
 	for (i = 0; i < pending; i++) {
 		CL_TICK(t);	/* Class specific tick processing */
 		DTRACE_SCHED1(tick, kthread_t *, t);
 	}
-
-	/* Must be operating on a lwp/thread */
-	if ((lwp = ttolwp(t)) == NULL)
-		return;
 
 	pp = ttoproc(t);
 

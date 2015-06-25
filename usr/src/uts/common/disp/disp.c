@@ -1814,7 +1814,7 @@ cpu_surrender(kthread_t *tp)
 	if (max_pri < max_run_pri)
 		max_pri = max_run_pri;
 
-	if (tp->t_cid == sysdccid || tp->t_cid == syscid) {
+	if (tp->t_cid == sysdccid) {
 		uint_t t_pri = DISP_PRIO(tp);
 		if (t_pri > max_pri)
 			return;		/* we are not competing w/ anyone */

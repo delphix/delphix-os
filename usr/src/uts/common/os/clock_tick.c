@@ -297,6 +297,7 @@ clock_tick_process(cpu_t *cp, clock_t mylbolt, int pending)
 	kthread_t	*t;
 	kmutex_t	*plockp;
 	int		notick, intr;
+	klwp_id_t	lwp;
 
 	/*
 	 * The locking here is rather tricky. thread_free_prevent()
@@ -357,7 +358,8 @@ clock_tick_process(cpu_t *cp, clock_t mylbolt, int pending)
 	}
 
 	intr = t->t_flag & T_INTR_THREAD;
-	if ((t->t_proc_flag & TP_LWPEXIT) || intr) {
+	lwp = ttolwp(t);
+	if (lwp == NULL || (t->t_proc_flag & TP_LWPEXIT) || intr) {
 		/*
 		 * Thread is exiting (or uninteresting) so don't
 		 * do tick processing.
