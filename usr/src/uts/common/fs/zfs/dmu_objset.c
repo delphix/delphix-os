@@ -49,6 +49,7 @@
 #include <sys/zfs_onexit.h>
 #include <sys/dsl_destroy.h>
 #include <sys/dmu_send.h>
+#include <sys/zfeature.h>
 
 /*
  * Needed to close a window in dnode_move() that allows the objset to be freed
@@ -1149,6 +1150,12 @@ dmu_objset_remap_indirects(const char *fsname)
 		return (error);
 	}
 	dd = dmu_objset_ds(os)->ds_dir;
+
+	if (!spa_feature_is_enabled(dmu_objset_spa(os),
+	    SPA_FEATURE_OBSOLETE_COUNTS)) {
+		dmu_objset_rele(os, FTAG);
+		return (SET_ERROR(ENOTSUP));
+	}
 
 	if (dmu_objset_ds(os)->ds_is_snapshot) {
 		dmu_objset_rele(os, FTAG);

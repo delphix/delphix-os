@@ -3702,6 +3702,9 @@ spa_remap_blkptr(spa_t *spa, blkptr_t *bp, spa_remap_cb_t callback, void *arg)
 	if (!zfs_remap_blkptr_enable)
 		return (rv);
 
+	if (!spa_feature_is_enabled(spa, SPA_FEATURE_OBSOLETE_COUNTS))
+		return (rv);
+
 	/*
 	 * Dedup BP's can not be remapped, because ddt_phys_select() depends
 	 * on DVA[0] being the same in the BP as in the DDT (dedup table).
