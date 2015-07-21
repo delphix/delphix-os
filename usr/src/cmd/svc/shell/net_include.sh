@@ -25,7 +25,7 @@
 # Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T.
 # All rights reserved.
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2015 by Delphix. All rights reserved.
 #
 
 NET_INADDR_ANY="0.0.0.0"
@@ -127,7 +127,7 @@ if_comp()
 
 #
 # physical_comp if1 if2
-# 
+#
 # Do the two interfaces share a physical interface?
 #
 physical_comp()
@@ -185,7 +185,7 @@ create_ipmp()
 }
 
 #
-# create_groupifname groupname type 
+# create_groupifname groupname type
 #
 # Create an IPMP meta-interface name for the group.  We only use this
 # function if all of the interfaces in the group failed at boot and there
@@ -231,7 +231,7 @@ get_hostname_ipmpinfo()
 			;;
 	esac
 
-	[ -r "$file" ] || return 
+	[ -r "$file" ] || return
 
 	type=$2
 	shift 2
@@ -271,7 +271,7 @@ get_group_for_type()
 	#
 	shift 2
 	for ifname in "$@"; do
-		if if_comp "$physical" $ifname; then 
+		if if_comp "$physical" $ifname; then
 			get_hostname_ipmpinfo $ifname $type group
 		fi
 	done | while :; do
@@ -325,7 +325,7 @@ doDHCPhostname()
 	if [ -f /etc/dhcp.$1 ] && [ -f /etc/hostname.$1 ]; then
                 set -- `shcat /etc/hostname.$1`
                 [ $# -eq 2 -a "$1" = "inet" ]
-                return $?      
+                return $?
         fi
         return 1
 }
@@ -426,7 +426,7 @@ inet_process_hostname()
 #
 # Examples:
 #	inet6_process_hostname /sbin/ifconfig hme0 inet6 < /etc/hostname6.hme0
-#	
+#
 #	inet6_process_hostname /sbin/ifparse -f inet6 < /etc/hostname6.hme0
 #
 # Return non-zero if any of the commands fail so that the caller may alert
@@ -483,7 +483,7 @@ move_addresses()
 
 		group=`get_group $ifname`
 		if [ -z "$group" ]; then
-			in_list physical_comp $ifname $processed || { 
+			in_list physical_comp $ifname $processed || {
 				echo " $ifname (not moved -- not" \
 				    "in an IPMP group)\c" >/dev/msglog
 				processed="$processed $ifname"
@@ -519,7 +519,7 @@ move_addresses()
 		/sbin/ifparse -f $type `
 			for item in $list; do
 				if_comp $ifname $item && $process_func \
-				    /sbin/ifparse $type < $hostpfx.$item 
+				    /sbin/ifparse $type < $hostpfx.$item
 			done | while read three four; do
 				[ "$three" != addif ] && echo "$three $four \c"
 			done` | while read one two; do
@@ -545,7 +545,7 @@ move_addresses()
 			done
 		fi
 
-		in_list physical_comp $ifname $processed || { 
+		in_list physical_comp $ifname $processed || {
 			processed="$processed $ifname"
 			echo " $ifname (moved to $grifname)\c" > /dev/msglog
 		}
@@ -560,7 +560,7 @@ move_addresses()
 # IP addresses is being enforced on the interface by the global zone
 #
 ipadm_from_gz_if()
-{ 
+{
 	pif=`/sbin/ipadm show-if -o persistent -p $1 2>/dev/null | egrep '4|6'`
 	if smf_is_globalzone || ![[ $pif == *4* || $pif == *6* ]]; then
 		return 1
@@ -574,7 +574,7 @@ ipadm_from_gz_if()
 		# the `allowed-ips' datalink property cannot currently be
 		# examined in any other way from the non-global zone, we
 		# resort to plumbing the interface
-		# 
+		#
 		/sbin/ifconfig $1 plumb > /dev/null 2>&1
 		l3protect=`/sbin/ipadm show-if -o current -p $1|grep -c 'Z'`
 		if [ $l3protect = 0 ]; then
@@ -617,7 +617,11 @@ if_configure()
 
 	if [[ $type = inet && -f /etc/dhcp.$ifname ]]; then
 		cmdline=`shcat /etc/dhcp\.${ifname}`
-		/sbin/ifconfig $ifname dhcp start $cmdline || return 1
+		#
+		# Never fail a DHCP interface configuration, even if no DHCP
+		# server is available to give us an address.
+		#
+		/sbin/ifconfig $ifname dhcp start $cmdline
 	fi
 
 	return 0
@@ -788,7 +792,7 @@ service_is_enabled()
 # Returns 0 if a valid IPv4 address is given, 1 otherwise.
 #
 is_valid_v4addr()
-{ 
+{
 	echo $1 | /usr/xpg4/bin/awk 'NF != 1 { exit 1 } \
 	$1 !~ /^((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}\
 	(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])$/ \
@@ -808,11 +812,11 @@ is_valid_v6addr()
 	$1 !~ /^([a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$/ &&
 	# 1:2:3::6:7:8
 	$1 !~ /^([a-fA-F0-9]{1,4}:){0,6}:([a-fA-F0-9]{1,4}:){0,6}\
-	[a-fA-F0-9]{1,4}$/ && 
+	[a-fA-F0-9]{1,4}$/ &&
 	# 1:2:3::
 	$1 !~ /^([a-fA-F0-9]{1,4}:){0,7}:$/ &&
 	# ::7:8
-	$1 !~ /^:(:[a-fA-F0-9]{1,4}){0,6}:[a-fA-F0-9]{1,4}$/ && 
+	$1 !~ /^:(:[a-fA-F0-9]{1,4}){0,6}:[a-fA-F0-9]{1,4}$/ &&
 	# ::f:1.2.3.4
 	$1 !~ /^:(:[a-fA-F0-9]{1,4}){0,5}:\
 	((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}\
