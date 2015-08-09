@@ -310,7 +310,7 @@ static boolean_t arc_warm;
 /*
  * log2 fraction of the zio arena to keep free.
  */
-int arc_zio_arena_free_shift = 3;
+int arc_zio_arena_free_shift = 2;
 
 /*
  * These tunables are for performance analysis.
@@ -3540,7 +3540,7 @@ arc_available_memory(void)
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
-	 * above about 1/8th (1/(2^arc_zio_arena_free_shift)) free.
+	 * above about 1/4th (1/(2^arc_zio_arena_free_shift)) free.
 	 *
 	 * Note that reducing the arc_zio_arena_free_shift keeps more virtual
 	 * memory (in the zio_arena) free, which can avoid memory
