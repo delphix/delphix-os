@@ -2377,8 +2377,7 @@ vdev_remove_empty(vdev_t *vd, uint64_t txg)
 	tx = dmu_tx_create_assigned(spa_get_dsl(spa), txg);
 	vdev_destroy_spacemaps(vd, tx);
 
-	if (vd->vdev_islog) {
-		ASSERT3U(vd->vdev_top_zap, !=, 0);
+	if (vd->vdev_islog && vd->vdev_top_zap != 0) {
 		vdev_destroy_unlink_zap(vd, vd->vdev_top_zap, tx);
 		vd->vdev_top_zap = 0;
 	}
