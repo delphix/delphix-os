@@ -99,8 +99,14 @@ int zfs_remove_max_copy_bytes = 8 * 1024 * 1024;
  * removing a device.  This can be no larger than SPA_MAXBLOCKSIZE.  If
  * there is a performance problem with attempting to allocate large blocks,
  * consider decreasing this.
+ *
+ * Note: we will issue i/os of up to this size.  The mpt driver does not
+ * respond well to i/os larger than 1MB, so we set this to 1MB.  (When
+ * mpt processes an i/o larger than 1MB, it needs to do an allocation of
+ * 2 physically contiguous pages; if this allocation fails, mpt will drop
+ * the i/o and hang the device.)
  */
-int zfs_remove_max_segment = SPA_MAXBLOCKSIZE;
+int zfs_remove_max_segment = 1024 * 1024;
 
 /*
  * The maximum number of vdevs that can be removed, due to recursion.
