@@ -161,7 +161,7 @@ typedef struct dmu_replay_record {
 	enum {
 		DRR_BEGIN, DRR_OBJECT, DRR_FREEOBJECTS,
 		DRR_WRITE, DRR_FREE, DRR_END, DRR_WRITE_BYREF,
-		DRR_SPILL, DRR_WRITE_EMBEDDED, DRR_NUMTYPES
+		DRR_SPILL, DRR_WRITE_EMBEDDED, DRR_REDACT, DRR_NUMTYPES
 	} drr_type;
 	uint32_t drr_payloadlen;
 	union {
@@ -255,6 +255,12 @@ typedef struct dmu_replay_record {
 			uint32_t drr_psize; /* compr. (real) size of payload */
 			/* (possibly compressed) content follows */
 		} drr_write_embedded;
+		struct drr_redact {
+			uint64_t drr_object;
+			uint64_t drr_offset;
+			uint64_t drr_length;
+			uint64_t drr_toguid;
+		} drr_redact;
 
 		/*
 		 * Nore: drr_checksum is overlaid with all record types

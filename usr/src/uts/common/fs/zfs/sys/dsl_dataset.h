@@ -45,6 +45,7 @@
 extern "C" {
 #endif
 
+extern boolean_t zfs_allow_redacted_dataset_mount;
 struct dsl_dataset;
 struct dsl_dir;
 struct dsl_pool;

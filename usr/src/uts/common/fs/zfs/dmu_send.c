@@ -207,14 +207,15 @@ struct send_redact_record {
 
 /*
  * The list of data whose inclusion in a send stream can be pending from
- * one call to backup_cb to another.  Multiple calls to dump_free() and
- * dump_freeobjects() can be aggregated into a single DRR_FREE or
- * DRR_FREEOBJECTS replay record.
+ * one call to backup_cb to another.  Multiple calls to dump_free(),
+ * dump_freeobjects(), and dump_redact() can be aggregated into a single
+ * DRR_FREE, DRR_FREEOBJECTS, or DRR_REDACT replay record.
  */
 typedef enum {
 	PENDING_NONE,
 	PENDING_FREE,
-	PENDING_FREEOBJECTS
+	PENDING_FREEOBJECTS,
+	PENDING_REDACT
 } dmu_pendop_t;
 
 typedef struct dmu_send_cookie {
@@ -357,7 +358,7 @@ dump_free(dmu_send_cookie_t *dscp, uint64_t object, uint64_t offset,
 	 * since free block aggregation can only be done for blocks of the
 	 * same type (i.e., DRR_FREE records can only be aggregated with
 	 * other DRR_FREE records.  DRR_FREEOBJECTS records can only be
-	 * aggregated with other DRR_FREEOBJECTS records.
+	 * aggregated with other DRR_FREEOBJECTS records).
 	 */
 	if (dscp->dsc_pending_op != PENDING_NONE &&
 	    dscp->dsc_pending_op != PENDING_FREE) {
@@ -402,6 +403,57 @@ dump_free(dmu_send_cookie_t *dscp, uint64_t object, uint64_t offset,
 	} else {
 		dscp->dsc_pending_op = PENDING_FREE;
 	}
+
+	return (0);
+}
+
+/*
+ * Fill in the drr_redact struct, or perform aggregation if the previous record
+ * is also a redaction record, and the two are adjacent.
+ */
+static int
+dump_redact(dmu_send_cookie_t *dscp, uint64_t object, uint64_t offset,
+    uint64_t length)
+{
+	struct drr_redact *drrr = &dscp->dsc_drr->drr_u.drr_redact;
+
+	/*
+	 * If there is a pending op, but it's not PENDING_REDACT, push it out,
+	 * since free block aggregation can only be done for blocks of the
+	 * same type (i.e., DRR_REDACT records can only be aggregated with
+	 * other DRR_REDACT records).
+	 */
+	if (dscp->dsc_pending_op != PENDING_NONE &&
+	    dscp->dsc_pending_op != PENDING_REDACT) {
+		if (dump_record(dscp, NULL, 0) != 0)
+			return (SET_ERROR(EINTR));
+		dscp->dsc_pending_op = PENDING_NONE;
+	}
+
+	if (dscp->dsc_pending_op == PENDING_REDACT) {
+		/*
+		 * Check to see whether this redacted block can be aggregated
+		 * with pending one.
+		 */
+		if (drrr->drr_object == object && drrr->drr_offset +
+		    drrr->drr_length == offset) {
+			drrr->drr_length += length;
+			return (0);
+		} else {
+			/* not a continuation.  Push out pending record */
+			if (dump_record(dscp, NULL, 0) != 0)
+				return (SET_ERROR(EINTR));
+			dscp->dsc_pending_op = PENDING_NONE;
+		}
+	}
+	/* create a REDACT record and make it pending */
+	bzero(dscp->dsc_drr, sizeof (dmu_replay_record_t));
+	dscp->dsc_drr->drr_type = DRR_REDACT;
+	drrr->drr_object = object;
+	drrr->drr_offset = offset;
+	drrr->drr_length = length;
+	drrr->drr_toguid = dscp->dsc_toguid;
+	dscp->dsc_pending_op = PENDING_REDACT;
 
 	return (0);
 }
@@ -552,7 +604,7 @@ dump_freeobjects(dmu_send_cookie_t *dscp, uint64_t firstobj, uint64_t numobjs)
 	 * push it out, since free block aggregation can only be done for
 	 * blocks of the same type (i.e., DRR_FREE records can only be
 	 * aggregated with other DRR_FREE records.  DRR_FREEOBJECTS records
-	 * can only be aggregated with other DRR_FREEOBJECTS records.
+	 * can only be aggregated with other DRR_FREEOBJECTS records).
 	 */
 	if (dscp->dsc_pending_op != PENDING_NONE &&
 	    dscp->dsc_pending_op != PENDING_FREEOBJECTS) {
@@ -700,21 +752,29 @@ do_dump(dmu_send_cookie_t *dscp, struct send_block_record *data)
 
 	if (zb->zb_object != DMU_META_DNODE_OBJECT &&
 	    DMU_OBJECT_IS_SPECIAL(zb->zb_object)) {
+		ASSERT(!data->redact_marker);
 		return (0);
 	} else if (BP_IS_HOLE(bp) &&
 	    zb->zb_object == DMU_META_DNODE_OBJECT) {
+		ASSERT(!data->redact_marker);
 		uint64_t span = bp_span(data->datablksz, indblkshift,
 		    zb->zb_level);
 		uint64_t dnobj = (zb->zb_blkid * span) >> DNODE_SHIFT;
 		err = dump_freeobjects(dscp, dnobj, span >> DNODE_SHIFT);
 	} else if (BP_IS_HOLE(bp)) {
-		if (data->redact_marker)
-			return (0);
-
 		uint64_t span = bp_span(data->datablksz, indblkshift,
 		    zb->zb_level);
 		uint64_t offset = zb->zb_blkid * span;
-		err = dump_free(dscp, zb->zb_object, offset, span);
+		if (data->redact_marker)
+			err = dump_redact(dscp, zb->zb_object, offset, span);
+		else
+			err = dump_free(dscp, zb->zb_object, offset, span);
+	} else if (BP_IS_REDACTED(bp)) {
+		ASSERT0(zb->zb_level);
+		uint64_t span = bp_span(data->datablksz, indblkshift,
+		    zb->zb_level);
+		uint64_t offset = zb->zb_blkid * span;
+		err = dump_redact(dscp, zb->zb_object, offset, span);
 	} else if (zb->zb_level > 0 || type == DMU_OT_OBJSET) {
 		return (0);
 	} else if (type == DMU_OT_DNODE) {
@@ -724,6 +784,7 @@ do_dump(dmu_send_cookie_t *dscp, struct send_block_record *data)
 		arc_buf_t *abuf;
 
 		ASSERT0(zb->zb_level);
+		ASSERT(!data->redact_marker);
 
 		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
@@ -742,28 +803,34 @@ do_dump(dmu_send_cookie_t *dscp, struct send_block_record *data)
 		arc_flags_t aflags = ARC_FLAG_WAIT;
 		arc_buf_t *abuf;
 		int blksz = BP_GET_LSIZE(bp);
-
-		if (data->redact_marker)
-			return (0);
+		ASSERT(!data->redact_marker);
 
 		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
 		    &aflags, zb) != 0)
 			return (SET_ERROR(EIO));
 
-		err = dump_spill(dscp, zb->zb_object, blksz, abuf->b_data);
+		err = dump_spill(dscp, zb->zb_object, blksz,
+		    abuf->b_data);
 		arc_buf_destroy(abuf, &abuf);
+	} else if (data->redact_marker) {
+		ASSERT0(zb->zb_level);
+		ASSERT(zb->zb_object > dscp->dsc_resume_object ||
+		    (zb->zb_object == dscp->dsc_resume_object &&
+		    zb->zb_blkid * data->datablksz >= dscp->dsc_resume_offset));
+		err = dump_redact(dscp, zb->zb_object,  zb->zb_blkid *
+		    data->datablksz, data->datablksz);
 	} else if (backup_do_embed(dscp, bp)) {
 		/* it's an embedded level-0 block of a regular object */
-		if (data->redact_marker)
-			return (0);
 		ASSERT0(zb->zb_level);
 		err = dump_write_embedded(dscp, zb->zb_object,
 		    zb->zb_blkid * data->datablksz, data->datablksz, bp);
 	} else {
+		ASSERT0(zb->zb_level);
+		ASSERT(zb->zb_object > dscp->dsc_resume_object ||
+		    (zb->zb_object == dscp->dsc_resume_object &&
+		    zb->zb_blkid * data->datablksz >= dscp->dsc_resume_offset));
 		/* it's a level-0 block of a regular object */
-		if (data->redact_marker)
-			return (0);
 		arc_flags_t aflags = ARC_FLAG_WAIT;
 		arc_buf_t *abuf;
 		uint64_t offset;
@@ -2510,7 +2577,8 @@ send_prefetch_thread(void *arg)
 			continue;
 		}
 
-		if (!data->redact_marker && !BP_IS_HOLE(&data->bp)) {
+		if (!data->redact_marker && !BP_IS_HOLE(&data->bp) &&
+		    !BP_IS_REDACTED(&data->bp)) {
 			arc_flags_t aflags = ARC_FLAG_NOWAIT |
 			    ARC_FLAG_PREFETCH;
 			(void) arc_read(NULL, os->os_spa, &data->bp, NULL, NULL,
@@ -2811,7 +2879,8 @@ dmu_send_impl(struct dmu_send_params *dspp)
 
 	if (dspp->redactbook != NULL || dsl_dataset_feature_is_active(to_ds,
 	    SPA_FEATURE_REDACTED_DATASETS)) {
-		if (dspp->redactbook != NULL && dsl_dataset_feature_is_active(to_ds,
+		if (dspp->redactbook != NULL &&
+		    dsl_dataset_feature_is_active(to_ds,
 		    SPA_FEATURE_REDACTED_DATASETS)) {
 			kmem_free(drr, sizeof (dmu_replay_record_t));
 			dsl_pool_rele(dp, tag);
@@ -2819,7 +2888,8 @@ dmu_send_impl(struct dmu_send_params *dspp)
 		}
 		featureflags |= DMU_BACKUP_FEATURE_REDACTED;
 		for (int i = 0; i < dspp->numredactsnaps; i++) {
-			if (dsl_dataset_feature_is_active(dspp->redactsnaparr[i],
+			if (dsl_dataset_feature_is_active(
+			    dspp->redactsnaparr[i],
 			    SPA_FEATURE_REDACTED_DATASETS)) {
 				kmem_free(drr, sizeof (dmu_replay_record_t));
 				dsl_pool_rele(dp, tag);
@@ -5253,6 +5323,42 @@ receive_free(struct receive_writer_arg *rwa, struct drr_free *drrf)
 	return (err);
 }
 
+/* ARGSUSED */
+static int
+receive_redact(struct receive_writer_arg *rwa, struct drr_redact *drrr)
+{
+	int err;
+
+	/*
+	 * If the object doesn't exist, there's nothing to redact.
+	 */
+	if (dmu_object_info(rwa->os, drrr->drr_object, NULL) != 0)
+		return (SET_ERROR(EINVAL));
+
+	uint64_t offset = drrr->drr_offset;
+	uint64_t length = drrr->drr_length;
+	while (length > 0) {
+		uint64_t this_length = MIN(length, DMU_MAX_ACCESS);
+
+		dmu_tx_t *tx = dmu_tx_create(rwa->os);
+
+		dmu_tx_hold_write(tx, drrr->drr_object, offset, this_length);
+		err = dmu_tx_assign(tx, TXG_WAIT);
+		if (err != 0) {
+			dmu_tx_abort(tx);
+			return (err);
+		}
+
+		dmu_redact(rwa->os, drrr->drr_object, offset, this_length, tx);
+		dmu_tx_commit(tx);
+
+		offset += this_length;
+		length -= this_length;
+	}
+
+	return (0);
+}
+
 /* used to destroy the drc_ds on error */
 static void
 dmu_recv_cleanup_ds(dmu_recv_cookie_t *drc)
@@ -5540,6 +5646,7 @@ receive_read_record(dmu_recv_cookie_t *drc)
 		return (err);
 	}
 	case DRR_FREE:
+	case DRR_REDACT:
 	{
 		/*
 		 * It might be beneficial to prefetch indirect blocks here, but
@@ -5637,6 +5744,11 @@ receive_process_record(struct receive_writer_arg *rwa,
 		kmem_free(rrd->payload, rrd->payload_size);
 		rrd->payload = NULL;
 		return (err);
+	}
+	case DRR_REDACT:
+	{
+		struct drr_redact *drrr = &rrd->header.drr_u.drr_redact;
+		return (receive_redact(rwa, drrr));
 	}
 	default:
 		return (SET_ERROR(EINVAL));

@@ -437,7 +437,8 @@ tests = ['quota_001_pos', 'quota_002_pos', 'quota_003_pos', 'quota_004_pos',
 [/opt/zfs-tests/tests/functional/redacted_send]
 tests = ['redacted_send_001_pos', 'redacted_send_002_neg',
     'redacted_send_003_pos', 'redacted_send_004_pos', 'redacted_send_005_pos',
-    'redacted_send_006_pos', 'redacted_send_007_pos', 'redacted_send_008_pos']
+    'redacted_send_006_pos', 'redacted_send_007_pos', 'redacted_send_008_pos',
+    'redacted_send_009_pos']
 
 [/opt/zfs-tests/tests/functional/redundancy]
 tests = ['redundancy_001_pos', 'redundancy_002_pos', 'redundancy_003_pos',

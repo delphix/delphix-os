@@ -1947,6 +1947,8 @@ file path=opt/zfs-tests/tests/functional/redacted_send/redacted_send_007_pos \
     mode=0555
 file path=opt/zfs-tests/tests/functional/redacted_send/redacted_send_008_pos \
     mode=0555
+file path=opt/zfs-tests/tests/functional/redacted_send/redacted_send_009_pos \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/redacted_send/setup mode=0555
 file path=opt/zfs-tests/tests/functional/redundancy/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/redundancy/redundancy.cfg mode=0555
