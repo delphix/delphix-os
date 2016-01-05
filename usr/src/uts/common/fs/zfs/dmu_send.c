@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 HybridCluster. All rights reserved.
  */
@@ -2448,8 +2448,8 @@ send_merge_thread(void *arg)
 			    get_next_record_nofree(&from_arg->q, from_data);
 			ASSERT3U(from_data->zb.zb_objset, !=,
 			    os->os_dsl_dataset->ds_object);
-			redact_data = redact_block_merge(smt_arg, &smd,
-			    q, redact_data, from_data);
+			redact_data = redact_block_merge(smt_arg, &smd, q,
+			    redact_data, from_data);
 			from_data = next;
 		} else {
 			/*
@@ -2544,17 +2544,27 @@ send_prefetch_thread(void *arg)
 	uint64_t data_size;
 	int err = 0;
 	while (!data->eos_marker && !spta->cancel && smta->error == 0) {
-		if (!data->redact_marker && data->zb.zb_objset !=
-		    dmu_objset_id(os)) {
+		if (data->zb.zb_objset != dmu_objset_id(os)) {
+			/*
+			 * This entry came from a different dataset:
+			 * either the "from" dataset when doing
+			 * a rebase send, or the "from bookmark" when
+			 * sending from a bookmark that has a redaction
+			 * list.  We need to check if this object/blkid
+			 * exists in the target ("to") dataset, and if
+			 * not then we drop this entry.  We also need
+			 * to fill in the block pointer so that we know
+			 * what to prefetch (if it is not redacted).
+			 */
 			blkptr_t bp;
 			uint16_t datablkszsec;
 			err = dbuf_bookmark_findbp(os, &data->zb, &bp,
 			    &datablkszsec, &data->indblkshift);
 			if (err == ENOENT) {
 				/*
-				 * The block was modified in the from dataset,
-				 * but doesn't exist in the to dataset; if it
-				 * was deleted in the to dataset, then we'll
+				 * The block was modified, but doesn't
+				 * exist in the to dataset; if it was
+				 * deleted in the to dataset, then we'll
 				 * visit the hole bp for it at some point.
 				 */
 				kmem_free(data, sizeof (*data));
