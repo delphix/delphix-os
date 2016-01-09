@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -2173,6 +2173,7 @@ dmu_buf_redact(dmu_buf_t *dbuf, dmu_tx_t *tx)
 	BP_SET_LEVEL(&bp, 0);
 	BP_SET_BIRTH(&bp, tx->tx_txg, 0);
 	BP_SET_REDACTED(&bp);
+	BPE_SET_LSIZE(&bp, dbuf->db_size);
 
 	dbuf_override_impl(db, &bp, tx);
 }

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -369,7 +369,8 @@ typedef struct blkptr {
 
 #define	BP_GET_LSIZE(bp)	\
 	(BP_IS_EMBEDDED(bp) ?	\
-	(BPE_GET_ETYPE(bp) == BP_EMBEDDED_TYPE_DATA ? BPE_GET_LSIZE(bp) : 0): \
+	(BPE_GET_ETYPE(bp) != BP_EMBEDDED_TYPE_MOOCH_BYTESWAP ? \
+	BPE_GET_LSIZE(bp) : 0): \
 	BF64_GET_SB((bp)->blk_prop, 0, SPA_LSIZEBITS, SPA_MINBLOCKSHIFT, 1))
 #define	BP_SET_LSIZE(bp, x)	do { \
 	ASSERT(!BP_IS_EMBEDDED(bp)); \
