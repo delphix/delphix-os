@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
 include $(SRC)/Makefile.master
@@ -19,19 +19,24 @@ ROOTOPTPKG = $(ROOT)/opt/zfs-tests
 TESTDIR = $(ROOTOPTPKG)/tests/functional/redacted_send
 
 PROGS = cleanup \
-	redacted_send_001_pos \
-	redacted_send_002_neg \
-	redacted_send_003_pos \
-	redacted_send_004_pos \
-	redacted_send_005_pos \
-	redacted_send_006_pos \
-	redacted_send_007_pos \
-	redacted_send_008_pos \
-	redacted_send_009_pos \
+	redacted_compressed \
+	redacted_contents  \
+	redacted_disabled_feature \
+	redacted_embedded \
+	redacted_holes \
+	redacted_incrementals \
+	redacted_largeblocks \
+	redacted_many_clones \
+	redacted_mixed_recsize \
+	redacted_mounts \
+	redacted_negative \
+	redacted_origin \
+	redacted_resume \
+	redacted_volume \
 	setup
 
-FILES = redacted_send.cfg \
-	redacted_send.kshlib
+FILES = redacted.cfg \
+	redacted.kshlib
 
 CMDS = $(PROGS:%=$(TESTDIR)/%) $(FILES:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555

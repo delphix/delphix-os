@@ -10,28 +10,10 @@
 #
 
 #
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
-.PARALLEL: $(SUBDIRS)
+PROG = get_diff
 
-SUBDIRS = chg_usr_exec \
-	devname2devid \
-	dir_rd_update \
-	file_check \
-	file_trunc \
-	file_write \
-	get_diff \
-	getholes \
-	largest_file \
-	mkbusy \
-	mkholes \
-	mktree \
-	mmapwrite \
-	randfree_file \
-	readmmap \
-	rename_dir \
-	rm_lnkcnt_zero_file \
-	scripts
-
-include $(SRC)/test/Makefile.com
+include $(SRC)/cmd/Makefile.cmd
+include ../Makefile.subdirs

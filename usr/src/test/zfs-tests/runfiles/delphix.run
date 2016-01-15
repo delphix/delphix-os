@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 #
 
 [DEFAULT]
@@ -435,10 +435,11 @@ tests = ['quota_001_pos', 'quota_002_pos', 'quota_003_pos', 'quota_004_pos',
     'quota_005_pos', 'quota_006_neg']
 
 [/opt/zfs-tests/tests/functional/redacted_send]
-tests = ['redacted_send_001_pos', 'redacted_send_002_neg',
-    'redacted_send_003_pos', 'redacted_send_004_pos', 'redacted_send_005_pos',
-    'redacted_send_006_pos', 'redacted_send_007_pos', 'redacted_send_008_pos',
-    'redacted_send_009_pos']
+tests = ['redacted_compressed', 'redacted_contents',
+    'redacted_disabled_feature', 'redacted_embedded', 'redacted_holes',
+    'redacted_incrementals', 'redacted_largeblocks', 'redacted_many_clones',
+    'redacted_mixed_recsize', 'redacted_mounts', 'redacted_negative',
+    'redacted_origin', 'redacted_resume', 'redacted_volume']
 
 [/opt/zfs-tests/tests/functional/redundancy]
 tests = ['redundancy_001_pos', 'redundancy_002_pos', 'redundancy_003_pos',

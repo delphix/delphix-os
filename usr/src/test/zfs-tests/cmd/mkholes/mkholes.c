@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/errno.h>
 #include <sys/list.h>
+#include <sys/sysmacros.h>
 
 extern int errno;
 
@@ -170,7 +171,7 @@ main(int argc, char *argv[])
 					exit(1);
 				}
 
-				if (memcmp(buf, vbuf, bytes) != 0) {
+				if (memcmp(buf, vbuf, MIN(bytes, len)) != 0) {
 					(void) fprintf(stderr, "Read back hole "
 					    "didn't match.\n");
 					exit(1);

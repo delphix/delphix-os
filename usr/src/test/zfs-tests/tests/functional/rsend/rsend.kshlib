@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -485,9 +485,11 @@ function resume_test
 	sendcmd=$1
 	streamfs=$2
 	recvfs=$3
+	book=""
 
 	stream_num=1
 	log_must eval "$sendcmd >/$streamfs/$stream_num"
+	[[ $sendcmd =~ "--redact" ]] && book=${sendcmd##* }
 
 	for ((i=0; i<2; i=i+1)); do
 		mess_file /$streamfs/$stream_num
@@ -495,7 +497,8 @@ function resume_test
 		stream_num=$((stream_num+1))
 
 		token=$(zfs get -Hp -o value receive_resume_token $recvfs)
-		log_must eval "zfs send -v -t $token >/$streamfs/$stream_num"
+		log_must eval "zfs send -v -t $token $book" \
+		    " >/$streamfs/$stream_num"
 		[[ -f /$streamfs/$stream_num ]] || \
 		    log_fail "NO FILE /$streamfs/$stream_num"
 	done

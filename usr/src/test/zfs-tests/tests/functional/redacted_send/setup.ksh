@@ -21,19 +21,16 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/redacted_send/redacted_send.kshlib
+. $STF_SUITE/tests/functional/redacted_send/redacted.kshlib
 
-verify_runnable "both"
 verify_disk_count "$DISKS" 2
 
-if is_global_zone ; then
-	log_must $ZPOOL create $POOL $DISK1
-	log_must $ZPOOL create $POOL2 $DISK2
-fi
-
-log_must setup_test_model $POOL
-
+create_pool $POOL $DISK1
+log_must zfs snapshot $POOL@init
+create_pool $POOL2 $DISK2
+log_must zfs snapshot $POOL2@init
+log_must zfs create $POOL/tmp
 log_pass

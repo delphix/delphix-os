@@ -21,19 +21,13 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
-. $STF_SUITE/tests/functional/redacted_send/redacted_send.kshlib
+. $STF_SUITE/tests/functional/redacted_send/redacted.kshlib
 
-verify_runnable "both"
-
-if is_global_zone ; then
-	destroy_pool $POOL
-	destroy_pool $POOL2
-else
-	cleanup_pool $POOL
-	cleanup_pool $POOL2
-fi
+destroy_pool $POOL
+destroy_pool $POOL2
+echo "zfs_allow_redacted_dataset_mount/W 0" | log_must mdb -kw
 
 log_pass
