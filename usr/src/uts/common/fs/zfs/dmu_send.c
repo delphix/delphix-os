@@ -765,10 +765,15 @@ do_dump(dmu_send_cookie_t *dscp, struct send_block_record *data)
 		uint64_t span = bp_span(data->datablksz, indblkshift,
 		    zb->zb_level);
 		uint64_t offset = zb->zb_blkid * span;
-		if (data->redact_marker)
-			err = dump_redact(dscp, zb->zb_object, offset, span);
-		else
-			err = dump_free(dscp, zb->zb_object, offset, span);
+		/*
+		 * We don't redact holes because of the case of large sparse
+		 * files.  In that case, if you redact wrt no snapshots, if you
+		 * redact holes you can end up trying to redact every block in
+		 * your sparse file, even the ones that aren't written to.  This
+		 * can cause extremely bad performance and space usage on the
+		 * receiving system.
+		 */
+		err = dump_free(dscp, zb->zb_object, offset, span);
 	} else if (BP_IS_REDACTED(bp)) {
 		ASSERT0(zb->zb_level);
 		uint64_t span = bp_span(data->datablksz, indblkshift,
@@ -1165,6 +1170,13 @@ send_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		}
 		return (0);
 	} else if (zb->zb_level < 0) {
+		return (0);
+	}
+	uint64_t span = bp_span_in_blocks(dnp->dn_indblkshift, zb->zb_level);
+
+	if (!DMU_OT_IS_METADATA(dnp->dn_type) &&
+	    span * zb->zb_blkid > dnp->dn_maxblkid) {
+		ASSERT(BP_IS_HOLE(bp));
 		return (0);
 	}
 
