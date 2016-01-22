@@ -4764,6 +4764,8 @@ dmu_recv_begin(char *tofs, char *tosnap, dmu_replay_record_t *drr_begin,
 		    KM_SLEEP);
 		kmem_free(payload, payloadlen);
 		if (err != 0) {
+			kmem_free(drc->drc_next_rrd,
+			    sizeof (*drc->drc_next_rrd));
 			return (err);
 		}
 	}
@@ -4784,6 +4786,8 @@ dmu_recv_begin(char *tofs, char *tosnap, dmu_replay_record_t *drr_begin,
 	}
 
 	if (err != 0) {
+		kmem_free(drc->drc_next_rrd,
+		    sizeof (*drc->drc_next_rrd));
 		nvlist_free(drc->drc_begin_nvl);
 	}
 	return (err);
