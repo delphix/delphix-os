@@ -13,7 +13,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -267,6 +267,9 @@ dsl_bookmark_create_sync_impl(const char *bookmark, const char *snapshot,
 		    sizeof (uint64_t) * num_redact_snaps);
 		local_rl->rl_phys->rlp_num_snaps = num_redact_snaps;
 		if (bookmark_redacted) {
+			ASSERT3P(redaction_list, ==, NULL);
+			local_rl->rl_phys->rlp_last_blkid = UINT64_MAX;
+			local_rl->rl_phys->rlp_last_object = UINT64_MAX;
 			dsl_redaction_list_long_rele(local_rl, tag);
 			dsl_redaction_list_rele(local_rl, tag);
 		} else {
