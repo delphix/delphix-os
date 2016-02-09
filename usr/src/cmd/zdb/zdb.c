@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -2066,8 +2066,8 @@ static object_viewer_t *object_viewer[DMU_OT_NUMTYPES + 1] = {
 };
 
 static void
-dump_object(objset_t *os, uint64_t object, int verbosity, boolean_t redacted,
-    int *print_header)
+dump_object(objset_t *os, uint64_t object, int verbosity,
+    boolean_t *print_header)
 {
 	dmu_buf_t *db = NULL;
 	dmu_object_info_t doi;
@@ -2083,7 +2083,7 @@ dump_object(objset_t *os, uint64_t object, int verbosity, boolean_t redacted,
 		(void) printf("\n%10s  %3s  %5s  %5s  %5s  %5s  %6s  %s\n",
 		    "Object", "lvl", "iblk", "dblk", "dsize", "lsize",
 		    "%full", "type");
-		*print_header = 0;
+		*print_header = B_FALSE;
 	}
 
 	if (object == 0) {
@@ -2140,13 +2140,11 @@ dump_object(objset_t *os, uint64_t object, int verbosity, boolean_t redacted,
 		    "SPILL_BLKPTR" : "");
 		(void) printf("\tdnode maxblkid: %llu\n",
 		    (longlong_t)dn->dn_phys->dn_maxblkid);
-		if (!redacted) {
-			object_viewer[ZDB_OT_TYPE(doi.doi_bonus_type)](os,
-			    object, bonus, bsize);
-			object_viewer[ZDB_OT_TYPE(doi.doi_type)](os, object,
-			    NULL, 0);
-			*print_header = 1;
-		}
+		object_viewer[ZDB_OT_TYPE(doi.doi_bonus_type)](os,
+		    object, bonus, bsize);
+		object_viewer[ZDB_OT_TYPE(doi.doi_type)](os, object,
+		    NULL, 0);
+		*print_header = B_TRUE;
 	}
 
 	if (verbosity >= 5)
@@ -2203,16 +2201,14 @@ dump_dir(objset_t *os)
 	char osname[ZFS_MAX_DATASET_NAME_LEN];
 	char *type = "UNKNOWN";
 	int verbosity = dump_opt['d'];
-	int print_header;
+	boolean_t print_header;
 	int i, error;
-	boolean_t redacted;
 
 	dsl_pool_config_enter(dmu_objset_pool(os), FTAG);
 	dmu_objset_fast_stat(os, &dds);
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 
-	redacted = (boolean_t)dds.dds_redacted;
-	print_header = !redacted;
+	print_header = B_TRUE;
 
 	if (dds.dds_type < DMU_OST_NUMTYPES)
 		type = objset_types[dds.dds_type];
@@ -2249,7 +2245,7 @@ dump_dir(objset_t *os)
 	if (zopt_objects != 0) {
 		for (i = 0; i < zopt_objects; i++) {
 			dump_object(os, zopt_object[i], verbosity,
-			    redacted, &print_header);
+			    &print_header);
 		}
 		(void) printf("\n");
 		return;
@@ -2277,19 +2273,17 @@ dump_dir(objset_t *os)
 	if (BP_IS_HOLE(os->os_rootbp))
 		return;
 
-	dump_object(os, 0, verbosity, redacted, &print_header);
+	dump_object(os, 0, verbosity, &print_header);
 	object_count = 0;
 	if (DMU_USERUSED_DNODE(os) != NULL &&
 	    DMU_USERUSED_DNODE(os)->dn_type != 0) {
-		dump_object(os, DMU_USERUSED_OBJECT, verbosity, redacted,
-		    &print_header);
-		dump_object(os, DMU_GROUPUSED_OBJECT, verbosity, redacted,
-		    &print_header);
+		dump_object(os, DMU_USERUSED_OBJECT, verbosity, &print_header);
+		dump_object(os, DMU_GROUPUSED_OBJECT, verbosity, &print_header);
 	}
 
 	object = 0;
 	while ((error = dmu_object_next(os, &object, B_FALSE, 0)) == 0) {
-		dump_object(os, object, verbosity, redacted, &print_header);
+		dump_object(os, object, verbosity, &print_header);
 		object_count++;
 	}
 
