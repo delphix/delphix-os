@@ -24,7 +24,7 @@
  * Portions Copyright 2011 Martin Matuska
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
@@ -5497,7 +5497,7 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 				return (error);
 			}
 			error = dmu_send_estimate_from_txg(tosnap,
-			    frombm.zbm_creation_txg, compressok, &space);
+			    frombm.zbm_creation_txg, compressok, FTAG, &space);
 		} else {
 			/*
 			 * from is not properly formatted as a snapshot or

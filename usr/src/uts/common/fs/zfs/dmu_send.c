@@ -3918,23 +3918,29 @@ dmu_calculate_send_traversal(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		space->uncompressed += BP_GET_UCSIZE(bp);
 		space->compressed += BP_GET_PSIZE(bp);
 	}
+
+	if (issig(JUSTLOOKING) && issig(FORREAL))
+		return (SET_ERROR(EINTR));
 	return (0);
 }
 
 /*
  * Given a desination snapshot and a TXG, calculate the approximate size of a
  * send stream sent from that TXG. from_txg may be zero, indicating that the
- * whole snapshot will be sent.
+ * whole snapshot will be sent.  The pool that ds is part of must be held with
+ * the specified tag on entry, and the pool will be released and reacquired.
  */
 int
 dmu_send_estimate_from_txg(dsl_dataset_t *ds, uint64_t from_txg,
-    boolean_t stream_compressed, uint64_t *sizep)
+    boolean_t stream_compressed, void *tag, uint64_t *sizep)
 {
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
+	char pool_name[ZFS_MAX_DATASET_NAME_LEN];
 	int err;
 	struct calculate_send_arg size = { 0 };
 
 	ASSERT(dsl_pool_config_held(dp));
+	(void) strcpy(pool_name, spa_name(dp->dp_spa));
 
 	/* tosnap must be a snapshot */
 	if (!ds->ds_is_snapshot)
@@ -3944,13 +3950,18 @@ dmu_send_estimate_from_txg(dsl_dataset_t *ds, uint64_t from_txg,
 	if (from_txg >= dsl_dataset_phys(ds)->ds_creation_txg) {
 		return (SET_ERROR(EXDEV));
 	}
+	dsl_dataset_long_hold(ds, FTAG);
+	dsl_pool_rele(dp, tag);
 
 	/*
 	 * traverse the blocks of the snapshot with birth times after
 	 * from_txg, summing their uncompressed size
 	 */
-	err = traverse_dataset(ds, from_txg, TRAVERSE_POST,
-	    dmu_calculate_send_traversal, &size);
+	err = traverse_dataset(ds, from_txg, TRAVERSE_POST |
+	    TRAVERSE_PREFETCH_METADATA, dmu_calculate_send_traversal, &size);
+	VERIFY0(dsl_pool_hold(pool_name, tag, &dp));
+	dsl_dataset_long_rele(ds, FTAG);
+
 	if (err)
 		return (err);
 
