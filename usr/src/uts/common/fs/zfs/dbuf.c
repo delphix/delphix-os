@@ -2546,8 +2546,9 @@ dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
 	 * a physical read is made the dpa_dnode must be invalidated
 	 * as the locks guarding it may have been dropped. If the
 	 * dpa_dnode is still valid, then we want to add it to the dbuf
-	 * cache. Getting a hold and immediately releasing it will have
-	 * this side effect.
+	 * cache. To do so, we must hold the dbuf associated with the block
+	 * we just prefetched, read its contents so that we associate it
+	 * with an arc_buf_t, and then release it.
 	 */
 	if (zio != NULL) {
 		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
@@ -2560,8 +2561,13 @@ dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
 
 		dpa->dpa_dnode = NULL;
 	} else if (dpa->dpa_dnode != NULL) {
-		dmu_buf_impl_t *db = dbuf_hold(dpa->dpa_dnode,
-		    dpa->dpa_zb.zb_blkid, FTAG);
+		uint64_t curblkid = dpa->dpa_zb.zb_blkid >>
+		    (dpa->dpa_epbs * (dpa->dpa_curlevel -
+		    dpa->dpa_zb.zb_level));
+		dmu_buf_impl_t *db = dbuf_hold_level(dpa->dpa_dnode,
+		    dpa->dpa_curlevel, curblkid, FTAG);
+		(void) dbuf_read(db, NULL,
+		    DB_RF_MUST_SUCCEED | DB_RF_NOPREFETCH | DB_RF_HAVESTRUCT);
 		dbuf_rele(db, FTAG);
 	}
 
@@ -2818,6 +2824,14 @@ top:
 
 		if (dr->dt.dl.dr_data == db->db_buf) {
 			arc_buf_contents_t type = DBUF_GET_BUFC_TYPE(db);
+
+			/*
+			 * We expect this to fail when receiving
+			 * a WRITE_BYREF (dedup) record, but the
+			 * Delphix Engine doesn't do that.
+			 */
+			VERIFY3U(arc_get_compression(db->db_buf), ==,
+			    ZIO_COMPRESS_OFF);
 
 			dbuf_set_data(db,
 			    arc_alloc_buf(dn->dn_objset->os_spa, db, type,
