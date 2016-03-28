@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 Joyent, Inc.  All rights reserved.
-# Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2011, 2016 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
@@ -1369,6 +1369,7 @@ ZFS_COMMON_OBJS +=		\
 	lzjb.o			\
 	metaslab.o		\
 	mooch_byteswap.o	\
+	objlist.o		\
 	multilist.o		\
 	range_tree.o		\
 	refcount.o		\
