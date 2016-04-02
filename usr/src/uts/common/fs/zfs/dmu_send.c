@@ -1827,7 +1827,8 @@ redact_merge_thread(void *arg)
 	struct redact_merge_thread_arg *mt_arg = arg;
 	struct redact_node *redact_nodes = NULL;
 	avl_tree_t start_tree, end_tree;
-	struct send_redact_record *record, *current_record;
+	struct send_redact_record *record;
+	struct send_redact_record *current_record = NULL;
 
 	/*
 	 * If we're redacting with respect to zero snapshots, then no data is
