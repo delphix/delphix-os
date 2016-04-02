@@ -5909,7 +5909,11 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, int cleanup_fd,
 
 	mutex_enter(&rwa.mutex);
 	while (!rwa.done) {
-		cv_wait(&rwa.cv, &rwa.mutex);
+		/*
+		 * We need to use cv_wait_sig() so that any process that may
+		 * be sleeping here can still fork.
+		 */
+		(void) cv_wait_sig(&rwa.cv, &rwa.mutex);
 	}
 	mutex_exit(&rwa.mutex);
 
