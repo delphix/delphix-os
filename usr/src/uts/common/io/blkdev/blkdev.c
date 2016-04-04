@@ -23,6 +23,7 @@
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2012 Alexey Zaytsev <alexey.zaytsev@gmail.com> All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -54,6 +55,7 @@
 #define	BD_MAXPART	64
 #define	BDINST(dev)	(getminor(dev) / BD_MAXPART)
 #define	BDPART(dev)	(getminor(dev) % BD_MAXPART)
+#define	BLKDEV_STATE_TIMEOUT	(30*1000*1000) /* 30.00 sec */
 
 typedef struct bd bd_t;
 typedef struct bd_xfer_impl bd_xfer_impl_t;
@@ -149,9 +151,6 @@ static int bd_aread(dev_t, struct aio_req *, cred_t *);
 static int bd_awrite(dev_t, struct aio_req *, cred_t *);
 static int bd_prop_op(dev_t, dev_info_t *, ddi_prop_op_t, int, char *,
     caddr_t, int *);
-
-static int bd_tg_rdwr(dev_info_t *, uchar_t, void *, diskaddr_t, size_t,
-    void *);
 static int bd_tg_getinfo(dev_info_t *, int, void *, void *);
 static int bd_xfer_ctor(void *, void *, int);
 static void bd_xfer_dtor(void *, void *);
@@ -283,6 +282,19 @@ bd_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 	return (DDI_SUCCESS);
 }
 
+int
+bd_get_devid_blk(dev_info_t *dip, diskaddr_t *blk)
+{
+	int	inst;
+	bd_t	*bd;
+	inst = ddi_get_instance(dip);
+	bd = ddi_get_soft_state(bd_state, inst);
+	if (cmlb_get_devid_block(bd->d_cmlbh, blk, 0) != 0) {
+		return (DDI_FAILURE);
+	}
+	return (DDI_SUCCESS);
+}
+
 static int
 bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
@@ -293,6 +305,7 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	int		rv;
 	char		name[16];
 	char		kcache[32];
+	clock_t		timeout;
 
 	switch (cmd) {
 	case DDI_ATTACH:
@@ -428,6 +441,21 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		ddi_soft_state_free(bd_state, inst);
 		return (DDI_FAILURE);
 	}
+
+	timeout = ddi_get_lbolt() + drv_usectohz(BLKDEV_STATE_TIMEOUT);
+	mutex_enter(&bd->d_statemutex);
+	while (bd->d_state != DKIO_INSERTED) {
+		if (cv_timedwait(&bd->d_statecv, &bd->d_statemutex, timeout)
+		    < 0) {
+			cmn_err(CE_WARN, "bd@%s: disk failed to connect",
+			    ddi_get_name_addr(dip));
+			mutex_exit(&bd->d_statemutex);
+			return (DDI_FAILURE);
+		}
+	}
+	mutex_exit(&bd->d_statemutex);
+
+	(void) cmlb_validate(bd->d_cmlbh, 0, 0);
 
 	if (bd->d_ops.o_devid_init != NULL) {
 		rv = bd->d_ops.o_devid_init(bd->d_private, dip, &bd->d_devid);
@@ -1040,125 +1068,148 @@ bd_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *credp, int *rvalp)
 	}
 
 	rv = cmlb_ioctl(bd->d_cmlbh, dev, cmd, arg, flag, credp, rvalp, 0);
-	if (rv != ENOTTY)
-		return (rv);
-
-	if (rvalp != NULL) {
-		/* the return value of the ioctl is 0 by default */
-		*rvalp = 0;
-	}
 
 	switch (cmd) {
-	case DKIOCGMEDIAINFO: {
-		struct dk_minfo minfo;
-
-		/* make sure our state information is current */
-		bd_update_state(bd);
-		bzero(&minfo, sizeof (minfo));
-		minfo.dki_media_type = DK_FIXED_DISK;
-		minfo.dki_lbsize = (1U << bd->d_blkshift);
-		minfo.dki_capacity = bd->d_numblks;
-		if (ddi_copyout(&minfo, ptr, sizeof (minfo), flag)) {
-			return (EFAULT);
+	case DKIOCSEXTVTOC:
+	case DKIOCSVTOC:
+	case DKIOCSETEFI: {
+		rv = cmlb_validate(bd->d_cmlbh, 0, 0);
+		if (rv == 0) {
+			if (bd->d_ops.o_devid_init != NULL) {
+				rv = bd->d_ops.o_devid_init(bd->d_private,
+				    bd->d_dip, &bd->d_devid);
+			}
+		} else {
+			cmn_err(CE_WARN, "%s%d: labeling failed on validate",
+			    ddi_driver_name(bd->d_dip),
+			    ddi_get_instance(bd->d_dip));
 		}
-		return (0);
-	}
-	case DKIOCGMEDIAINFOEXT: {
-		struct dk_minfo_ext miext;
-
-		/* make sure our state information is current */
-		bd_update_state(bd);
-		bzero(&miext, sizeof (miext));
-		miext.dki_media_type = DK_FIXED_DISK;
-		miext.dki_lbsize = (1U << bd->d_blkshift);
-		miext.dki_pbsize = (1U << bd->d_pblkshift);
-		miext.dki_capacity = bd->d_numblks;
-		if (ddi_copyout(&miext, ptr, sizeof (miext), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCINFO: {
-		struct dk_cinfo cinfo;
-		bzero(&cinfo, sizeof (cinfo));
-		cinfo.dki_ctype = DKC_BLKDEV;
-		cinfo.dki_cnum = ddi_get_instance(ddi_get_parent(bd->d_dip));
-		(void) snprintf(cinfo.dki_cname, sizeof (cinfo.dki_cname),
-		    "%s", ddi_driver_name(ddi_get_parent(bd->d_dip)));
-		(void) snprintf(cinfo.dki_dname, sizeof (cinfo.dki_dname),
-		    "%s", ddi_driver_name(bd->d_dip));
-		cinfo.dki_unit = inst;
-		cinfo.dki_flags = DKI_FMTVOL;
-		cinfo.dki_partition = part;
-		cinfo.dki_maxtransfer = bd->d_maxxfer / DEV_BSIZE;
-		cinfo.dki_addr = 0;
-		cinfo.dki_slave = 0;
-		cinfo.dki_space = 0;
-		cinfo.dki_prio = 0;
-		cinfo.dki_vec = 0;
-		if (ddi_copyout(&cinfo, ptr, sizeof (cinfo), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCREMOVABLE: {
-		int i;
-		i = bd->d_removable ? 1 : 0;
-		if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCHOTPLUGGABLE: {
-		int i;
-		i = bd->d_hotpluggable ? 1 : 0;
-		if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCREADONLY: {
-		int i;
-		i = bd->d_rdonly ? 1 : 0;
-		if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCSOLIDSTATE: {
-		int i;
-		i = bd->d_ssd ? 1 : 0;
-		if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCSTATE: {
-		enum dkio_state	state;
-		if (ddi_copyin(ptr, &state, sizeof (state), flag)) {
-			return (EFAULT);
-		}
-		if ((rv = bd_check_state(bd, &state)) != 0) {
-			return (rv);
-		}
-		if (ddi_copyout(&state, ptr, sizeof (state), flag)) {
-			return (EFAULT);
-		}
-		return (0);
-	}
-	case DKIOCFLUSHWRITECACHE: {
-		struct dk_callback *dkc = NULL;
-
-		if (flag & FKIOCTL)
-			dkc = (void *)arg;
-
-		rv = bd_flush_write_cache(bd, dkc);
 		return (rv);
 	}
 
 	default:
-		break;
+		if (rv != ENOTTY)
+			return (rv);
 
+		if (rvalp != NULL) {
+			/* the return value of the ioctl is 0 by default */
+			*rvalp = 0;
+		}
+
+		switch (cmd) {
+		case DKIOCGMEDIAINFO: {
+			struct dk_minfo minfo;
+
+			/* make sure our state information is current */
+			bd_update_state(bd);
+			bzero(&minfo, sizeof (minfo));
+			minfo.dki_media_type = DK_FIXED_DISK;
+			minfo.dki_lbsize = (1U << bd->d_blkshift);
+			minfo.dki_capacity = bd->d_numblks;
+			if (ddi_copyout(&minfo, ptr, sizeof (minfo), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCGMEDIAINFOEXT: {
+			struct dk_minfo_ext miext;
+
+			/* make sure our state information is current */
+			bd_update_state(bd);
+			bzero(&miext, sizeof (miext));
+			miext.dki_media_type = DK_FIXED_DISK;
+			miext.dki_lbsize = (1U << bd->d_blkshift);
+			miext.dki_pbsize = (1U << bd->d_pblkshift);
+			miext.dki_capacity = bd->d_numblks;
+			if (ddi_copyout(&miext, ptr, sizeof (miext), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCINFO: {
+			struct dk_cinfo cinfo;
+			bzero(&cinfo, sizeof (cinfo));
+			cinfo.dki_ctype = DKC_BLKDEV;
+			cinfo.dki_cnum = ddi_get_instance(
+			    ddi_get_parent(bd->d_dip));
+			(void) snprintf(cinfo.dki_cname,
+			    sizeof (cinfo.dki_cname),
+			    "%s", ddi_driver_name(ddi_get_parent(bd->d_dip)));
+			(void) snprintf(cinfo.dki_dname,
+			    sizeof (cinfo.dki_dname),
+			    "%s", ddi_driver_name(bd->d_dip));
+			cinfo.dki_unit = inst;
+			cinfo.dki_flags = DKI_FMTVOL;
+			cinfo.dki_partition = part;
+			cinfo.dki_maxtransfer = bd->d_maxxfer / DEV_BSIZE;
+			cinfo.dki_addr = 0;
+			cinfo.dki_slave = 0;
+			cinfo.dki_space = 0;
+			cinfo.dki_prio = 0;
+			cinfo.dki_vec = 0;
+			if (ddi_copyout(&cinfo, ptr, sizeof (cinfo), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCREMOVABLE: {
+			int i;
+			i = bd->d_removable ? 1 : 0;
+			if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCHOTPLUGGABLE: {
+			int i;
+			i = bd->d_hotpluggable ? 1 : 0;
+			if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCREADONLY: {
+			int i;
+			i = bd->d_rdonly ? 1 : 0;
+			if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCSOLIDSTATE: {
+			int i;
+			i = bd->d_ssd ? 1 : 0;
+			if (ddi_copyout(&i, ptr, sizeof (i), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCSTATE: {
+			enum dkio_state	state;
+			if (ddi_copyin(ptr, &state, sizeof (state), flag)) {
+				return (EFAULT);
+			}
+			if ((rv = bd_check_state(bd, &state)) != 0) {
+				return (rv);
+			}
+			if (ddi_copyout(&state, ptr, sizeof (state), flag)) {
+				return (EFAULT);
+			}
+			return (0);
+		}
+		case DKIOCFLUSHWRITECACHE: {
+			struct dk_callback *dkc = NULL;
+
+			if (flag & FKIOCTL)
+				dkc = (void *)arg;
+
+			rv = bd_flush_write_cache(bd, dkc);
+			return (rv);
+		}
+
+		default:
+			break;
+		}
 	}
 	return (ENOTTY);
 }
@@ -1179,7 +1230,7 @@ bd_prop_op(dev_t dev, dev_info_t *dip, ddi_prop_op_t prop_op, int mod_flags,
 }
 
 
-static int
+int
 bd_tg_rdwr(dev_info_t *dip, uchar_t cmd, void *bufaddr, diskaddr_t start,
     size_t length, void *tg_cookie)
 {
@@ -1235,7 +1286,6 @@ bd_tg_rdwr(dev_info_t *dip, uchar_t cmd, void *bufaddr, diskaddr_t start,
 	(void) biowait(bp);
 	rv = geterror(bp);
 	freerbuf(bp);
-
 	return (rv);
 }
 

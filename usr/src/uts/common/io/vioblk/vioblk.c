@@ -20,13 +20,16 @@
  */
 
 /*
- * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, Alexey Zaytsev <alexey.zaytsev@gmail.com>
+ * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 
 #include <sys/modctl.h>
 #include <sys/blkdev.h>
+#include <sys/dklabel.h>
+#include <sys/cmlb.h>
 #include <sys/types.h>
 #include <sys/errno.h>
 #include <sys/param.h>
@@ -76,10 +79,7 @@
 #define	VIRTIO_BLK_T_SCSI_CMD_OUT	3
 #define	VIRTIO_BLK_T_FLUSH		4
 #define	VIRTIO_BLK_T_FLUSH_OUT		5
-#define	VIRTIO_BLK_T_GET_ID		8
 #define	VIRTIO_BLK_T_BARRIER		0x80000000
-
-#define	VIRTIO_BLK_ID_BYTES	20 /* devid */
 
 /* Statuses */
 #define	VIRTIO_BLK_S_OK		0
@@ -155,9 +155,7 @@ struct vioblk_softc {
 	int			sc_pblk_size;
 	int			sc_seg_max;
 	int			sc_seg_size_max;
-	kmutex_t		lock_devid;
-	kcondvar_t		cv_devid;
-	char			devid[VIRTIO_BLK_ID_BYTES + 1];
+	ddi_devid_t		devid;
 };
 
 static int vioblk_read(void *arg, bd_xfer_t *xfer);
@@ -454,76 +452,208 @@ vioblk_mediainfo(void *arg, bd_media_t *media)
 	return (0);
 }
 
+/*
+ * vioblk_devid_fabricate() is a local copy of xdfs_devid_fabricate()
+ * that has been modified to use blkdev functions, and uses the in-memory
+ * devid if one exists.
+ *
+ * Create or use the devid and write it on the first block of the last track of
+ * the last cylinder.
+ * Return DDI_SUCCESS or DDI_FAILURE.
+ */
+static int
+vioblk_devid_fabricate(void *arg, dev_info_t *devinfo,
+    ddi_devid_t *devid)
+{
+	struct vioblk_softc *sc = (void *)arg;
+	struct dk_devid	*dkdevidp = NULL; /* devid struct stored on disk */
+	diskaddr_t	blk;
+	uint_t		*ip;
+	uint_t		chksum;
+	int		i;
+	int		devid_size;
+
+	/*
+	 * Use the in-memory devid if present and write it to disk.
+	 */
+	if (sc->devid != NULL) {
+		if (*devid == NULL) {
+			*devid = kmem_alloc(ddi_devid_sizeof(sc->devid),
+			    KM_SLEEP);
+		}
+		bcopy(sc->devid, *devid, ddi_devid_sizeof(sc->devid));
+	}
+
+	if (*devid == NULL &&
+	    ddi_devid_init(devinfo, DEVID_FAB, 0, NULL, devid) != DDI_SUCCESS) {
+		goto err;
+	}
+
+	/* allocate a buffer */
+	dkdevidp = (struct dk_devid *)kmem_zalloc(NBPSCTR, KM_SLEEP);
+
+	/* Fill in the revision */
+	dkdevidp->dkd_rev_hi = DK_DEVID_REV_MSB;
+	dkdevidp->dkd_rev_lo = DK_DEVID_REV_LSB;
+
+	/* Copy in the device id */
+	devid_size = ddi_devid_sizeof(*devid);
+	if (devid_size > DK_DEVID_SIZE) {
+		goto err;
+	}
+	bcopy(*devid, dkdevidp->dkd_devid, devid_size);
+
+	/* Calculate the chksum */
+	chksum = 0;
+	/* LINTED: E_BAD_PTR_CAST_ALIGN */
+	ip = (uint_t *)dkdevidp;
+	for (i = 0; i < (NBPSCTR / sizeof (int)) - 1; i++)
+		chksum ^= ip[i];
+
+	/* Fill in the checksum */
+	DKD_FORMCHKSUM(chksum, dkdevidp);
+	if (bd_get_devid_blk(devinfo, &blk)) {
+		goto err;
+	}
+
+	if (bd_tg_rdwr(sc->sc_dev, TG_WRITE, dkdevidp, blk,
+	    NBPSCTR, NULL) != 0) {
+		goto err;
+	}
+
+	kmem_free(dkdevidp, NBPSCTR);
+	if (sc->devid == NULL) {
+		sc->devid = kmem_alloc(devid_size, KM_SLEEP);
+		bcopy(*devid, sc->devid, devid_size);
+	}
+	return (DDI_SUCCESS);
+
+err:
+	if (dkdevidp != NULL)
+		kmem_free(dkdevidp, NBPSCTR);
+	if (*devid != NULL) {
+		ddi_devid_free(*devid);
+		*devid = NULL;
+	}
+	return (DDI_FAILURE);
+}
+
+/*
+ * vioblk_devid_read() is a local copy of xdfs_devid_read()
+ * that has been modified to use blkdev functions.
+ *
+ * Read a devid from on the first block of the last track of
+ * the last cylinder.  Make sure what we read is a valid devid.
+ * Return DDI_SUCCESS or DDI_FAILURE.
+ */
+static int
+vioblk_devid_read(void *arg, dev_info_t *devinfo, ddi_devid_t *devid)
+{
+	struct vioblk_softc *sc = (void *)arg;
+	struct dk_devid *dkdevidp;
+	diskaddr_t	blk;
+	uint_t		*ip;
+	uint_t		chksum;
+	int		i;
+
+	dkdevidp = kmem_zalloc(NBPSCTR, KM_SLEEP);
+	if (bd_get_devid_blk(devinfo, &blk)) {
+		goto err;
+	}
+
+	if (bd_tg_rdwr(sc->sc_dev, TG_READ, dkdevidp, blk,
+	    NBPSCTR, NULL) != 0) {
+		goto err;
+	}
+
+	/* Validate the revision */
+	if ((dkdevidp->dkd_rev_hi != DK_DEVID_REV_MSB) ||
+	    (dkdevidp->dkd_rev_lo != DK_DEVID_REV_LSB)) {
+		goto err;
+	}
+
+	/* Calculate the checksum */
+	chksum = 0;
+	/* LINTED: E_BAD_PTR_CAST_ALIGN */
+	ip = (uint_t *)dkdevidp;
+	for (i = 0; i < (NBPSCTR / sizeof (int)) - 1; i++)
+		chksum ^= ip[i];
+	if (DKD_GETCHKSUM(dkdevidp) != chksum) {
+		goto err;
+	}
+
+	/* Validate the device id */
+	if (ddi_devid_valid((ddi_devid_t)dkdevidp->dkd_devid) != DDI_SUCCESS) {
+		goto err;
+	}
+
+	/* keep a copy of the device id */
+	i = ddi_devid_sizeof((ddi_devid_t)dkdevidp->dkd_devid);
+	if (*devid == NULL) {
+		*devid = kmem_alloc(i, KM_SLEEP);
+	}
+	bcopy(dkdevidp->dkd_devid, *devid, i);
+	kmem_free(dkdevidp, NBPSCTR);
+	return (DDI_SUCCESS);
+
+err:
+	kmem_free(dkdevidp, NBPSCTR);
+	return (DDI_FAILURE);
+}
+
+/*
+ * This function reads the disk to figure out if a devid exists, if not
+ * it fabricates one and writes it to disk. If the write to disk fails,
+ * we create an in-memory copy.
+ */
 static int
 vioblk_devid_init(void *arg, dev_info_t *devinfo, ddi_devid_t *devid)
 {
 	struct vioblk_softc *sc = (void *)arg;
-	clock_t deadline;
 	int ret;
-	bd_xfer_t xfer;
 
-	deadline = ddi_get_lbolt() + (clock_t)drv_usectohz(3 * 1000000);
-	(void) memset(&xfer, 0, sizeof (bd_xfer_t));
-	xfer.x_nblks = 1;
-
-	ret = ddi_dma_alloc_handle(sc->sc_dev, &vioblk_bd_dma_attr,
-	    DDI_DMA_SLEEP, NULL, &xfer.x_dmah);
-	if (ret != DDI_SUCCESS)
-		goto out_alloc;
-
-	ret = ddi_dma_addr_bind_handle(xfer.x_dmah, NULL, (caddr_t)&sc->devid,
-	    VIRTIO_BLK_ID_BYTES, DDI_DMA_READ | DDI_DMA_CONSISTENT,
-	    DDI_DMA_SLEEP, NULL, &xfer.x_dmac, &xfer.x_ndmac);
-	if (ret != DDI_DMA_MAPPED) {
-		ret = DDI_FAILURE;
-		goto out_map;
-	}
-
-	mutex_enter(&sc->lock_devid);
-
-	ret = vioblk_rw(sc, &xfer, VIRTIO_BLK_T_GET_ID,
-	    VIRTIO_BLK_ID_BYTES);
-	if (ret) {
-		mutex_exit(&sc->lock_devid);
-		goto out_rw;
-	}
-
-	/* wait for reply */
-	ret = cv_timedwait(&sc->cv_devid, &sc->lock_devid, deadline);
-	mutex_exit(&sc->lock_devid);
-
-	(void) ddi_dma_unbind_handle(xfer.x_dmah);
-	ddi_dma_free_handle(&xfer.x_dmah);
-
-	/* timeout */
-	if (ret < 0) {
-		dev_err(devinfo, CE_WARN, "Cannot get devid from the device");
-		return (DDI_FAILURE);
-	}
-
-	ret = ddi_devid_init(devinfo, DEVID_ATA_SERIAL,
-	    VIRTIO_BLK_ID_BYTES, sc->devid, devid);
+	ret = vioblk_devid_read(sc, devinfo, devid);
+	/*
+	 * If devid read from disk fails, then fabricate one
+	 * and write to disk
+	 */
 	if (ret != DDI_SUCCESS) {
-		dev_err(devinfo, CE_WARN, "Cannot build devid from the device");
-		return (ret);
+		if (vioblk_devid_fabricate(sc, devinfo, devid) == DDI_SUCCESS) {
+			return (DDI_SUCCESS);
+		}
+		/*
+		 * If we fail to write the devid to disk, we create
+		 * an in-memory copy so that when we label the disk
+		 * later, it will have a devid to use.  This is helpful
+		 * to deal with cases where people use the devids of
+		 * their disks before labeling them; note that this
+		 * does cause problems if we rely on the devids of
+		 * unlabeled disks to persist across reboot.
+		 */
+		if (sc->devid == NULL) {
+			if (ddi_devid_init(devinfo, DEVID_FAB, 0, NULL,
+			    devid) != DDI_SUCCESS) {
+				dev_err(devinfo, CE_WARN, "attach failed, "
+				    "devid_init failed");
+				dev_err(devinfo, CE_WARN, "Cannot build devid "
+				    "from the device");
+				return (DDI_FAILURE);
+			} else {
+				sc->devid = kmem_alloc(ddi_devid_sizeof(*devid),
+				    KM_SLEEP);
+				bcopy(*devid, sc->devid,
+				    ddi_devid_sizeof(*devid));
+				return (DDI_SUCCESS);
+			}
+		} else {
+			*devid = kmem_alloc(ddi_devid_sizeof(sc->devid),
+			    KM_SLEEP);
+			bcopy(sc->devid, *devid,
+			    ddi_devid_sizeof(sc->devid));
+			return (DDI_SUCCESS);
+		}
 	}
-
-	dev_debug(sc->sc_dev, CE_NOTE,
-	    "devid %x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x",
-	    sc->devid[0], sc->devid[1], sc->devid[2], sc->devid[3],
-	    sc->devid[4], sc->devid[5], sc->devid[6], sc->devid[7],
-	    sc->devid[8], sc->devid[9], sc->devid[10], sc->devid[11],
-	    sc->devid[12], sc->devid[13], sc->devid[14], sc->devid[15],
-	    sc->devid[16], sc->devid[17], sc->devid[18], sc->devid[19]);
-
-	return (0);
-
-out_rw:
-	(void) ddi_dma_unbind_handle(xfer.x_dmah);
-out_map:
-	ddi_dma_free_handle(&xfer.x_dmah);
-out_alloc:
-	return (ret);
+	return (DDI_SUCCESS);
 }
 
 static void
@@ -622,7 +752,6 @@ vioblk_int_handler(caddr_t arg1, caddr_t arg2)
 		struct vioblk_req *req = &sc->sc_reqs[ve->qe_index];
 		bd_xfer_t *xfer = req->xfer;
 		uint8_t status = req->status;
-		uint32_t type = req->hdr.type;
 
 		if (req->xfer == (void *)VIOBLK_POISON) {
 			dev_err(sc->sc_dev, CE_WARN, "Poisoned descriptor!");
@@ -653,15 +782,7 @@ vioblk_int_handler(caddr_t arg1, caddr_t arg2)
 				error = ENXIO;
 				break;
 		}
-
-		if (type == VIRTIO_BLK_T_GET_ID) {
-			/* notify devid_init */
-			mutex_enter(&sc->lock_devid);
-			cv_broadcast(&sc->cv_devid);
-			mutex_exit(&sc->lock_devid);
-		} else
-			bd_xfer_done(xfer, error);
-
+		bd_xfer_done(xfer, error);
 		i++;
 	}
 
@@ -818,9 +939,6 @@ vioblk_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	/* Duplicate for faster access / less typing */
 	sc->sc_dev = devinfo;
 	vsc->sc_dev = devinfo;
-
-	cv_init(&sc->cv_devid, NULL, CV_DRIVER, NULL);
-	mutex_init(&sc->lock_devid, NULL, MUTEX_DRIVER, NULL);
 
 	/*
 	 * Initialize interrupt kstat.  This should not normally fail, since
@@ -998,8 +1116,6 @@ exit_int:
 exit_map:
 	kstat_delete(sc->sc_intrstat);
 exit_intrstat:
-	mutex_destroy(&sc->lock_devid);
-	cv_destroy(&sc->cv_devid);
 	kmem_free(sc, sizeof (struct vioblk_softc));
 exit:
 	return (ret);
@@ -1031,6 +1147,9 @@ vioblk_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 	virtio_device_reset(&sc->sc_virtio);
 	ddi_regs_map_free(&sc->sc_virtio.sc_ioh);
 	kstat_delete(sc->sc_intrstat);
+	if (sc->devid != NULL) {
+		kmem_free(sc->devid, ddi_devid_sizeof(sc->devid));
+	}
 	kmem_free(sc, sizeof (struct vioblk_softc));
 
 	return (DDI_SUCCESS);

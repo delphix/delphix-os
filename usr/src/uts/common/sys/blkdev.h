@@ -19,9 +19,10 @@
  * CDDL HEADER END
  */
 /*
+ * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_BLKDEV_H
@@ -155,6 +156,9 @@ void		bd_state_change(bd_handle_t);
 void		bd_xfer_done(bd_xfer_t *, int);
 void		bd_mod_init(struct dev_ops *);
 void		bd_mod_fini(struct dev_ops *);
+int		bd_tg_rdwr(dev_info_t *, uchar_t, void *, diskaddr_t, size_t,
+	void *);
+int		bd_get_devid_blk(dev_info_t *, diskaddr_t *);
 
 #ifdef __cplusplus
 }
