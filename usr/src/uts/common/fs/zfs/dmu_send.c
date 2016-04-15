@@ -54,6 +54,10 @@
 #include <sys/dsl_bookmark.h>
 #include <sys/zfeature.h>
 #include <sys/bqueue.h>
+#include <sys/objlist.h>
+#ifdef _KERNEL
+#include <sys/zfs_vfsops.h>
+#endif
 
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;
@@ -133,6 +137,7 @@ struct send_thread_arg {
 	int		error_code;
 	boolean_t	cancel;
 	zbookmark_phys_t resume;
+	objlist_t	*deleted_objs;
 };
 
 struct redact_merge_thread_arg {
@@ -1515,7 +1520,8 @@ redact_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		 * If the object has been deleted, redact all of the blocks in
 		 * it.
 		 */
-		if (dnp->dn_type == DMU_OT_NONE) {
+		if (dnp->dn_type == DMU_OT_NONE ||
+		    objlist_exists(sta->deleted_objs, zb->zb_object)) {
 			sta->ignore_object = zb->zb_object;
 			record = kmem_zalloc(sizeof (struct send_redact_record),
 			    KM_SLEEP);
@@ -1583,7 +1589,6 @@ redact_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	return (0);
 }
 
-
 /*
  * This function kicks off the traverse_dataset call for one of the snapshots
  * we're redacting with respect to.  It also handles setting error codes when
@@ -1596,13 +1601,23 @@ redact_traverse_thread(void *arg)
 	struct send_thread_arg *st_arg = arg;
 	int err;
 	struct send_redact_record *data;
+	objset_t *os;
+	VERIFY0(dmu_objset_from_ds(st_arg->ds, &os));
+#ifdef _KERNEL
+	if (os->os_phys->os_type == DMU_OST_ZFS)
+		st_arg->deleted_objs = zfs_get_deleteq(os);
+	else
+		st_arg->deleted_objs = objlist_create();
+#else
+	st_arg->deleted_objs = objlist_create();
+#endif
 
 	err = traverse_dataset_resume(st_arg->ds, st_arg->fromtxg,
 	    &st_arg->resume, st_arg->flags, redact_cb, st_arg);
 
 	if (err != EINTR)
 		st_arg->error_code = err;
-
+	objlist_destroy(st_arg->deleted_objs);
 	data = kmem_zalloc(sizeof (*data), KM_SLEEP);
 	data->eos_marker = B_TRUE;
 	redact_record_merge_enqueue(&st_arg->q, &st_arg->current_record, data);
@@ -1812,7 +1827,8 @@ redact_merge_thread(void *arg)
 	struct redact_merge_thread_arg *mt_arg = arg;
 	struct redact_node *redact_nodes = NULL;
 	avl_tree_t start_tree, end_tree;
-	struct send_redact_record *record, *current_record;
+	struct send_redact_record *record;
+	struct send_redact_record *current_record = NULL;
 
 	/*
 	 * If we're redacting with respect to zero snapshots, then no data is
@@ -2555,6 +2571,18 @@ send_prefetch_thread(void *arg)
 	struct send_block_record *data = bqueue_dequeue(inq);
 	uint64_t data_size;
 	int err = 0;
+
+	/*
+	 * If the record we're analyzing is from a redaction bookmark from the
+	 * fromds, then we need to know whether or not it exists in the tods so
+	 * we know whether to create records for it or not. If it does, we need
+	 * the datablksz so we can generate an appropriate record for it.
+	 * Finally, if it isn't redacted, we need the blkptr so that we can send
+	 * a WRITE record containing the actual data.
+	 */
+	uint64_t last_obj = UINT64_MAX;
+	uint64_t last_obj_exists = B_TRUE;
+	uint32_t last_obj_datablksz = 0;
 	while (!data->eos_marker && !spta->cancel && smta->error == 0) {
 		if (data->zb.zb_objset != dmu_objset_id(os)) {
 			/*
@@ -2566,13 +2594,79 @@ send_prefetch_thread(void *arg)
 			 * exists in the target ("to") dataset, and if
 			 * not then we drop this entry.  We also need
 			 * to fill in the block pointer so that we know
-			 * what to prefetch (if it is not redacted).
+			 * what to prefetch (if it is not redacted).  We also
+			 * need the data block size.
+			 *
+			 * To accomplish the above, we have a few approaches.
+			 * First, we cache whether or not the last object we
+			 * examined exists, and we cache its block size. In the
+			 * case of non-redacted records, we must also get the
+			 * block pointer if the object does exist, so we call
+			 * dbuf_bookmark_findbp.  We also call
+			 * dbuf_bookmark_findbp if we're working on a new
+			 * object, to see whether it exists, and we cache that
+			 * information. In the case of redacted records, that is
+			 * all the information we need, so we don't need to do
+			 * anything else unless we're working on a new object.
+			 * If we are, we use dmu_object_info to get the
+			 * information (since it's much faster than
+			 * dbuf_bookmark_findbp).
+			 *
+			 * This approach gives us a (in some tests) 300% speedup
+			 * over just calling dbuf_bookmark_findbp and
+			 * dmu_object_info every time.
 			 */
-			blkptr_t bp;
-			uint16_t datablkszsec;
-			err = dbuf_bookmark_findbp(os, &data->zb, &bp,
-			    &datablkszsec, &data->indblkshift);
-			if (err == ENOENT) {
+			boolean_t object_exists = B_TRUE;
+			/*
+			 * If the data is redacted, we only care if it exists,
+			 * so that we don't send records for objects that have
+			 * been deleted.
+			 */
+			if (data->redact_marker) {
+				if (data->zb.zb_object == last_obj) {
+					object_exists = last_obj_exists;
+					data->datablksz = last_obj_datablksz;
+				} else {
+					dmu_object_info_t doi;
+					err = dmu_object_info(os,
+					    data->zb.zb_object, &doi);
+					if (err == ENOENT) {
+						object_exists = B_FALSE;
+						err = 0;
+					} else if (err == 0) {
+						data->datablksz =
+						    doi.doi_data_block_size;
+					}
+					last_obj = data->zb.zb_object;
+					last_obj_exists = object_exists;
+					last_obj_datablksz = data->datablksz;
+				}
+			} else if (data->zb.zb_object == last_obj &&
+			    !last_obj_exists) {
+				/*
+				 * If we're still examining the same object as
+				 * previously, and it doesn't exist, we don't
+				 * need to call dbuf_bookmark_findbp.
+				 */
+				object_exists = B_FALSE;
+			} else {
+				blkptr_t bp;
+				uint16_t datablkszsec;
+				err = dbuf_bookmark_findbp(os, &data->zb, &bp,
+				    &datablkszsec, &data->indblkshift);
+				if (err == ENOENT) {
+					object_exists = B_FALSE;
+					err = 0;
+				} else if (err == 0) {
+					data->bp = bp;
+					data->datablksz = datablkszsec <<
+					    SPA_MINBLOCKSHIFT;
+				}
+				last_obj = data->zb.zb_object;
+				last_obj_exists = object_exists;
+				last_obj_datablksz = data->datablksz;
+			}
+			if (!object_exists) {
 				/*
 				 * The block was modified, but doesn't
 				 * exist in the to dataset; if it was
@@ -2586,9 +2680,6 @@ send_prefetch_thread(void *arg)
 			} else if (err != 0) {
 				break;
 			} else {
-				data->datablksz = datablkszsec <<
-				    SPA_MINBLOCKSHIFT;
-				data->bp = bp;
 				data->zb.zb_objset = dmu_objset_id(os);
 			}
 		}
@@ -4006,20 +4097,6 @@ struct receive_writer_arg {
 	boolean_t resumable;
 	uint64_t last_object, last_offset;
 	uint64_t bytes_read; /* bytes read when current record created */
-};
-
-struct objlist {
-	list_t list; /* List of struct receive_objnode. */
-	/*
-	 * Last object looked up. Used to assert that objects are being looked
-	 * up in ascending order.
-	 */
-	uint64_t last_lookup;
-};
-
-struct receive_objnode {
-	list_node_t node;
-	uint64_t object;
 };
 
 typedef struct guid_map_entry {
@@ -5496,69 +5573,6 @@ receive_read_payload_and_next_header(dmu_recv_cookie_t *drc, int len, void *buf)
 	return (0);
 }
 
-static struct objlist *
-objlist_create(void)
-{
-	struct objlist *list = kmem_alloc(sizeof (*list), KM_SLEEP);
-	list_create(&list->list, sizeof (struct receive_objnode),
-	    offsetof(struct receive_objnode, node));
-	list->last_lookup = 0;
-	return (list);
-}
-
-static void
-objlist_destroy(struct objlist *list)
-{
-	for (struct receive_objnode *n = list_remove_head(&list->list);
-	    n != NULL; n = list_remove_head(&list->list)) {
-		kmem_free(n, sizeof (*n));
-	}
-	list_destroy(&list->list);
-	kmem_free(list, sizeof (*list));
-}
-
-/*
- * This function looks through the objlist to see if the specified object number
- * is contained in the objlist.  In the process, it will remove all object
- * numbers in the list that are smaller than the specified object number.  Thus,
- * any lookup of an object number smaller than a previously looked up object
- * number will always return false; therefore, all lookups should be done in
- * ascending order.
- */
-static boolean_t
-objlist_exists(struct objlist *list, uint64_t object)
-{
-	struct receive_objnode *node = list_head(&list->list);
-	ASSERT3U(object, >=, list->last_lookup);
-	list->last_lookup = object;
-	while (node != NULL && node->object < object) {
-		VERIFY3P(node, ==, list_remove_head(&list->list));
-		kmem_free(node, sizeof (*node));
-		node = list_head(&list->list);
-	}
-	return (node != NULL && node->object == object);
-}
-
-/*
- * The objlist is a list of object numbers stored in ascending order.  However,
- * the insertion of new object numbers does not seek out the correct location to
- * store a new object number; instead, it appends it to the list for simplicity.
- * Thus, any users must take care to only insert new object numbers in ascending
- * order.
- */
-static void
-objlist_insert(struct objlist *list, uint64_t object)
-{
-	struct receive_objnode *node = kmem_zalloc(sizeof (*node), KM_SLEEP);
-	node->object = object;
-#ifdef ZFS_DEBUG
-	struct receive_objnode *last_object = list_tail(&list->list);
-	uint64_t last_objnum = (last_object != NULL ? last_object->object : 0);
-	ASSERT3U(node->object, >, last_objnum);
-#endif
-	list_insert_tail(&list->list, node);
-}
-
 /*
  * Issue the prefetch reads for any necessary indirect blocks.
  *
@@ -5971,7 +5985,11 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, int cleanup_fd,
 
 	mutex_enter(&rwa.mutex);
 	while (!rwa.done) {
-		cv_wait(&rwa.cv, &rwa.mutex);
+		/*
+		 * We need to use cv_wait_sig() so that any process that may
+		 * be sleeping here can still fork.
+		 */
+		(void) cv_wait_sig(&rwa.cv, &rwa.mutex);
 	}
 	mutex_exit(&rwa.mutex);
 

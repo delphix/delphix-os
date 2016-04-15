@@ -31,6 +31,7 @@
 
 #include <sys/inttypes.h>
 #include <sys/spa.h>
+#include <sys/objlist.h>
 
 struct vnode;
 struct dsl_dataset;
@@ -84,7 +85,7 @@ typedef struct dmu_recv_cookie {
 	zio_cksum_t drc_prev_cksum;
 	int drc_err;
 	/* Sorted list of objects not to issue prefetches for. */
-	struct objlist *drc_ignore_objlist;
+	objlist_t *drc_ignore_objlist;
 } dmu_recv_cookie_t;
 
 typedef struct redact_block_phys {
