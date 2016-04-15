@@ -24,6 +24,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2016 by Delphix. All rights reserved.
+ */
+
 #include <sys/systm.h>
 #include <sys/cyclic.h>
 #include <sys/cyclic_impl.h>
@@ -97,7 +101,15 @@ cbe_fire(void)
 	processorid_t me = cpu->cpu_id, i;
 	int cross_call = (cbe_xcall_func != NULL && cbe_xcall_cpu == cpu);
 
-	cyclic_fire(cpu);
+	/*
+	 * When running under KVM, it's possible to send an interrupt to
+	 * a cpu that has yet to configure its cyclic. If that happens, we
+	 * just update the cpu kstat and drive on.
+	 */
+	if (cpu->cpu_cyclic != NULL)
+		cyclic_fire(cpu);
+	else
+		CPU_STATS_ADDQ(CPU, sys, cyclic_misfire, 1);
 
 	if (cbe_psm_timer_mode != TIMER_ONESHOT && me == 0 && !cross_call) {
 		for (i = 1; i < NCPU; i++) {

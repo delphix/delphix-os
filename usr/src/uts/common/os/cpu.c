@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -218,6 +218,7 @@ static struct cpu_sys_stats_ks_data {
 	kstat_named_t ufsipage;
 	kstat_named_t ufsinopage;
 	kstat_named_t procovf;
+	kstat_named_t cyclic_misfire;
 	kstat_named_t intrthread;
 	kstat_named_t intrblk;
 	kstat_named_t intrunpin;
@@ -277,6 +278,7 @@ static struct cpu_sys_stats_ks_data {
 	{ "ufsipage",		KSTAT_DATA_UINT64 },
 	{ "ufsinopage",		KSTAT_DATA_UINT64 },
 	{ "procovf",		KSTAT_DATA_UINT64 },
+	{ "cyclic_misfire",	KSTAT_DATA_UINT64 },
 	{ "intrthread",		KSTAT_DATA_UINT64 },
 	{ "intrblk",		KSTAT_DATA_UINT64 },
 	{ "intrunpin",		KSTAT_DATA_UINT64 },
@@ -3249,6 +3251,7 @@ cpu_sys_stats_ks_update(kstat_t *ksp, int rw)
 	csskd->ufsipage.value.ui64 = css->ufsipage;
 	csskd->ufsinopage.value.ui64 = css->ufsinopage;
 	csskd->procovf.value.ui64 = css->procovf;
+	csskd->cyclic_misfire.value.ui64 = css->cyclic_misfire;
 	csskd->intrthread.value.ui64 = 0;
 	for (i = 0; i < LOCK_LEVEL - 1; i++)
 		csskd->intrthread.value.ui64 += css->intr[i];

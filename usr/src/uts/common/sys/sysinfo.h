@@ -27,6 +27,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2016 by Delphix. All rights reserved.
+ */
+
 #ifndef _SYS_SYSINFO_H
 #define	_SYS_SYSINFO_H
 
@@ -229,6 +233,7 @@ typedef struct cpu_sys_stats {
 	uint64_t ufsipage;		/* inodes taken with attached pages */
 	uint64_t ufsinopage;		/* inodes taken with no attached pgs */
 	uint64_t procovf;		/* failed forks */
+	uint64_t cyclic_misfire;	/* premature cyclic_fire calls */
 	uint64_t intrblk;		/* ints blkd/prempted/rel'd (swtch) */
 	uint64_t intrunpin;		/* intr thread unpins pinned thread */
 	uint64_t idlethread;		/* times idle thread scheduled */
