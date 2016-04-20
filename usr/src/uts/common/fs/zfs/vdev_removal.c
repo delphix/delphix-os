@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -950,6 +950,10 @@ vdev_remove_complete(vdev_t *vd)
 
 	txg = spa_vdev_enter(spa);
 	(void) vdev_label_init(vd, 0, VDEV_LABEL_REMOVE);
+	/*
+	 * Request to update the config and the config cachefile.
+	 */
+	vdev_config_dirty(spa->spa_root_vdev);
 	(void) spa_vdev_exit(spa, vd, txg, 0);
 }
 
