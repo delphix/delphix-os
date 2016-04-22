@@ -2289,9 +2289,9 @@ redact_block_merge(struct send_merge_thread_arg *smta,
 	 * action in this case.
 	 */
 	if (smta->resume_redact_zb.zb_objset != 0) {
-		if (zbookmark_compare(data->datablksz >> SPA_MINBLOCKSHIFT, 0,
-		    data->datablksz >> SPA_MINBLOCKSHIFT, 0, &data->zb,
-		    &smta->resume_redact_zb) < 0) {
+		if (zbookmark_compare(data->datablksz >> SPA_MINBLOCKSHIFT,
+		    data->indblkshift, data->datablksz >> SPA_MINBLOCKSHIFT, 0,
+		    &data->zb, &smta->resume_redact_zb) < 0) {
 			if (smta->bookmark_before) {
 				/*
 				 * The bookmark's last update was before the
