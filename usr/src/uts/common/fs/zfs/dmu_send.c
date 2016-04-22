@@ -5441,35 +5441,17 @@ receive_free(struct receive_writer_arg *rwa, struct drr_free *drrf)
 static int
 receive_redact(struct receive_writer_arg *rwa, struct drr_redact *drrr)
 {
-	int err;
-
 	/*
 	 * If the object doesn't exist, there's nothing to redact.
 	 */
 	if (dmu_object_info(rwa->os, drrr->drr_object, NULL) != 0)
 		return (SET_ERROR(EINVAL));
-
-	uint64_t offset = drrr->drr_offset;
-	uint64_t length = drrr->drr_length;
-	while (length > 0) {
-		uint64_t this_length = MIN(length, DMU_MAX_ACCESS);
-
-		dmu_tx_t *tx = dmu_tx_create(rwa->os);
-
-		dmu_tx_hold_write(tx, drrr->drr_object, offset, this_length);
-		err = dmu_tx_assign(tx, TXG_WAIT);
-		if (err != 0) {
-			dmu_tx_abort(tx);
-			return (err);
-		}
-
-		dmu_redact(rwa->os, drrr->drr_object, offset, this_length, tx);
-		dmu_tx_commit(tx);
-
-		offset += this_length;
-		length -= this_length;
-	}
-
+	/*
+	 * We don't currently do anything for these records for performance
+	 * reasons; processing one very long redact record can leave the main
+	 * thread block on a condvar for a long time, which can make the process
+	 * hang while attempting to fork.
+	 */
 	return (0);
 }
 
