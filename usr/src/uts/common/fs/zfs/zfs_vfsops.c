@@ -2219,7 +2219,7 @@ zfs_get_deleteq(objset_t *os)
 		found = next;
 	}
 
-	void *cookie;
+	void *cookie = NULL;
 	while ((found = avl_destroy_nodes(&at, &cookie)) != NULL)
 		kmem_free(found, sizeof (*found));
 	avl_destroy(&at);

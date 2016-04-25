@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
@@ -3816,6 +3816,9 @@ zbookmark_compare(uint16_t dbss1, uint8_t ibs1, uint16_t dbss2, uint8_t ibs2,
 	    zb1->zb_level == zb2->zb_level &&
 	    zb1->zb_blkid == zb2->zb_blkid)
 		return (0);
+
+	IMPLY(zb1->zb_level != 0, ibs1 >= SPA_MINBLOCKSHIFT);
+	IMPLY(zb2->zb_level != 0, ibs2 >= SPA_MINBLOCKSHIFT);
 
 	/*
 	 * BP_SPANB calculates the span in blocks.
