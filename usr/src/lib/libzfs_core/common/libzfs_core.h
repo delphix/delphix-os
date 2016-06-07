@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
 
 #ifndef	_LIBZFS_CORE_H
@@ -71,6 +71,10 @@ int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
 int lzc_receive_resumable(const char *, nvlist_t *, const char *,
     boolean_t, int);
 int lzc_send_space(const char *, const char *, enum lzc_send_flags, uint64_t *);
+int lzc_send_space_resume_redacted(const char *, const char *,
+    enum lzc_send_flags, uint64_t, uint64_t, uint64_t, nvlist_t *, int,
+    uint64_t *);
+uint64_t lzc_send_progress(int);
 
 boolean_t lzc_exists(const char *);
 

@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
 
@@ -553,11 +553,13 @@ lzc_send_resume_redacted(const char *snapname, const char *from, int fd,
  * are traversed looking for blocks with a birth time since the creation TXG of
  * the snapshot this bookmark was created from. This will result in
  * significantly more I/O and be less efficient than a send space estimation on
- * an equivalent snapshot.
+ * an equivalent snapshot.  This process is also used if redact_snaps is
+ * non-null.
  */
 int
-lzc_send_space(const char *snapname, const char *from,
-    enum lzc_send_flags flags, uint64_t *spacep)
+lzc_send_space_resume_redacted(const char *snapname, const char *from,
+    enum lzc_send_flags flags, uint64_t resumeobj, uint64_t resumeoff,
+    uint64_t resume_bytes, nvlist_t *redact_snaps, int fd, uint64_t *spacep)
 {
 	nvlist_t *args;
 	nvlist_t *result;
@@ -572,12 +574,29 @@ lzc_send_space(const char *snapname, const char *from,
 		fnvlist_add_boolean(args, "embedok");
 	if (flags & LZC_SEND_FLAG_COMPRESS)
 		fnvlist_add_boolean(args, "compressok");
+	if (redact_snaps != NULL)
+		fnvlist_add_nvlist(args, "redact_snaps", redact_snaps);
+	if (resumeobj != 0 || resumeoff != 0) {
+		fnvlist_add_uint64(args, "resume_object", resumeobj);
+		fnvlist_add_uint64(args, "resume_offset", resumeoff);
+		fnvlist_add_uint64(args, "bytes", resume_bytes);
+	}
+	if (fd != -1)
+		fnvlist_add_int32(args, "fd", fd);
 	err = lzc_ioctl(ZFS_IOC_SEND_SPACE, snapname, args, &result);
 	nvlist_free(args);
 	if (err == 0)
 		*spacep = fnvlist_lookup_uint64(result, "space");
 	nvlist_free(result);
 	return (err);
+}
+
+int
+lzc_send_space(const char *snapname, const char *from,
+    enum lzc_send_flags flags, uint64_t *spacep)
+{
+	return (lzc_send_space_resume_redacted(snapname, from, flags, 0, 0, 0,
+	    NULL, -1, spacep));
 }
 
 static int

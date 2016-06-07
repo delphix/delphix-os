@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland.  All rights reserved.
@@ -3723,7 +3723,6 @@ zfs_do_send(int argc, char **argv)
 	int c, err;
 	nvlist_t *dbgnv = NULL;
 	nvlist_t *redactnv = NULL;
-	boolean_t extraverbose = B_FALSE;
 
 	struct option long_options[] = {
 		{"rebase",	no_argument,		NULL, 'b'},
@@ -3772,12 +3771,9 @@ zfs_do_send(int argc, char **argv)
 			break;
 		case 'P':
 			flags.parsable = B_TRUE;
-			flags.verbose = B_TRUE;
 			break;
 		case 'v':
-			if (flags.verbose)
-				extraverbose = B_TRUE;
-			flags.verbose = B_TRUE;
+			flags.verbosity++;
 			flags.progress = B_TRUE;
 			break;
 		case 'D':
@@ -3811,6 +3807,9 @@ zfs_do_send(int argc, char **argv)
 			usage(B_FALSE);
 		}
 	}
+
+	if (flags.parsable && flags.verbosity == 0)
+		flags.verbosity = 1;
 
 	argc -= optind;
 	argv += optind;
@@ -3869,23 +3868,10 @@ zfs_do_send(int argc, char **argv)
 	}
 
 	/*
-	 * Special case sending to a filesystem, from a bookmark, or doing a
-	 * rebase or redacted send.
+	 * For everything except -R and -I, use the new, cleaner code path.
 	 */
-	if (strchr(argv[0], '@') == NULL ||
-	    (fromname && strchr(fromname, '#') != NULL) || flags.rebase ||
-	    redactnv != NULL) {
+	if (!(flags.replicate || flags.doall)) {
 		char frombuf[ZFS_MAX_DATASET_NAME_LEN];
-		enum lzc_send_flags lzc_flags = 0;
-
-		if (flags.replicate || flags.doall || flags.props ||
-		    flags.dedup || flags.dryrun || flags.verbose ||
-		    flags.progress) {
-			(void) fprintf(stderr,
-			    gettext("Error: Unsupported flag with filesystem, "
-			    "bookmark, redaction, or rebase.\n"));
-			return (1);
-		}
 
 		if (flags.rebase && strchr(fromname, '#')) {
 			(void) fprintf(stderr, gettext("Error: Cannot "
@@ -3905,32 +3891,52 @@ zfs_do_send(int argc, char **argv)
 		if (zhp == NULL)
 			return (1);
 
-		if (flags.largeblock)
-			lzc_flags |= LZC_SEND_FLAG_LARGE_BLOCK;
-		if (flags.embed_data)
-			lzc_flags |= LZC_SEND_FLAG_EMBED_DATA;
-		if (flags.compress)
-			lzc_flags |= LZC_SEND_FLAG_COMPRESS;
-
+		if (fromname != NULL && (strchr(fromname, '#') == NULL &&
+		    strchr(fromname, '@') == NULL)) {
+			/*
+			 * Neither bookmark or snapshot was specified.  Print a
+			 * warning, and assume snapshot.
+			 */
+			(void) fprintf(stderr, "Warning: incremental source "
+			    "didn't specify type, assuming snapshot. Use '@' "
+			    "or '#' prefix to avoid ambiguity.\n");
+			(void) snprintf(frombuf, sizeof (frombuf), "@%s",
+			    fromname);
+			fromname = frombuf;
+		}
 		if (fromname != NULL &&
 		    (fromname[0] == '#' || fromname[0] == '@')) {
 			/*
 			 * Incremental source name begins with # or @.
 			 * Default to same fs as target.
 			 */
-			(void) strncpy(frombuf, argv[0], sizeof (frombuf));
+			char tmpbuf[ZFS_MAX_DATASET_NAME_LEN];
+			(void) strlcpy(tmpbuf, fromname, sizeof (tmpbuf));
+			(void) strlcpy(frombuf, argv[0], sizeof (frombuf));
 			cp = strchr(frombuf, '@');
 			if (cp != NULL)
 				*cp = '\0';
-			(void) strlcat(frombuf, fromname, sizeof (frombuf));
+			(void) strlcat(frombuf, tmpbuf, sizeof (frombuf));
 			fromname = frombuf;
 		}
-		err = zfs_send_one(zhp, fromname, STDOUT_FILENO, lzc_flags,
+		err = zfs_send_one(zhp, fromname, STDOUT_FILENO, &flags,
 		    redactnv, redactbook);
 		zfs_close(zhp);
 		return (err != 0);
 	}
 
+	if (fromname && strchr(fromname, '#')) {
+		(void) fprintf(stderr,
+		    gettext("Error: multiple snapshots cannot be "
+		    "sent from a bookmark.\n"));
+		return (1);
+	}
+	if (flags.rebase || redactnv != NULL) {
+		(void) fprintf(stderr,
+		    gettext("Error: multiple snapshots cannot be sent redacted "
+		    "or rebased.\n"));
+		return (1);
+	}
 	cp = strchr(argv[0], '@');
 	*cp = '\0';
 	toname = cp + 1;
@@ -3974,9 +3980,9 @@ zfs_do_send(int argc, char **argv)
 		flags.doall = B_TRUE;
 
 	err = zfs_send(zhp, fromname, toname, &flags, STDOUT_FILENO, NULL, 0,
-	    extraverbose ? &dbgnv : NULL);
+	    flags.verbosity >= 3 ? &dbgnv : NULL);
 
-	if (extraverbose && dbgnv != NULL) {
+	if (flags.verbosity >= 3 && dbgnv != NULL) {
 		/*
 		 * dump_nvlist prints to stdout, but that's been
 		 * redirected to a file.  Make it print to stderr

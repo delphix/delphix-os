@@ -1958,6 +1958,7 @@ file path=opt/zfs-tests/tests/functional/redacted_send/redacted_origin \
     mode=0555
 file path=opt/zfs-tests/tests/functional/redacted_send/redacted_resume \
     mode=0555
+file path=opt/zfs-tests/tests/functional/redacted_send/redacted_size mode=0555
 file path=opt/zfs-tests/tests/functional/redacted_send/redacted_volume \
     mode=0555
 file path=opt/zfs-tests/tests/functional/redacted_send/setup mode=0555

@@ -24,7 +24,7 @@
  */
 /*
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
- * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_DMU_IMPL_H
@@ -274,6 +274,7 @@ typedef struct dmu_sendstatus {
 	int dss_outfd;
 	struct proc *dss_proc;
 	offset_t *dss_off;
+	uint64_t dss_blocks; /* blocks visited during the sending process */
 } dmu_sendstatus_t;
 
 void dmu_object_zapify(objset_t *, uint64_t, dmu_object_type_t, dmu_tx_t *);

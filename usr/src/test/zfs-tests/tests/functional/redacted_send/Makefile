@@ -32,6 +32,7 @@ PROGS = cleanup \
 	redacted_negative \
 	redacted_origin \
 	redacted_resume \
+	redacted_size \
 	redacted_volume \
 	setup
 

@@ -439,7 +439,7 @@ tests = ['redacted_compressed', 'redacted_contents',
     'redacted_disabled_feature', 'redacted_embedded', 'redacted_holes',
     'redacted_incrementals', 'redacted_largeblocks', 'redacted_many_clones',
     'redacted_mixed_recsize', 'redacted_mounts', 'redacted_negative',
-    'redacted_origin', 'redacted_resume', 'redacted_volume']
+    'redacted_origin', 'redacted_resume', 'redacted_size', 'redacted_volume']
 
 [/opt/zfs-tests/tests/functional/redundancy]
 tests = ['redundancy_001_pos', 'redundancy_002_pos', 'redundancy_003_pos',

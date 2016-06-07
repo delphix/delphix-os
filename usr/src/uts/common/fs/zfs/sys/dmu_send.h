@@ -38,21 +38,20 @@ struct dsl_dataset;
 struct drr_begin;
 struct avl_tree;
 struct dmu_replay_record;
+struct dmu_send_outparams;
 
 extern const char *recv_clone_name;
 
 int dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
-    boolean_t large_block_ok, boolean_t compressok, int outfd,
+    boolean_t large_block_ok, boolean_t compressok,
     uint64_t resumeobj, uint64_t resumeoff,
     nvlist_t *redactsnaps, const char *redactbook,
-    struct vnode *vp, offset_t *off);
-int dmu_send_estimate(struct dsl_dataset *ds, struct dsl_dataset *fromds,
+    int outfd, offset_t *off, struct dmu_send_outparams *dso);
+int dmu_send_estimate_fast(struct dsl_dataset *ds, struct dsl_dataset *fromds,
     boolean_t stream_compressed, uint64_t *sizep);
-int dmu_send_estimate_from_txg(struct dsl_dataset *ds, uint64_t fromtxg,
-    boolean_t stream_compressed, void *tag, uint64_t *sizep);
 int dmu_send_obj(const char *pool, uint64_t tosnap, uint64_t fromsnap,
     boolean_t embedok, boolean_t large_block_ok, boolean_t compressok,
-    int outfd, struct vnode *vp, offset_t *off);
+    int outfd, offset_t *off, struct dmu_send_outparams *dso);
 
 typedef struct dmu_recv_cookie {
 	struct dsl_dataset *drc_ds;
@@ -87,6 +86,13 @@ typedef struct dmu_recv_cookie {
 	/* Sorted list of objects not to issue prefetches for. */
 	objlist_t *drc_ignore_objlist;
 } dmu_recv_cookie_t;
+
+typedef int (*dmu_send_outfunc_t)(void *buf, int len, void *arg);
+typedef struct dmu_send_outparams {
+	dmu_send_outfunc_t	dso_outfunc;
+	void			*dso_arg;
+	boolean_t		dso_dryrun;
+} dmu_send_outparams_t;
 
 typedef struct redact_block_phys {
 	uint64_t	rbp_object;

@@ -59,9 +59,6 @@ log_must diff -r /$POOL/stride5 /$POOL2/rstride5
 log_must eval "zfs send -i $sendfs@snap0 $POOL/hole@snap >$stream"
 log_mustnot eval "zfs recv $POOL2/rhole@snap <$stream"
 
-# Nor if tosnap is not a child of the original snapshot.
-log_mustnot eval "zfs send -i $sendfs@snap0 $POOL/rm@snap"
-
 # Verify we can receive an intermediate clone redacted with respect to a
 # subset of the original redaction list.
 log_must eval "zfs send -i $sendfs@snap0 --redact $POOL/rm@snap \

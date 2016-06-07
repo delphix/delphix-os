@@ -4367,6 +4367,33 @@ out:
 	return (error);
 }
 
+static int
+dump_bytes(void *buf, int len, void *arg)
+{
+	vnode_t *vp = arg;
+	ssize_t resid; /* have to get resid to get detailed errno */
+	int err;
+
+	/*
+	 * The code does not rely on this (len being a multiple of 8).  We keep
+	 * this assertion because of the corresponding assertion in
+	 * receive_read().  Keeping this assertion ensures that we do not
+	 * inadvertently break backwards compatibility (causing the assertion
+	 * in receive_read() to trigger on old software).
+	 *
+	 * Removing the assertions could be rolled into a new feature that uses
+	 * data that isn't 8-byte aligned; if the assertions were removed, a
+	 * feature flag would have to be added.
+	 */
+
+	ASSERT0(len % 8);
+
+	err = vn_rdwr(UIO_WRITE, vp, (caddr_t)buf, len, 0, UIO_SYSSPACE,
+	    FAPPEND, RLIM64_INFINITY, CRED(), &resid);
+
+	return (err);
+}
+
 /*
  * inputs:
  * zc_name	name of snapshot to send
@@ -4437,7 +4464,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			}
 		}
 
-		error = dmu_send_estimate(tosnap, fromsnap, compressok,
+		error = dmu_send_estimate_fast(tosnap, fromsnap, compressok,
 		    &zc->zc_objset_type);
 
 		if (fromsnap != NULL)
@@ -4450,9 +4477,13 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			return (SET_ERROR(EBADF));
 
 		off = fp->f_offset;
+		dmu_send_outparams_t out = {0};
+		out.dso_outfunc = dump_bytes;
+		out.dso_arg = fp->f_vnode;
+		out.dso_dryrun = B_FALSE;
 		error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
 		    zc->zc_fromobj, embedok, large_block_ok, compressok,
-		    zc->zc_cookie, fp->f_vnode, &off);
+		    zc->zc_cookie, &off, &out);
 
 		if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
 			fp->f_offset = off;
@@ -4463,11 +4494,12 @@ zfs_ioc_send(zfs_cmd_t *zc)
 
 /*
  * inputs:
- * zc_name	name of snapshot on which to report progress
- * zc_cookie	file descriptor of send stream
+ * zc_name		name of snapshot on which to report progress
+ * zc_cookie		file descriptor of send stream
  *
  * outputs:
- * zc_cookie	number of bytes written in send stream thus far
+ * zc_cookie		number of bytes written in send stream thus far
+ * zc_objset_type	logical size of data traversed by send thus far
  */
 static int
 zfs_ioc_send_progress(zfs_cmd_t *zc)
@@ -4502,10 +4534,14 @@ zfs_ioc_send_progress(zfs_cmd_t *zc)
 			break;
 	}
 
-	if (dsp != NULL)
-		zc->zc_cookie = *(dsp->dss_off);
-	else
+	if (dsp != NULL) {
+		zc->zc_cookie = atomic_cas_64((volatile uint64_t *)dsp->dss_off,
+		    0, 0);
+		/* This is the closest thing we have to atomic_read_64. */
+		zc->zc_objset_type = atomic_cas_64(&dsp->dss_blocks, 0, 0);
+	} else {
 		error = SET_ERROR(ENOENT);
+	}
 
 	mutex_exit(&ds->ds_sendstream_lock);
 	dsl_dataset_rele(ds, FTAG);
@@ -5407,13 +5443,26 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 		return (SET_ERROR(EBADF));
 
 	off = fp->f_offset;
+	dmu_send_outparams_t out = {0};
+	out.dso_outfunc = dump_bytes;
+	out.dso_arg = fp->f_vnode;
+	out.dso_dryrun = B_FALSE;
 	error = dmu_send(snapname, fromname, embedok, largeblockok, compressok,
-	    fd, resumeobj, resumeoff, redactnvl, redactbook, fp->f_vnode, &off);
+	    resumeobj, resumeoff, redactnvl, redactbook, fd, &off, &out);
 
 	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
 		fp->f_offset = off;
 	releasef(fd);
 	return (error);
+}
+
+/* ARGSUSED */
+int
+send_space_sum(void *buf, int len, void *arg)
+{
+	uint64_t *size = arg;
+	*size += len;
+	return (0);
 }
 
 /*
@@ -5429,6 +5478,8 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
  *         presence indicates DRR_WRITE_EMBEDDED records are permitted
  *     (optional) "compressok" -> (value ignored)
  *         presence indicates compressed DRR_WRITE records are permitted
+ *     (optional) "fd" -> file descriptor to use as a cookie for progress
+ *         tracking (int32)
  * }
  *
  * outnvl: {
@@ -5440,14 +5491,21 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 {
 	dsl_pool_t *dp;
 	dsl_dataset_t *tosnap;
+	dsl_dataset_t *fromsnap = NULL;
 	int error;
-	char *fromname;
+	char *fromname = NULL;
 	/* LINTED E_FUNC_SET_NOT_USED */
 	boolean_t largeblockok;
 	/* LINTED E_FUNC_SET_NOT_USED */
 	boolean_t embedok;
 	boolean_t compressok;
-	uint64_t space;
+	uint64_t space = 0;
+	boolean_t full_estimate = B_FALSE;
+	nvlist_t *redactnvl = NULL;
+	uint64_t resumeobj = 0;
+	uint64_t resumeoff = 0;
+	uint64_t resume_bytes = 0;
+	int32_t fd = -1;
 
 	error = dsl_pool_hold(snapname, FTAG, &dp);
 	if (error != 0)
@@ -5458,62 +5516,75 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 		dsl_pool_rele(dp, FTAG);
 		return (error);
 	}
+	(void) nvlist_lookup_int32(innvl, "fd", &fd);
 
 	largeblockok = nvlist_exists(innvl, "largeblockok");
 	embedok = nvlist_exists(innvl, "embedok");
 	compressok = nvlist_exists(innvl, "compressok");
+	boolean_t from = (nvlist_lookup_string(innvl, "from", &fromname) == 0);
+	boolean_t redact = (nvlist_lookup_nvlist(innvl, "redact_snaps",
+	    &redactnvl) == 0);
 
-	error = nvlist_lookup_string(innvl, "from", &fromname);
-	if (error == 0) {
-		if (strchr(fromname, '@')) {
-			/*
-			 * If from is a snapshot, hold it and use the more
-			 * efficient dmu_send_estimate to estimate send space
-			 * size using deadlists.
-			 */
-			dsl_dataset_t *fromsnap;
+	(void) nvlist_lookup_uint64(innvl, "resume_object", &resumeobj);
+	(void) nvlist_lookup_uint64(innvl, "resume_offset", &resumeoff);
+	(void) nvlist_lookup_uint64(innvl, "bytes", &resume_bytes);
+
+	if (redact || embedok) {
+		full_estimate = B_TRUE;
+	} else if (from) {
+		if (strchr(fromname, '#')) {
+			full_estimate = B_TRUE;
+		} else if (strchr(fromname, '@')) {
 			error = dsl_dataset_hold(dp, fromname, FTAG, &fromsnap);
 			if (error != 0) {
 				dsl_dataset_rele(tosnap, FTAG);
 				dsl_pool_rele(dp, FTAG);
 				return (error);
 			}
-			error = dmu_send_estimate(tosnap, fromsnap, compressok,
-			    &space);
-			dsl_dataset_rele(fromsnap, FTAG);
-		} else if (strchr(fromname, '#')) {
-			/*
-			 * If from is a bookmark, fetch the creation TXG of the
-			 * snapshot it was created from and use that to find
-			 * blocks that were born after it.
-			 */
-			zfs_bookmark_phys_t frombm;
 
-			error = dsl_bookmark_lookup(dp, fromname, tosnap,
-			    &frombm);
-			if (error != 0) {
-				dsl_dataset_rele(tosnap, FTAG);
-				dsl_pool_rele(dp, FTAG);
-				return (error);
+			if (!dsl_dataset_is_before(tosnap, fromsnap, 0)) {
+				full_estimate = B_TRUE;
+				dsl_dataset_rele(fromsnap, FTAG);
 			}
-			error = dmu_send_estimate_from_txg(tosnap,
-			    frombm.zbm_creation_txg, compressok, FTAG, &space);
 		} else {
 			/*
 			 * from is not properly formatted as a snapshot or
 			 * bookmark
 			 */
+			dsl_dataset_rele(tosnap, FTAG);
+			dsl_pool_rele(dp, FTAG);
 			return (SET_ERROR(EINVAL));
 		}
+	}
+
+	if (full_estimate) {
+		dmu_send_outparams_t out = {0};
+		offset_t off = 0;
+		const char *book = (redactnvl == NULL ? NULL : "%dummy");
+		out.dso_outfunc = send_space_sum;
+		out.dso_arg = &space;
+		out.dso_dryrun = B_TRUE;
+		/*
+		 * We have to release these holds so dmu_send can take them.  It
+		 * will do all the error checking we need.
+		 */
+		dsl_dataset_rele(tosnap, FTAG);
+		dsl_pool_rele(dp, FTAG);
+		error = dmu_send(snapname, fromname, embedok, largeblockok,
+		    compressok, resumeobj, resumeoff, redactnvl, book, fd,
+		    &off, &out);
 	} else {
-		// If estimating the size of a full send, use dmu_send_estimate
-		error = dmu_send_estimate(tosnap, NULL, compressok, &space);
+		error = dmu_send_estimate_fast(tosnap, fromsnap, compressok,
+		    &space);
+		space -= resume_bytes;
+		if (fromsnap != NULL)
+			dsl_dataset_rele(fromsnap, FTAG);
+		dsl_dataset_rele(tosnap, FTAG);
+		dsl_pool_rele(dp, FTAG);
 	}
 
 	fnvlist_add_uint64(outnvl, "space", space);
 
-	dsl_dataset_rele(tosnap, FTAG);
-	dsl_pool_rele(dp, FTAG);
 	return (error);
 }
 
