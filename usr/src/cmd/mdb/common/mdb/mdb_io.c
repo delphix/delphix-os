@@ -1176,14 +1176,12 @@ iob_doprnt(mdb_iob_t *iob, const char *format, varglist_t *ap)
 	size_t altlen;		/* Length of alternate print format prefix */
 	const char *altstr;	/* Alternate print format prefix */
 	const char *symstr;	/* Symbol + offset string */
-	char  *np;		/* Position of \n in string */
 
 	u_longlong_t val;	/* Current integer value */
 	intsize_t size;		/* Current integer value size */
 	uint_t flags;		/* Current flags to pass to iob_int2str */
 	size_t width;		/* Current field width */
 	int zero;		/* If != 0, then integer value == 0 */
-	int lf_len;		/* length of line, until embedded \n */
 
 	mdb_bool_t f_alt;	/* Use alternate print format (%#) */
 	mdb_bool_t f_altsuff;	/* Alternate print format is a suffix */
@@ -1519,10 +1517,14 @@ iob_doprnt(mdb_iob_t *iob, const char *format, varglist_t *ap)
 		 * If the string contains \n, and the \n terminated substring
 		 * + altstr is shorter than the above, use the shorter lf_len.
 		 */
-		np = strchr(u.str, '\n');
-		lf_len = np != NULL ? (np - u.str) + altlen : 0;
-		if (np != NULL && lf_len < width)
-			width = lf_len;
+		if (u.str != NULL) {
+			char *np = strchr(u.str, '\n');
+			if (np != NULL) {
+				int lf_len = (np - u.str) + altlen;
+				if (lf_len < width)
+					width = lf_len;
+			}
+		}
 		if (IOB_WRAPNOW(iob, width))
 			mdb_iob_nl(iob);
 
