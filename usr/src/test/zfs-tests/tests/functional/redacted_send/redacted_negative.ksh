@@ -43,7 +43,11 @@ log_must zfs clone $sendfs@snap2 $clone2
 log_must zfs snapshot $clone2@snap
 
 # Incompatible flags
-log_mustnot eval "zfs send -R --redact \"\" $sendfs@snap1 book >/dev/null"
+typeset flag
+for flag in -D -n -p -P -R -v; do
+	log_mustnot eval "zfs send $flag --redact \"\" $sendfs@snap1 \
+	    book >/dev/null"
+done
 
 # Bad bookmark arguments
 typeset arg
