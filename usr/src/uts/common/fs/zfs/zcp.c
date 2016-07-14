@@ -204,6 +204,7 @@ zcp_lua_to_nvlist(lua_State *state, int index, nvlist_t *nvl, const char *key,
 			lua_pop(state, 1);
 		}
 		fnvlist_add_nvlist(nvl, key, mynvl);
+		fnvlist_free(mynvl);
 		break;
 	}
 	default:
