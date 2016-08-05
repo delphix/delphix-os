@@ -667,6 +667,7 @@ as_alloc(void)
 	as->a_lastgap		= NULL;
 	as->a_lastgaphl		= NULL;
 	as->a_callbacks		= NULL;
+	as->a_proc		= NULL;
 
 	AS_LOCK_ENTER(as, &as->a_lock, RW_WRITER);
 	as->a_hat = hat_alloc(as);	/* create hat for default system mmu */
