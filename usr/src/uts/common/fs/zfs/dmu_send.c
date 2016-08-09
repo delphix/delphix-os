@@ -2691,7 +2691,7 @@ send_prefetch_thread(void *arg)
 		}
 
 		if (!data->redact_marker && !BP_IS_HOLE(&data->bp) &&
-		    !BP_IS_REDACTED(&data->bp)) {
+		    !BP_IS_REDACTED(&data->bp) && !BP_IS_EMBEDDED(&data->bp)) {
 			arc_flags_t aflags = ARC_FLAG_NOWAIT |
 			    ARC_FLAG_PREFETCH;
 			(void) arc_read(NULL, os->os_spa, &data->bp, NULL, NULL,
