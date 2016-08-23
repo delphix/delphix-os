@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -176,7 +176,8 @@ typedef struct spa_taskqs {
 typedef enum spa_all_vdev_zap_action {
 	AVZ_ACTION_NONE = 0,
 	AVZ_ACTION_DESTROY,	/* Destroy all per-vdev ZAPs and the AVZ. */
-	AVZ_ACTION_REBUILD	/* Populate the new AVZ, see spa_avz_rebuild */
+	AVZ_ACTION_REBUILD,	/* Populate the new AVZ, see spa_avz_rebuild */
+	AVZ_ACTION_INITIALIZE
 } spa_avz_action_t;
 
 struct spa {
