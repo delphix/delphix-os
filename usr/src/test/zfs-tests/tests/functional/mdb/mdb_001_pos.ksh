@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -61,6 +61,7 @@ set -A dcmds "::walk spa" \
 	"::walk spa | ::walk metaslab" \
 	"::walk spa | ::print struct spa spa_root_vdev | ::vdev" \
 	"::walk spa | ::print struct spa spa_root_vdev | ::vdev -re" \
+	"::arc_compression_stats" \
 	"::dbufs" \
 	"::dbufs -n mos -o mdn -l 0 -b 0" \
 	"::dbufs | ::dbuf" \
