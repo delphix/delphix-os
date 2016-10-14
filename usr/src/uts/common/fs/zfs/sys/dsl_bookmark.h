@@ -115,11 +115,11 @@ boolean_t dsl_bookmark_ds_destroyed(dsl_dataset_t *, dmu_tx_t *);
 void dsl_bookmark_snapshotted(dsl_dataset_t *, dmu_tx_t *);
 void dsl_bookmark_block_killed(dsl_dataset_t *, const blkptr_t *, dmu_tx_t *);
 void dsl_bookmark_sync_done(dsl_dataset_t *, dmu_tx_t *);
-void dsl_bookmark_set_phys(zfs_bookmark_phys_t *, dsl_dataset_t *);
 void dsl_bookmark_node_add(dsl_dataset_t *, dsl_bookmark_node_t *, dmu_tx_t *);
 uint64_t dsl_bookmark_latest_txg(dsl_dataset_t *);
 int dsl_redaction_list_traverse(redaction_list_t *, zbookmark_phys_t *,
     rl_traverse_callback_t, void *);
+void dsl_bookmark_next_changed(dsl_dataset_t *, dsl_dataset_t *, dmu_tx_t *);
 
 #ifdef	__cplusplus
 }

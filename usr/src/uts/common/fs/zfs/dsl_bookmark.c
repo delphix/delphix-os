@@ -209,7 +209,7 @@ dsl_bookmark_node_alloc(char *shortname)
 /*
  * Set the fields in the zfs_bookmark_phys_t based on the specified snapshot.
  */
-void
+static void
 dsl_bookmark_set_phys(zfs_bookmark_phys_t *zbm, dsl_dataset_t *snap)
 {
 	spa_t *spa = dsl_dataset_get_spa(snap);
@@ -1159,6 +1159,72 @@ dsl_bookmark_snapshotted(dsl_dataset_t *ds, dmu_tx_t *tx)
 			    creation_txg, tx);
 			last_key_added = creation_txg;
 		}
+	}
+}
+
+/*
+ * The next snapshot of the origin dataset has changed, due to
+ * promote or clone swap.  If there are any bookmarks at this dataset,
+ * we need to update their zbm_*_freed_before_next_snap to reflect this.
+ * The head dataset has the relevant bookmarks in ds_bookmarks.
+ */
+void
+dsl_bookmark_next_changed(dsl_dataset_t *head, dsl_dataset_t *origin,
+    dmu_tx_t *tx)
+{
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+
+	/*
+	 * Find the first bookmark that HAS_FBN at the origin snapshot.
+	 */
+	dsl_bookmark_node_t search = { 0 };
+	avl_index_t idx;
+	search.dbn_phys.zbm_creation_txg =
+	    dsl_dataset_phys(origin)->ds_creation_txg;
+	search.dbn_phys.zbm_flags = ZBM_FLAG_HAS_FBN;
+	/*
+	 * The empty-string name can't be in the AVL, and it compares
+	 * before any entries with this TXG.
+	 */
+	search.dbn_name = "";
+	VERIFY3P(avl_find(&head->ds_bookmarks, &search, &idx), ==, NULL);
+	dsl_bookmark_node_t *dbn =
+	    avl_nearest(&head->ds_bookmarks, idx, AVL_AFTER);
+
+	/*
+	 * Iterate over all bookmarks that are at the origin txg.
+	 * Adjust their FBN based on their new next snapshot.
+	 */
+	for (; dbn != NULL && dbn->dbn_phys.zbm_creation_txg ==
+	    dsl_dataset_phys(origin)->ds_creation_txg &&
+	    (dbn->dbn_phys.zbm_flags & ZBM_FLAG_HAS_FBN);
+	    dbn = AVL_NEXT(&head->ds_bookmarks, dbn)) {
+
+		/*
+		 * Bookmark is at the origin, therefore its
+		 * "next dataset" is changing, so we need
+		 * to reset its FBN by recomputing it in
+		 * dsl_bookmark_set_phys().
+		 */
+		ASSERT3U(dbn->dbn_phys.zbm_guid, ==,
+		    dsl_dataset_phys(origin)->ds_guid);
+		ASSERT3U(dbn->dbn_phys.zbm_referenced_bytes_refd, ==,
+		    dsl_dataset_phys(origin)->ds_referenced_bytes);
+		ASSERT(dbn->dbn_phys.zbm_flags &
+		    ZBM_FLAG_SNAPSHOT_EXISTS);
+		/*
+		 * Save and restore the zbm_redaction_obj, which
+		 * is zeroed by dsl_bookmark_set_phys().
+		 */
+		uint64_t redaction_obj =
+		    dbn->dbn_phys.zbm_redaction_obj;
+		dsl_bookmark_set_phys(&dbn->dbn_phys, origin);
+		dbn->dbn_phys.zbm_redaction_obj = redaction_obj;
+
+		VERIFY0(zap_update(dp->dp_meta_objset, head->ds_bookmarks_obj,
+		    dbn->dbn_name, sizeof (uint64_t),
+		    sizeof (zfs_bookmark_phys_t) / sizeof (uint64_t),
+		    &dbn->dbn_phys, tx));
 	}
 }
 

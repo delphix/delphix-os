@@ -2880,33 +2880,10 @@ dsl_dataset_promote_sync(void *arg, dmu_tx_t *tx)
 		VERIFY0(zap_remove(dp->dp_meta_objset,
 		    origin_head->ds_bookmarks_obj, dbn->dbn_name, tx));
 
-		if ((dbn->dbn_phys.zbm_flags & ZBM_FLAG_HAS_FBN) &&
-		    dbn->dbn_phys.zbm_creation_txg ==
-		    dsl_dataset_phys(origin_ds)->ds_creation_txg) {
-			/*
-			 * Bookmark is at the origin, therefore its
-			 * "next dataset" is changing, so we need
-			 * to reset its FBN by recomputing it in
-			 * dsl_bookmark_set_phys().
-			 */
-			ASSERT3U(dbn->dbn_phys.zbm_guid, ==,
-			    dsl_dataset_phys(origin_ds)->ds_guid);
-			ASSERT3U(dbn->dbn_phys.zbm_referenced_bytes_refd, ==,
-			    dsl_dataset_phys(origin_ds)->ds_referenced_bytes);
-			ASSERT(dbn->dbn_phys.zbm_flags &
-			    ZBM_FLAG_SNAPSHOT_EXISTS);
-			/*
-			 * Save and restore the zbm_redaction_obj, which
-			 * is zeroed by dsl_bookmark_set_phys().
-			 */
-			uint64_t redaction_obj =
-			    dbn->dbn_phys.zbm_redaction_obj;
-			dsl_bookmark_set_phys(&dbn->dbn_phys, origin_ds);
-			dbn->dbn_phys.zbm_redaction_obj = redaction_obj;
-		}
-
 		dsl_bookmark_node_add(hds, dbn, tx);
 	}
+
+	dsl_bookmark_next_changed(hds, origin_ds, tx);
 
 	/* move snapshots to this dir */
 	for (snap = list_head(&ddpa->shared_snaps); snap;
@@ -3357,9 +3334,9 @@ dsl_dataset_clone_swap_sync_impl(dsl_dataset_t *clone,
 	    dsl_dataset_phys(clone)->ds_unique_bytes);
 
 	/*
-	 * Reset origin's unique bytes, if it exists.
+	 * Reset origin's unique bytes.
 	 */
-	if (clone->ds_prev) {
+	{
 		dsl_dataset_t *origin = clone->ds_prev;
 		uint64_t comp, uncomp;
 
@@ -3456,6 +3433,12 @@ dsl_dataset_clone_swap_sync_impl(dsl_dataset_t *clone,
 	dsl_deadlist_open(&origin_head->ds_deadlist, dp->dp_meta_objset,
 	    dsl_dataset_phys(origin_head)->ds_deadlist_obj);
 	dsl_dataset_swap_remap_deadlists(clone, origin_head, tx);
+
+	/*
+	 * If there is a bookmark at the origin, its "next dataset" is
+	 * changing, so we need to reset its FBN.
+	 */
+	dsl_bookmark_next_changed(origin_head, origin_head->ds_prev, tx);
 
 	dsl_scan_ds_clone_swapped(origin_head, clone, tx);
 
