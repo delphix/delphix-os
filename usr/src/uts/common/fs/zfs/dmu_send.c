@@ -109,6 +109,10 @@ const char *recv_clone_name = "%recv";
 #define	BEGINNV_REDACT_FROM_SNAPS	"redact_from_snaps"
 #define	BEGINNV_RESUME_OBJECT		"resume_object"
 #define	BEGINNV_RESUME_OFFSET		"resume_offset"
+/*
+ * Use this to override the recordsize calculation for fast zfs send estimates.
+ */
+uint64_t zfs_override_estimate_recordsize = 8192;
 
 static inline boolean_t
 overflow_multiply(uint64_t a, uint64_t b, uint64_t *c)
@@ -4005,7 +4009,7 @@ static int
 dmu_adjust_send_estimate_for_indirects(dsl_dataset_t *ds, uint64_t uncompressed,
     uint64_t compressed, boolean_t stream_compressed, uint64_t *sizep)
 {
-	int err;
+	int err = 0;
 	uint64_t size;
 	/*
 	 * Assume that space (both on-disk and in-stream) is dominated by
@@ -4014,10 +4018,19 @@ dmu_adjust_send_estimate_for_indirects(dsl_dataset_t *ds, uint64_t uncompressed,
 	 */
 	uint64_t recordsize;
 	uint64_t record_count;
+	objset_t *os;
+	VERIFY0(dmu_objset_from_ds(ds, &os));
 
 	/* Assume all (uncompressed) blocks are recordsize. */
-	err = dsl_prop_get_int_ds(ds, zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
-	    &recordsize);
+	if (zfs_override_estimate_recordsize != 0) {
+		recordsize = zfs_override_estimate_recordsize;
+	} else if (os->os_phys->os_type == DMU_OST_ZVOL) {
+		err = dsl_prop_get_int_ds(ds,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), &recordsize);
+	} else {
+		err = dsl_prop_get_int_ds(ds,
+		    zfs_prop_to_name(ZFS_PROP_RECORDSIZE), &recordsize);
+	}
 	if (err != 0)
 		return (err);
 	record_count = uncompressed / recordsize;
@@ -4087,6 +4100,10 @@ dmu_send_estimate_fast(dsl_dataset_t *ds, dsl_dataset_t *fromds,
 
 	err = dmu_adjust_send_estimate_for_indirects(ds, uncomp, comp,
 	    stream_compressed, sizep);
+	/*
+	 * Add the size of the BEGIN and END records to the estimate.
+	 */
+	*sizep += 2 * sizeof (dmu_replay_record_t);
 	return (err);
 }
 
