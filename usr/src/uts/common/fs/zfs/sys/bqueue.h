@@ -13,7 +13,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  */
 
 #ifndef	_BQUEUE_H
@@ -45,9 +45,9 @@ typedef struct bqueue_node {
 int bqueue_init(bqueue_t *, uint64_t, uint64_t, size_t);
 void bqueue_destroy(bqueue_t *);
 void bqueue_enqueue(bqueue_t *, void *, uint64_t);
+void bqueue_enqueue_flush(bqueue_t *, void *, uint64_t);
 void *bqueue_dequeue(bqueue_t *);
 boolean_t bqueue_empty(bqueue_t *);
-void bqueue_flush(bqueue_t *);
 
 #ifdef	__cplusplus
 }

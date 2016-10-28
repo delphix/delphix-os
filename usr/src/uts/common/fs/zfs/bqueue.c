@@ -13,7 +13,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  */
 
 #include	<sys/bqueue.h>
@@ -68,20 +68,18 @@ bqueue_init(bqueue_t *q, uint64_t fill_fraction, uint64_t size,
 void
 bqueue_destroy(bqueue_t *q)
 {
+	mutex_enter(&q->bq_lock);
 	ASSERT0(q->bq_size);
 	cv_destroy(&q->bq_add_cv);
 	cv_destroy(&q->bq_pop_cv);
-	mutex_destroy(&q->bq_lock);
 	list_destroy(&q->bq_list);
+	mutex_exit(&q->bq_lock);
+	mutex_destroy(&q->bq_lock);
 }
 
-/*
- * Add data to q, consuming size units of capacity.  If there is insufficient
- * capacity to consume size units, block until capacity exists.  Asserts size is
- * > 0.
- */
-void
-bqueue_enqueue(bqueue_t *q, void *data, uint64_t item_size)
+static void
+bqueue_enqueue_impl(bqueue_t *q, void *data, uint64_t item_size,
+    boolean_t flush)
 {
 	ASSERT3U(item_size, >, 0);
 	ASSERT3U(item_size, <, q->bq_maxsize);
@@ -94,8 +92,36 @@ bqueue_enqueue(bqueue_t *q, void *data, uint64_t item_size)
 	list_insert_tail(&q->bq_list, data);
 	if (q->bq_size >= q->bq_maxsize / q->bq_fill_fraction)
 		cv_signal(&q->bq_pop_cv);
+	if (flush)
+		cv_broadcast(&q->bq_pop_cv);
 	mutex_exit(&q->bq_lock);
 }
+
+/*
+ * Add data to q, consuming size units of capacity.  If there is insufficient
+ * capacity to consume size units, block until capacity exists.  Asserts size is
+ * > 0.
+ */
+void
+bqueue_enqueue(bqueue_t *q, void *data, uint64_t item_size)
+{
+	bqueue_enqueue_impl(q, data, item_size, B_FALSE);
+}
+
+/*
+ * Enqueue an entry, and then flush the queue.  This forces the popping threads
+ * to wake up, even if we're below the fill fraction.  We have this in a single
+ * function, rather than having a separate call, because it prevents race
+ * conditions between the enqueuing thread and the dequeueing thread, where the
+ * enqueueing thread will wake up the dequeueing thread, that thread will
+ * destroy the condvar before the enqueuing thread is done.
+ */
+void
+bqueue_enqueue_flush(bqueue_t *q, void *data, uint64_t item_size)
+{
+	bqueue_enqueue_impl(q, data, item_size, B_TRUE);
+}
+
 /*
  * Take the first element off of q.  If there are no elements on the queue, wait
  * until one is put there.  Return the removed element.
@@ -125,14 +151,4 @@ boolean_t
 bqueue_empty(bqueue_t *q)
 {
 	return (q->bq_size == 0);
-}
-
-/*
- * Flush the queue; force the popping threads to wake up, even if we're below
- * the fill fraction.
- */
-void
-bqueue_flush(bqueue_t *q)
-{
-	cv_broadcast(&q->bq_pop_cv);
 }
