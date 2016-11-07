@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -33,12 +33,8 @@
 
 function cleanup
 {
-	if datasetexists $TESTPOOL ; then
-		log_must $ZPOOL destroy -f $TESTPOOL
-	fi
-	if datasetexists $TESTPOOL2 ; then
-		log_must $ZPOOL destroy -f $TESTPOOL2
-	fi
+	poolexists $TESTPOOL && destroy_pool $TESTPOOL
+	poolexists $TESTPOOL2 && destroy_pool $TESTPOOL2
 }
 
 #

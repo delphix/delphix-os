@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 #
 
 . ${STF_TOOLS}/contrib/include/logapi.shlib
@@ -1542,6 +1542,26 @@ function is_pool_removed #pool
 	return $?
 }
 
+function wait_for_degraded
+{
+	typeset pool=$1
+	typeset timeout=${2:-30}
+	typeset t0=$SECONDS
+
+	while :; do
+		zpool status -v $pool 2>/dev/null | grep -q "state: DEGRADED"
+		[[ $? -eq 0 ]] && break
+		log_note "$pool is not yet degraded."
+		sleep 1
+		if ((SECONDS - t0 > $timeout)); then
+			log_note "$pool not degraded after $timeout seconds."
+			return 1
+		fi
+	done
+
+	return 0
+}
+
 #
 # Use create_pool()/destroy_pool() to clean up the infomation in
 # in the given disk to avoid slice overlapping.
@@ -2727,4 +2747,39 @@ function get_objnum
 	[[ -e $pathname ]] || log_fail "No such file or directory: $pathname"
 	objnum=$(stat -c %i $pathname)
 	echo $objnum
+}
+
+#
+# Get decimal value of global uint32_t variable using mdb.
+#
+function mdb_get_uint32
+{
+	typeset variable=$1
+	typeset value
+
+	value=$(mdb -k -e "$variable/X | ::eval .=U")
+	if [[ $? -ne 0 ]]; then
+		log_fail "Failed to get value of '$variable' from mdb."
+		return 1
+	fi
+
+	echo $value
+	return 0
+}
+
+#
+# Set global uint32_t variable to a decimal value using mdb.
+#
+function mdb_set_uint32
+{
+	typeset variable=$1
+	typeset value=$2
+
+	mdb -kw -e "$variable/W 0t$value" > /dev/null
+	if [[ $? -ne 0 ]]; then
+		echo "Failed to set '$variable' to '$value' in mdb."
+		return 1
+	fi
+
+	return 0
 }

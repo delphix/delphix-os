@@ -39,7 +39,7 @@
 
 function cleanup
 {
-        mdb -kwe "zfs_initialize_value/Z 0"
+        mdb -kwe "zfs_initialize_value/Z $ORIG_PATTERN"
         $ZPOOL import -d $TESTDIR $TESTPOOL
 
         if datasetexists $TESTPOOL ; then
@@ -53,10 +53,11 @@ log_onexit cleanup
 PATTERN="deadbeefdeadbeef"
 SMALLFILE="$TESTDIR/smallfile"
 
+ORIG_PATTERN=$(mdb -ke "zfs_initialize_value/J" | tail -1 | awk '{print $NF}')
 log_must mdb -kwe "zfs_initialize_value/Z $PATTERN"
 
 log_must mkdir "$TESTDIR"
-log_must mkfile 64m "$SMALLFILE"
+log_must mkfile $MINVDEVSIZE "$SMALLFILE"
 log_must $ZPOOL create $TESTPOOL "$SMALLFILE"
 log_must $ZPOOL initialize $TESTPOOL
 
@@ -66,14 +67,22 @@ done
 
 log_must $ZPOOL export $TESTPOOL
 
+spacemaps=0
 bs=512
 while read -r sm; do
         typeset offset="$(echo $sm | cut -d ' ' -f1)"
         typeset size="$(echo $sm | cut -d ' ' -f2)"
-        offset=$(((4 * 1024 * 1024) + 16#$offset))
-        log_mustnot eval "/usr/bin/dd if=$SMALLFILE skip=$(($offset / $bs)) \
-                count=$(($size / $bs)) bs=$bs | xxd -p |
-                egrep '[^'$PATTERN']'"
-done <<< "$(zdb -p $TESTDIR -Pme $TESTPOOL | egrep 'spacemap[ ]+0 ' | awk '{print $4, $8}')"
 
-log_pass "Initializing wrote appropriate amount to disk"
+	spacemaps=$((spacemaps + 1))
+        offset=$(((4 * 1024 * 1024) + 16#$offset))
+	out=$(dd if=$SMALLFILE skip=$(($offset / $bs)) \
+	    count=$(($size / $bs)) bs=$bs 2>/dev/null | od -t x8 -Ad)
+	echo "$out" | log_must egrep "$PATTERN|\*|$size"
+done <<< "$(zdb -p $TESTDIR -Pme $TESTPOOL | egrep 'spacemap[ ]+0 ' | \
+    awk '{print $4, $8}')"
+
+if [[ $spacemaps -eq 0 ]];then
+	log_fail "Did not find any empty space maps to check"
+else
+	log_pass "Initializing wrote appropriate amount to disk"
+fi

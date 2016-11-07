@@ -56,7 +56,7 @@ log_onexit cleanup
 log_must mkdir $TESTDIR
 set -A FDISKS
 for n in {0..2}; do
-        log_must mkfile 64m $TESTDIR/vdev$n
+        log_must mkfile $MINVDEVSIZE $TESTDIR/vdev$n
         FDISKS+=("$TESTDIR/vdev$n")
 done
 FDISKS+=("${DISKS%% *}")

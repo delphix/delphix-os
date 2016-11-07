@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2016 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -77,10 +77,21 @@ for compress in $compress_types; do
 	within_percent $vol_size $vol_lrefer 90 || log_fail \
 	    "$vol_size and $vol_lrefer differed by too much"
 
-	typeset ds_csize=$(get_estimated_size "zfs send -nP -c $send_ds@snap")
-	typeset ds_refer=$(get_prop refer $send_ds)
-	within_percent $ds_csize $ds_refer 90 || log_fail \
-	    "$ds_csize and $ds_refer differed by too much"
+	# fio can write extremely compressible files here. If that happens,
+	# the adjustment made for indirect blocks breaks down due to the small
+	# size of the compressed stream. Skip this test in that case to avoid
+	# incorrect failures.
+	typeset ratio=$(get_prop compressratio $send_ds)
+	if [[ ${ratio%%\.*} -lt 20 ]]; then
+		typeset ds_csize=$(get_estimated_size "zfs send -nP -c \
+		    $send_ds@snap")
+		typeset ds_refer=$(get_prop refer $send_ds)
+		within_percent $ds_csize $ds_refer 90 || log_fail \
+		    "$ds_csize and $ds_refer differed by too much"
+	else
+		log_note "Skipped $compress compressed dataset test due to" \
+		    "a compression ratio of $ratio"
+	fi
 
 	typeset vol_csize=$(get_estimated_size "zfs send -nP -c $send_vol@snap")
 	typeset vol_refer=$(get_prop refer $send_vol)
