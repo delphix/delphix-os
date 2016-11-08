@@ -968,7 +968,7 @@ dsl_redaction_list_long_rele(redaction_list_t *rl, void *tag)
 
 /* ARGSUSED */
 static void
-redaction_list_evict(void *rlu)
+redaction_list_evict_sync(void *rlu)
 {
 	redaction_list_t *rl = rlu;
 	refcount_destroy(&rl->rl_longholds);
@@ -1007,7 +1007,7 @@ dsl_redaction_list_hold_obj(dsl_pool_t *dp, uint64_t rlobj, void *tag,
 		rl->rl_phys = dbuf->db_data;
 		rl->rl_mos = dp->dp_meta_objset;
 		refcount_create(&rl->rl_longholds);
-		dmu_buf_init_user(&rl->rl_dbu, redaction_list_evict,
+		dmu_buf_init_user(&rl->rl_dbu, redaction_list_evict_sync, NULL,
 		    &rl->rl_dbuf);
 		if ((winner = dmu_buf_set_user_ie(dbuf, &rl->rl_dbu)) != NULL) {
 			kmem_free(rl, sizeof (*rl));
