@@ -110,12 +110,6 @@ int zfs_remove_max_copy_bytes = 8 * 1024 * 1024;
  */
 int zfs_remove_max_segment = 1024 * 1024;
 
-/*
- * The maximum number of vdevs that can be removed, due to recursion.
- * See comment in vdev_remove() for details.
- */
-int zfs_max_indirect_vdevs = 20;
-
 static void spa_vdev_remove_thread(void *arg);
 
 static void
@@ -1607,18 +1601,6 @@ spa_vdev_remove_top_check(vdev_t *vd)
 		if (cvd->vdev_children != 0)
 			return (SET_ERROR(EINVAL));
 	}
-
-	/*
-	 * When there are many removed vdevs, we may have a chain
-	 * of indirect vdevs, where reading a block requires
-	 * indirecting through several vdevs.  This can result in
-	 * a deeply-nested tree of zio's.  When we process
-	 * the zio tree recursively (e.g. in zio_notify_parent()),
-	 * we can exhaust the stack space.  Therefore, limit
-	 * the number of vdevs that can be removed.
-	 */
-	if (num_indirect >= zfs_max_indirect_vdevs)
-		return (SET_ERROR(EOVERFLOW));
 
 	return (0);
 }

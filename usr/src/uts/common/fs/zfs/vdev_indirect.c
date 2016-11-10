@@ -826,58 +826,152 @@ vdev_indirect_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	return (0);
 }
 
+typedef struct remap_segment {
+	vdev_t *rs_vd;
+	uint64_t rs_offset;
+	uint64_t rs_asize;
+	uint64_t rs_split_offset;
+	list_node_t rs_node;
+} remap_segment_t;
+
+remap_segment_t *
+rs_alloc(vdev_t *vd, uint64_t offset, uint64_t asize, uint64_t split_offset)
+{
+	remap_segment_t *rs = kmem_alloc(sizeof (remap_segment_t), KM_SLEEP);
+	rs->rs_vd = vd;
+	rs->rs_offset = offset;
+	rs->rs_asize = asize;
+	rs->rs_split_offset = split_offset;
+	return (rs);
+}
+
+/*
+ * Goes through the relevant indirect mappings until it hits a concrete vdev
+ * and issues the callback. On the way to the concrete vdev, if any other
+ * indirect vdevs are encountered, then the callback will also be called on
+ * each of those indirect vdevs. For example, if the segment is mapped to
+ * segment A on indirect vdev 1, and then segment A on indirect vdev 1 is
+ * mapped to segment B on concrete vdev 2, then the callback will be called on
+ * both vdev 1 and vdev 2.
+ *
+ * While the callback passed to vdev_indirect_remap() is called on every vdev
+ * the function encounters, certain callbacks only care about concrete vdevs.
+ * These types of callbacks should return immediately and explicitly when they
+ * are called on an indirect vdev.
+ *
+ * Because there is a possibility that a DVA section in the indirect device
+ * has been split into multiple sections in our mapping, we keep track
+ * of the relevant contiguous segments of the new location (remap_segment_t)
+ * in a stack. This way we can call the callback for each of the new sections
+ * created by a single section of the indirect device. Note though, that in
+ * this scenario the callbacks in each split block won't occur in-order in
+ * terms of offset, so callers should not make any assumptions about that.
+ *
+ * For callbacks that don't handle split blocks and immediately return when
+ * they encounter them (as is the case for remap_blkptr_cb), the caller can
+ * assume that its callback will be applied from the first indirect vdev
+ * encountered to the last one and then the concrete vdev, in that order.
+ */
 static void
 vdev_indirect_remap(vdev_t *vd, uint64_t offset, uint64_t asize,
     void (*func)(uint64_t, vdev_t *, uint64_t, uint64_t, void *), void *arg)
 {
+	list_t stack;
 	spa_t *spa = vd->vdev_spa;
-	uint64_t split_offset = 0;
 
-	/*
-	 * Note: this can be called from open context
-	 * (eg. zio_read()), so we need the rwlock to prevent
-	 * the mapping from being changed by condensing.
-	 */
-	rw_enter(&vd->vdev_indirect_rwlock, RW_READER);
-	vdev_indirect_mapping_t *vim = vd->vdev_indirect_mapping;
+	list_create(&stack, sizeof (remap_segment_t),
+	    offsetof(remap_segment_t, rs_node));
 
-	ASSERT(spa_config_held(spa, SCL_ALL, RW_READER) != 0);
-	ASSERT(asize > 0);
+	for (remap_segment_t *rs = rs_alloc(vd, offset, asize, 0);
+	    rs != NULL; rs = list_remove_head(&stack)) {
+		vdev_t *v = rs->rs_vd;
 
-	vdev_indirect_mapping_entry_phys_t *mapping =
-	    vdev_indirect_mapping_entry_for_offset(vim, offset);
-
-	while (asize > 0) {
 		/*
-		 * Note: the vdev_indirect_mapping can not change while we
-		 * are running.  It only changes while the removal
-		 * is in progress, and then only from syncing context.
-		 * While a removal is in progress, this function is only
-		 * called for frees, which also only happen from syncing
-		 * context.
+		 * Note: this can be called from open context
+		 * (eg. zio_read()), so we need the rwlock to prevent
+		 * the mapping from being changed by condensing.
 		 */
+		rw_enter(&v->vdev_indirect_rwlock, RW_READER);
+		vdev_indirect_mapping_t *vim = v->vdev_indirect_mapping;
+		ASSERT3P(vim, !=, NULL);
 
-		uint64_t size = DVA_GET_ASIZE(&mapping->vimep_dst);
-		uint64_t dst_offset = DVA_GET_OFFSET(&mapping->vimep_dst);
-		uint64_t dst_vdev = DVA_GET_VDEV(&mapping->vimep_dst);
+		ASSERT(spa_config_held(spa, SCL_ALL, RW_READER) != 0);
+		ASSERT(rs->rs_asize > 0);
 
-		ASSERT3U(offset, >=, DVA_MAPPING_GET_SRC_OFFSET(mapping));
-		ASSERT3U(offset, <,
-		    DVA_MAPPING_GET_SRC_OFFSET(mapping) + size);
-		ASSERT3U(dst_vdev, !=, vd->vdev_id);
+		vdev_indirect_mapping_entry_phys_t *mapping =
+		    vdev_indirect_mapping_entry_for_offset(vim, rs->rs_offset);
+		ASSERT3P(mapping, !=, NULL);
 
-		uint64_t inner_offset = offset -
-		    DVA_MAPPING_GET_SRC_OFFSET(mapping);
-		uint64_t inner_size = MIN(asize, size - inner_offset);
+		while (rs->rs_asize > 0) {
+			/*
+			 * Note: the vdev_indirect_mapping can not change
+			 * while we are running.  It only changes while the
+			 * removal is in progress, and then only from syncing
+			 * context. While a removal is in progress, this
+			 * function is only called for frees, which also only
+			 * happen from syncing context.
+			 */
 
-		func(split_offset, vdev_lookup_top(spa, dst_vdev),
-		    dst_offset + inner_offset, inner_size, arg);
-		offset += inner_size;
-		asize -= inner_size;
-		split_offset += inner_size;
-		mapping++;
+			uint64_t size = DVA_GET_ASIZE(&mapping->vimep_dst);
+			uint64_t dst_offset =
+			    DVA_GET_OFFSET(&mapping->vimep_dst);
+			uint64_t dst_vdev = DVA_GET_VDEV(&mapping->vimep_dst);
+
+			ASSERT3U(rs->rs_offset, >=,
+			    DVA_MAPPING_GET_SRC_OFFSET(mapping));
+			ASSERT3U(rs->rs_offset, <,
+			    DVA_MAPPING_GET_SRC_OFFSET(mapping) + size);
+			ASSERT3U(dst_vdev, !=, v->vdev_id);
+
+			uint64_t inner_offset = rs->rs_offset -
+			    DVA_MAPPING_GET_SRC_OFFSET(mapping);
+			uint64_t inner_size =
+			    MIN(rs->rs_asize, size - inner_offset);
+
+			vdev_t *dst_v = vdev_lookup_top(spa, dst_vdev);
+			ASSERT3P(dst_v, !=, NULL);
+
+			if (dst_v->vdev_ops == &vdev_indirect_ops) {
+				list_insert_head(&stack,
+				    rs_alloc(dst_v, dst_offset + inner_offset,
+				    inner_size, rs->rs_split_offset));
+
+			}
+
+			if ((zfs_flags & ZFS_DEBUG_INDIRECT_REMAP) &&
+			    IS_P2ALIGNED(inner_size, 2 * SPA_MINBLOCKSIZE)) {
+				/*
+				 * Note: This clause exists only solely for
+				 * testing purposes. We use it to ensure that
+				 * split blocks work and that the callbacks
+				 * using them yield the same result if issued
+				 * in reverse order.
+				 */
+				uint64_t inner_half = inner_size / 2;
+
+				func(rs->rs_split_offset + inner_half, dst_v,
+				    dst_offset + inner_offset + inner_half,
+				    inner_half, arg);
+
+				func(rs->rs_split_offset, dst_v,
+				    dst_offset + inner_offset,
+				    inner_half, arg);
+			} else {
+				func(rs->rs_split_offset, dst_v,
+				    dst_offset + inner_offset,
+				    inner_size, arg);
+			}
+
+			rs->rs_offset += inner_size;
+			rs->rs_asize -= inner_size;
+			rs->rs_split_offset += inner_size;
+			mapping++;
+		}
+
+		rw_exit(&v->vdev_indirect_rwlock);
+		kmem_free(rs, sizeof (remap_segment_t));
 	}
-	rw_exit(&vd->vdev_indirect_rwlock);
+	list_destroy(&stack);
 }
 
 static void
@@ -900,15 +994,13 @@ vdev_indirect_io_start_cb(uint64_t split_offset, vdev_t *vd, uint64_t offset,
 
 	ASSERT3P(vd, !=, NULL);
 
-	/*
-	 * An indirect vdev can dereference to another indirect
-	 * vdev.  To limit the stack size, we ZIO_FLAG_DISPATCH
-	 * this to another thread.
-	 */
+	if (vd->vdev_ops == &vdev_indirect_ops)
+		return;
+
 	zio_nowait(zio_vdev_child_io(zio, NULL, vd, offset,
 	    abd_get_offset(zio->io_abd, split_offset),
-	    size, zio->io_type, zio->io_priority,
-	    ZIO_FLAG_DISPATCH, vdev_indirect_child_io_done, zio));
+	    size, zio->io_type, zio->io_priority, 0,
+	    vdev_indirect_child_io_done, zio));
 }
 
 static void

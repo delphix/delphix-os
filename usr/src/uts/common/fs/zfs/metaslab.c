@@ -3641,7 +3641,11 @@ metaslab_free_impl_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
 {
 	uint64_t *txgp = arg;
-	metaslab_free_impl(vd, offset, size, *txgp);
+
+	if (vd->vdev_ops->vdev_op_remap != NULL)
+		vdev_indirect_mark_obsolete(vd, offset, size, *txgp);
+	else
+		metaslab_free_impl(vd, offset, size, *txgp);
 }
 
 static void
@@ -3666,24 +3670,49 @@ metaslab_free_impl(vdev_t *vd, uint64_t offset, uint64_t size,
 		 */
 		free_from_removing_vdev(vd, offset, size, txg);
 	} else if (vd->vdev_ops->vdev_op_remap != NULL) {
+		vdev_indirect_mark_obsolete(vd, offset, size, txg);
 		vd->vdev_ops->vdev_op_remap(vd, offset, size,
 		    metaslab_free_impl_cb, &txg);
-		vdev_indirect_mark_obsolete(vd, offset, size, txg);
 	} else {
 		metaslab_free_concrete(vd, offset, size, txg);
 	}
 }
 
+typedef struct remap_blkptr_cb_arg {
+	blkptr_t *rbca_bp;
+	spa_remap_cb_t rbca_cb;
+	vdev_t *rbca_remap_vd;
+	uint64_t rbca_remap_offset;
+	void *rbca_cb_arg;
+} remap_blkptr_cb_arg_t;
+
 void
 remap_blkptr_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
 {
-	blkptr_t *bp = arg;
+	remap_blkptr_cb_arg_t *rbca = arg;
+	blkptr_t *bp = rbca->rbca_bp;
 
 	/* We can not remap split blocks. */
 	if (size != DVA_GET_ASIZE(&bp->blk_dva[0]))
 		return;
 	ASSERT0(inner_offset);
+
+	if (rbca->rbca_cb != NULL) {
+		/*
+		 * At this point we know that we are not handling split
+		 * blocks and we invoke the callback on the previous
+		 * vdev which must be indirect.
+		 */
+		ASSERT3P(rbca->rbca_remap_vd->vdev_ops, ==, &vdev_indirect_ops);
+
+		rbca->rbca_cb(rbca->rbca_remap_vd->vdev_id,
+		    rbca->rbca_remap_offset, size, rbca->rbca_cb_arg);
+
+		/* set up remap_blkptr_cb_arg for the next call */
+		rbca->rbca_remap_vd = vd;
+		rbca->rbca_remap_offset = offset;
+	}
 
 	/*
 	 * The phys birth time is that of dva[0].  This ensures that we know
@@ -3720,20 +3749,20 @@ remap_blkptr_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
 boolean_t
 spa_remap_blkptr(spa_t *spa, blkptr_t *bp, spa_remap_cb_t callback, void *arg)
 {
-	boolean_t rv = B_FALSE;
+	remap_blkptr_cb_arg_t rbca;
 
 	if (!zfs_remap_blkptr_enable)
-		return (rv);
+		return (B_FALSE);
 
 	if (!spa_feature_is_enabled(spa, SPA_FEATURE_OBSOLETE_COUNTS))
-		return (rv);
+		return (B_FALSE);
 
 	/*
 	 * Dedup BP's can not be remapped, because ddt_phys_select() depends
 	 * on DVA[0] being the same in the BP as in the DDT (dedup table).
 	 */
 	if (BP_GET_DEDUP(bp))
-		return (rv);
+		return (B_FALSE);
 
 	/*
 	 * Gang blocks can not be remapped, because
@@ -3742,46 +3771,47 @@ spa_remap_blkptr(spa_t *spa, blkptr_t *bp, spa_remap_cb_t callback, void *arg)
 	 * as the DVA[0] that we allocated for the GBH.
 	 */
 	if (BP_IS_GANG(bp))
-		return (rv);
+		return (B_FALSE);
 
 	/*
 	 * Embedded BP's have no DVA to remap.
 	 */
 	if (BP_GET_NDVAS(bp) < 1)
-		return (rv);
+		return (B_FALSE);
 
 	/*
-	 * Note: the indirect DVA may be remapped to a different
-	 * indirect vdev.  Therefore we loop until we either find
-	 * a concrete vdev or the vdev does not change (because
-	 * this is a split block).
-	 *
 	 * Note: we only remap dva[0].  If we remapped other dvas, we
 	 * would no longer know what their phys birth txg is.
 	 */
 	dva_t *dva = &bp->blk_dva[0];
-	for (;;) {
-		uint64_t offset = DVA_GET_OFFSET(dva);
-		uint64_t size = DVA_GET_ASIZE(dva);
-		vdev_t *vd = vdev_lookup_top(spa, DVA_GET_VDEV(dva));
-		if (vd->vdev_ops->vdev_op_remap == NULL)
-			break;
-		vd->vdev_ops->vdev_op_remap(vd, offset, size,
-		    remap_blkptr_cb, bp);
-		if (DVA_GET_VDEV(dva) == vd->vdev_id) {
-			/*
-			 * This dva could not be remapped because it
-			 * is a split block.
-			 */
-			break;
-		} else {
-			if (callback != NULL) {
-				callback(vd->vdev_id, offset, size, arg);
-			}
-			rv = B_TRUE;
-		}
-	}
-	return (rv);
+
+	uint64_t offset = DVA_GET_OFFSET(dva);
+	uint64_t size = DVA_GET_ASIZE(dva);
+	vdev_t *vd = vdev_lookup_top(spa, DVA_GET_VDEV(dva));
+
+	if (vd->vdev_ops->vdev_op_remap == NULL)
+		return (B_FALSE);
+
+	rbca.rbca_bp = bp;
+	rbca.rbca_cb = callback;
+	rbca.rbca_remap_vd = vd;
+	rbca.rbca_remap_offset = offset;
+	rbca.rbca_cb_arg = arg;
+
+	/*
+	 * remap_blkptr_cb() will be called in order for each level of
+	 * indirection, until a concrete vdev is reached or a split block is
+	 * encountered. old_vd and old_offset are updated within the callback
+	 * as we go from the one indirect vdev to the next one (either concrete
+	 * or indirect again) in that order.
+	 */
+	vd->vdev_ops->vdev_op_remap(vd, offset, size, remap_blkptr_cb, &rbca);
+
+	/* Check if the DVA wasn't remapped because it is a split block */
+	if (DVA_GET_VDEV(&rbca.rbca_bp->blk_dva[0]) == vd->vdev_id)
+		return (B_FALSE);
+
+	return (B_TRUE);
 }
 
 /*
@@ -3857,67 +3887,6 @@ metaslab_free_dva(spa_t *spa, const dva_t *dva, uint64_t txg)
 	metaslab_free_impl(vd, offset, size, txg);
 }
 
-typedef struct metaslab_claim_cb_arg_t {
-	uint64_t	mcca_txg;
-	int		mcca_error;
-} metaslab_claim_cb_arg_t;
-
-/* ARGSUSED */
-static void
-metaslab_claim_impl_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
-    uint64_t size, void *arg)
-{
-	metaslab_claim_cb_arg_t *mcca_arg = arg;
-	if (mcca_arg->mcca_error == 0) {
-		mcca_arg->mcca_error = metaslab_claim_impl(vd, offset, size,
-		    mcca_arg->mcca_txg);
-	}
-}
-
-static int
-metaslab_claim_concrete(vdev_t *vd, uint64_t offset, uint64_t size,
-    uint64_t txg)
-{
-	metaslab_t *msp;
-	spa_t *spa = vd->vdev_spa;
-	int error = 0;
-
-	if (offset >> vd->vdev_ms_shift >= vd->vdev_ms_count)
-		return (ENXIO);
-
-	ASSERT3P(vd->vdev_ms, !=, NULL);
-	msp = vd->vdev_ms[offset >> vd->vdev_ms_shift];
-
-	mutex_enter(&msp->ms_lock);
-
-	if ((txg != 0 && spa_writeable(spa)) || !msp->ms_loaded)
-		error = metaslab_activate(msp, METASLAB_WEIGHT_SECONDARY);
-
-	if (error == 0 && !range_tree_contains(msp->ms_tree, offset, size))
-		error = SET_ERROR(ENOENT);
-
-	if (error || txg == 0) {	/* txg == 0 indicates dry run */
-		mutex_exit(&msp->ms_lock);
-		return (error);
-	}
-
-	VERIFY(!msp->ms_condensing);
-	VERIFY0(P2PHASE(offset, 1ULL << vd->vdev_ashift));
-	VERIFY0(P2PHASE(size, 1ULL << vd->vdev_ashift));
-	VERIFY3U(range_tree_space(msp->ms_tree) - size, <=, msp->ms_size);
-	range_tree_remove(msp->ms_tree, offset, size);
-
-	if (spa_writeable(spa)) {	/* don't dirty if we're zdb(1M) */
-		if (range_tree_space(msp->ms_alloctree[txg & TXG_MASK]) == 0)
-			vdev_dirty(vd, VDD_METASLAB, msp, txg);
-		range_tree_add(msp->ms_alloctree[txg & TXG_MASK], offset, size);
-	}
-
-	mutex_exit(&msp->ms_lock);
-
-	return (0);
-}
-
 /*
  * Reserve some allocation slots. The reservation system must be called
  * before we call into the allocator. If there aren't any available slots
@@ -3964,6 +3933,68 @@ metaslab_class_throttle_unreserve(metaslab_class_t *mc, int slots, zio_t *zio)
 		(void) refcount_remove(&mc->mc_alloc_slots, zio);
 	}
 	mutex_exit(&mc->mc_lock);
+}
+
+static int
+metaslab_claim_concrete(vdev_t *vd, uint64_t offset, uint64_t size,
+    uint64_t txg)
+{
+	metaslab_t *msp;
+	spa_t *spa = vd->vdev_spa;
+	int error = 0;
+
+	if (offset >> vd->vdev_ms_shift >= vd->vdev_ms_count)
+		return (ENXIO);
+
+	ASSERT3P(vd->vdev_ms, !=, NULL);
+	msp = vd->vdev_ms[offset >> vd->vdev_ms_shift];
+
+	mutex_enter(&msp->ms_lock);
+
+	if ((txg != 0 && spa_writeable(spa)) || !msp->ms_loaded)
+		error = metaslab_activate(msp, METASLAB_WEIGHT_SECONDARY);
+
+	if (error == 0 && !range_tree_contains(msp->ms_tree, offset, size))
+		error = SET_ERROR(ENOENT);
+
+	if (error || txg == 0) {	/* txg == 0 indicates dry run */
+		mutex_exit(&msp->ms_lock);
+		return (error);
+	}
+
+	VERIFY(!msp->ms_condensing);
+	VERIFY0(P2PHASE(offset, 1ULL << vd->vdev_ashift));
+	VERIFY0(P2PHASE(size, 1ULL << vd->vdev_ashift));
+	VERIFY3U(range_tree_space(msp->ms_tree) - size, <=, msp->ms_size);
+	range_tree_remove(msp->ms_tree, offset, size);
+
+	if (spa_writeable(spa)) {	/* don't dirty if we're zdb(1M) */
+		if (range_tree_space(msp->ms_alloctree[txg & TXG_MASK]) == 0)
+			vdev_dirty(vd, VDD_METASLAB, msp, txg);
+		range_tree_add(msp->ms_alloctree[txg & TXG_MASK], offset, size);
+	}
+
+	mutex_exit(&msp->ms_lock);
+
+	return (0);
+}
+
+typedef struct metaslab_claim_cb_arg_t {
+	uint64_t	mcca_txg;
+	int		mcca_error;
+} metaslab_claim_cb_arg_t;
+
+/* ARGSUSED */
+static void
+metaslab_claim_impl_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
+    uint64_t size, void *arg)
+{
+	metaslab_claim_cb_arg_t *mcca_arg = arg;
+
+	if (mcca_arg->mcca_error == 0) {
+		mcca_arg->mcca_error = metaslab_claim_concrete(vd, offset,
+		    size, mcca_arg->mcca_txg);
+	}
 }
 
 int
@@ -4134,6 +4165,9 @@ static void
 metaslab_check_free_impl_cb(uint64_t inner, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
 {
+	if (vd->vdev_ops == &vdev_indirect_ops)
+		return;
+
 	metaslab_check_free_impl(vd, offset, size);
 }
 

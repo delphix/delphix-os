@@ -2934,6 +2934,14 @@ static void
 claim_segment_impl_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
 {
+	/*
+	 * This callback was called through a remap from
+	 * a device being removed. Therefore, the vdev that
+	 * this callback is applied to is a concrete
+	 * vdev.
+	 */
+	ASSERT(vdev_is_concrete(vd));
+
 	VERIFY0(metaslab_claim_impl(vd, offset, size,
 	    spa_first_txg(vd->vdev_spa)));
 }

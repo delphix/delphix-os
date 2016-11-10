@@ -1016,9 +1016,6 @@ zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
 	    done != NULL);
 	ASSERT3P(vd, !=, NULL);
 
-	if (flags & ZIO_FLAG_DISPATCH)
-		pipeline |= ZIO_STAGE_ISSUE_ASYNC;
-
 	/*
 	 * In the common case, where the parent zio was to a normal vdev,
 	 * the child zio must be to a child vdev of that vdev.  Otherwise,

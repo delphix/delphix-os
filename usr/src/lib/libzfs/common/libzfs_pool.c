@@ -3184,12 +3184,6 @@ zpool_vdev_remove(zpool_handle_t *zhp, const char *path)
 		(void) zfs_error(hdl, EZFS_BUSY, msg);
 		break;
 
-	case EOVERFLOW:
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "Maximum number of removed devices has been reached"));
-		(void) zfs_error(hdl, EZFS_BUSY, msg);
-		break;
-
 	default:
 		(void) zpool_standard_error(hdl, errno, msg);
 	}
