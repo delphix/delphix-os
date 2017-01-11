@@ -24,7 +24,7 @@
  * Copyright (c) 1990 Mentat Inc.
  * Copyright (c) 2012 Joyent, Inc. All rights reserved.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -1514,11 +1514,13 @@ icmp_inbound_v4(mblk_t *mp, ip_recv_attr_t *ira)
 	case ICMP_INFO_REPLY:
 		break;
 	case ICMP_ADDRESS_MASK_REQUEST:
-		if (ira->ira_flags & IRAF_MULTIBROADCAST) {
-			interested =
-			    ipst->ips_ip_respond_to_address_mask_broadcast;
-		} else {
-			interested = B_TRUE;
+		if (ipst->ips_ip_resp_to_addr_mask) {
+			if (ira->ira_flags & IRAF_MULTIBROADCAST) {
+				interested =
+				    ipst->ips_ip_resp_to_addr_mask_bcast;
+			} else {
+				interested = B_TRUE;
+			}
 		}
 		if (!interested) {
 			/* We never pass these to RAW sockets */

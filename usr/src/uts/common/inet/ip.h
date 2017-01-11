@@ -24,7 +24,7 @@
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  */
 
@@ -2956,8 +2956,7 @@ extern vmem_t *ip_minor_arena_la;
  * /etc/rc2.d/S69inet script.
  */
 
-#define	ips_ip_respond_to_address_mask_broadcast \
-					ips_propinfo_tbl[0].prop_cur_bval
+#define	ips_ip_resp_to_addr_mask_bcast	ips_propinfo_tbl[0].prop_cur_bval
 #define	ips_ip_g_resp_to_echo_bcast	ips_propinfo_tbl[1].prop_cur_bval
 #define	ips_ip_g_resp_to_echo_mcast	ips_propinfo_tbl[2].prop_cur_bval
 #define	ips_ip_g_resp_to_timestamp	ips_propinfo_tbl[3].prop_cur_bval
@@ -3047,7 +3046,7 @@ extern vmem_t *ip_minor_arena_la;
 #define	ips_ip_dce_reclaim_threshold	ips_propinfo_tbl[83].prop_cur_uval
 #define	ips_ip_accept_src_routed	ips_propinfo_tbl[84].prop_cur_bval
 #define	ips_ip_send_src_routed		ips_propinfo_tbl[85].prop_cur_bval
-
+#define	ips_ip_resp_to_addr_mask	ips_propinfo_tbl[86].prop_cur_bval
 
 extern int	dohwcksum;	/* use h/w cksum if supported by the h/w */
 #ifdef ZC_TEST

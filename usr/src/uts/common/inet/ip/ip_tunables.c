@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
 /* Copyright (c) 1990 Mentat Inc. */
@@ -920,6 +920,11 @@ mod_prop_info_t ip_propinfo_tbl[] = {
 	    {B_FALSE}, {B_FALSE} },
 
 	{ "_send_src_routed", MOD_PROTO_IP,
+	    mod_set_boolean, mod_get_boolean,
+	    {B_FALSE}, {B_FALSE} },
+
+	/* The unicast buddy for _respond_to_address_mask_broadcast */
+	{ "_respond_to_address_mask", MOD_PROTO_IP,
 	    mod_set_boolean, mod_get_boolean,
 	    {B_FALSE}, {B_FALSE} },
 
