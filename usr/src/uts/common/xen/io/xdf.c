@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
  */
 
 /*
@@ -3150,7 +3150,7 @@ xdf_watch_hp_status_cb(dev_info_t *dip, const char *path, void *arg)
 
 static int
 xdf_prop_op(dev_t dev, dev_info_t *dip, ddi_prop_op_t prop_op, int flags,
-	char *name, caddr_t valuep, int *lengthp)
+    char *name, caddr_t valuep, int *lengthp)
 {
 	xdf_t	*vdp = ddi_get_soft_state(xdf_ssp, ddi_get_instance(dip));
 
@@ -3399,6 +3399,7 @@ xdf_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	xdf_t			*vdp;
 	char			*oename, *xsname, *str;
 	clock_t			timeout;
+	int			err = 0;
 
 	if ((n = ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_NOTPROM,
 	    "xdf_debug", 0)) != 0)
@@ -3560,10 +3561,16 @@ xdf_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * alternate cylinders so that we have a place to write the
 	 * devid.
 	 */
-	if (cmlb_validate(vdp->xdf_vd_lbl, 0, 0) != 0) {
-		cmn_err(CE_WARN, "xdf@%s: attach failed, cmlb_validate failed",
-		    ddi_get_name_addr(dip));
-		goto errout1;
+	if ((err = cmlb_validate(vdp->xdf_vd_lbl, 0, 0)) != 0) {
+		cmn_err(CE_NOTE,
+		    "xdf@%s: cmlb_validate failed: %d",
+		    ddi_get_name_addr(dip), err);
+		/*
+		 * We can carry on even if cmlb_validate() returns EINVAL here,
+		 * as we'll rewrite the disk label anyway.
+		 */
+		if (err != EINVAL)
+			goto errout1;
 	}
 
 	/*
