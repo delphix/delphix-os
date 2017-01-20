@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -38,7 +39,9 @@
 #include <sys/file.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <smfcfg.h>
 #include <rpcsvc/mount.h>
+#include <rpcsvc/daemon_utils.h>
 #include <sys/pathconf.h>
 #include <sys/systeminfo.h>
 #include <sys/utsname.h>
@@ -249,9 +252,30 @@ xdr_mntlistencode(XDR *xdrs, HASHSET *mntlist)
 	return (TRUE);
 }
 
+/*
+ * Replies with a dump of all mounted filesystems. See RFC 1094 section A.5.3.
+ * This procedure can be restricted to localhost-only by setting
+ * "mountd_remote_dump" to "false" with sharectl.
+ */
 void
 mntlist_send(SVCXPRT *transp)
 {
+	int ret;
+	boolean_t remote_dump_allowed;
+
+	ret = nfs_smf_get_bprop("mountd_remote_dump", &remote_dump_allowed,
+	    DEFAULT_INSTANCE, NFSD);
+	if (ret != SA_OK) {
+		syslog(LOG_ERR, "Reading of mountd_remote_dump from SMF "
+		    "failed");
+		svcerr_auth(transp, AUTH_FAILED);
+		return;
+	}
+	if (!remote_dump_allowed && !is_transport_loopback(transp)) {
+		svcerr_auth(transp, AUTH_TOOWEAK);
+		return;
+	}
+
 	(void) rw_rdlock(&rmtab_lock);
 
 	errno = 0;

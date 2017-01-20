@@ -2566,7 +2566,15 @@ struct proto_option_defs {
 	{"mountd_port",
 	    "mountd_port", PROTO_OPT_MOUNTD_PORT,
 	    OPT_TYPE_NUMBER, 0, SVC_NFSD|SVC_MOUNTD, 1, UINT16_MAX},
-#define	PROTO_OPT_STATD_PORT			17
+#define	PROTO_OPT_MOUNTD_REMOTE_DUMP		18
+	{"mountd_remote_dump",
+	    "mountd_remote_dump", PROTO_OPT_MOUNTD_REMOTE_DUMP,
+	    OPT_TYPE_BOOLEAN, B_TRUE, SVC_MOUNTD, B_FALSE, B_TRUE},
+#define	PROTO_OPT_MOUNTD_REMOTE_EXPORT		19
+	{"mountd_remote_export",
+	    "mountd_remote_export", PROTO_OPT_MOUNTD_REMOTE_EXPORT,
+	    OPT_TYPE_BOOLEAN, B_TRUE, SVC_MOUNTD, B_FALSE, B_TRUE},
+#define	PROTO_OPT_STATD_PORT			20
 	{"statd_port",
 	    "statd_port", PROTO_OPT_STATD_PORT,
 	    OPT_TYPE_NUMBER, 0, SVC_NFSD|SVC_STATD, 1, UINT16_MAX},

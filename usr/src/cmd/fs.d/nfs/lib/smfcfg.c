@@ -22,6 +22,7 @@
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -378,6 +379,29 @@ nfs_smf_get_iprop(char *prop_name, int *rvp, char *instance,
 	if (errno != 0)
 		return (SA_BAD_VALUE);
 	*rvp = val;
+	return (SA_OK);
+}
+
+/* Get a boolean property */
+int
+nfs_smf_get_bprop(char *prop_name, boolean_t *rvp, char *instance,
+    char *svc_name)
+{
+	char propbuf[32];
+	int bufsz, rc;
+
+	bufsz = sizeof (propbuf);
+	rc = fs_smf_get_prop(NFS_SMF, prop_name, propbuf,
+	    instance, SCF_TYPE_BOOLEAN, svc_name, &bufsz);
+	if (rc != SA_OK)
+		return (rc);
+	errno = 0;
+	if (strcmp(propbuf, "true") == 0)
+		*rvp = B_TRUE;
+	else if (strcmp(propbuf, "false") == 0)
+		*rvp = B_FALSE;
+	else
+		return (SA_BAD_VALUE);
 	return (SA_OK);
 }
 

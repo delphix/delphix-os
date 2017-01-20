@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -38,7 +38,9 @@
 #include <sys/file.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <smfcfg.h>
 #include <rpcsvc/mount.h>
+#include <rpcsvc/daemon_utils.h>
 #include <sys/pathconf.h>
 #include <sys/systeminfo.h>
 #include <sys/utsname.h>
@@ -46,6 +48,8 @@
 #include <locale.h>
 #include <unistd.h>
 #include <thread.h>
+#include <netconfig.h>
+#include <rpc/auth.h>
 #include <sharefs/share.h>
 #include <sharefs/sharetab.h>
 #include "../lib/sharetab.h"
@@ -65,7 +69,9 @@ static char *optlist[] = {
 };
 
 /*
- * Send current export list to a client
+ * Send current export list to a client. See RFC 1094 section A.5.6. This
+ * procedure can be restricted to localhost-only by setting
+ * "mountd_remote_export" to "false" with sharectl.
  */
 void
 export(struct svc_req *rqstp)
@@ -78,10 +84,26 @@ export(struct svc_req *rqstp)
 	struct share *sh;
 	struct sh_list *shp;
 	char *gr, *p, *opts, *val, *lasts;
+	int ret;
+	boolean_t remote_export_allowed;
 
 	int export_to_everyone;
 
 	transp = rqstp->rq_xprt;
+
+	ret = nfs_smf_get_bprop("mountd_remote_export", &remote_export_allowed,
+	    DEFAULT_INSTANCE, NFSD);
+	if (ret != SA_OK) {
+		syslog(LOG_ERR, "Reading of mountd_remote_export from SMF "
+		    "failed");
+		svcerr_auth(transp, AUTH_FAILED);
+		return;
+	}
+	if (!remote_export_allowed && !is_transport_loopback(transp)) {
+		svcerr_auth(transp, AUTH_TOOWEAK);
+		return;
+	}
+
 	if (!svc_getargs(transp, xdr_void, NULL)) {
 		svcerr_decode(transp);
 		return;

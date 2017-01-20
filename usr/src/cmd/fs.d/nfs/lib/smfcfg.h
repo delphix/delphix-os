@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #ifndef	_SMFCFG_H
@@ -91,6 +92,7 @@ typedef struct fs_smfhandle {
 #define	SMF_NO_PGTYPE		3
 
 extern int nfs_smf_get_iprop(char *, int *, char *, scf_type_t, char *);
+extern int nfs_smf_get_bprop(char *, boolean_t *, char *, char *);
 extern int nfs_smf_get_prop(char *, char *, char *, scf_type_t, char *, int *);
 extern int fs_smf_get_prop(smf_fstype_t,  char *, char *, char *, scf_type_t,
 	char *, int *);

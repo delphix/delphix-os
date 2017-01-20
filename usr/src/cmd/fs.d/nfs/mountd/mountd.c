@@ -3254,3 +3254,31 @@ get_client_template(struct sockaddr *sock)
 		return (NULL);
 	}
 }
+
+/*
+ * Returns true if the given transport is a loopback transport.
+ */
+boolean_t
+is_transport_loopback(SVCXPRT *transp)
+{
+	struct netconfig *nconf;
+
+	if (transp->xp_netid == NULL ||
+	    (nconf = getnetconfigent(transp->xp_netid)) == NULL) {
+		return (B_FALSE);
+	}
+	if (strcmp(nconf->nc_protofmly, NC_LOOPBACK) == 0) {
+		return (B_TRUE);
+	} else if (strcmp(nconf->nc_protofmly, NC_INET) == 0) {
+		struct sockaddr_in *sin =
+		    (struct sockaddr_in *)transp->xp_rtaddr.buf;
+		if (ntohl(sin->sin_addr.s_addr) == INADDR_LOOPBACK)
+			return (B_TRUE);
+	} else if (strcmp(nconf->nc_protofmly, NC_INET6) == 0) {
+		struct sockaddr_in6 *sin6 =
+		    (struct sockaddr_in6 *)transp->xp_rtaddr.buf;
+		if (IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr))
+			return (B_TRUE);
+	}
+	return (B_FALSE);
+}

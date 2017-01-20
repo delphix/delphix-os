@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -53,6 +54,7 @@ extern void export(struct svc_req *);
 extern void nfsauth_func(void *, char *, size_t, door_desc_t *, uint_t);
 extern char *inet_ntoa_r(struct in_addr, char *);
 extern int nfs_getfh(char *, int, int *, char *);
+extern boolean_t is_transport_loopback(SVCXPRT *);
 
 extern void nfsauth_prog(struct svc_req *, SVCXPRT *);
 
