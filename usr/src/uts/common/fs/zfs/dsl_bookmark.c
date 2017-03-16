@@ -13,7 +13,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -509,8 +509,9 @@ dsl_bookmark_fetch_props(dsl_pool_t *dp, zfs_bookmark_phys_t *bmark_phys,
 		}
 	}
 
-	if (props == NULL || nvlist_exists(props, "redact_snaps") ||
-	    nvlist_exists(props, "redact_complete")) {
+	if ((props == NULL || nvlist_exists(props, "redact_snaps") ||
+	    nvlist_exists(props, "redact_complete")) &&
+	    bmark_phys->zbm_redaction_obj != 0) {
 		redaction_list_t *rl;
 		int err = dsl_redaction_list_hold_obj(dp,
 		    bmark_phys->zbm_redaction_obj, FTAG, &rl);

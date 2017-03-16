@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
@@ -2329,8 +2329,9 @@ get_rsnaps_string(zfs_handle_t *zhp, char *propbuf, size_t proplen)
 	uint64_t *snaps;
 	uint_t nsnaps;
 
-	value = fnvlist_lookup_nvlist(zhp->zfs_props,
-	    zfs_prop_to_name(ZFS_PROP_REDACT_SNAPS));
+	if (nvlist_lookup_nvlist(zhp->zfs_props,
+	    zfs_prop_to_name(ZFS_PROP_REDACT_SNAPS), &value) != 0)
+		return (-1);
 	if (nvlist_lookup_uint64_array(value, ZPROP_VALUE, &snaps,
 	    &nsnaps) != 0)
 		return (-1);
