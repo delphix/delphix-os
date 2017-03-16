@@ -2126,6 +2126,18 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		dsl_dir_stats(ds->ds_dir, nv);
 	}
 
+	uint64_t nsnaps;
+	uint64_t *snaps;
+	nvlist_t *propval = fnvlist_alloc();
+	if (dsl_dataset_get_uint64_array_feature(ds,
+	    SPA_FEATURE_REDACTED_DATASETS, &nsnaps, &snaps)) {
+		fnvlist_add_uint64_array(propval, ZPROP_VALUE, snaps,
+		    nsnaps);
+	}
+	fnvlist_add_nvlist(nv,
+	    zfs_prop_to_name(ZFS_PROP_REDACT_SNAPS), propval);
+	nvlist_free(propval);
+
 	dsl_dataset_space(ds, &refd, &avail, &uobjs, &aobjs);
 	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_AVAILABLE, avail);
 	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_REFERENCED, refd);

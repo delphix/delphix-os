@@ -27,7 +27,7 @@
 .\" Copyright (c) 2014 by Adam Stevko. All rights reserved.
 .\" Copyright 2015 Nexenta Systems, Inc.  All Rights Reserved.
 .\"
-.Dd April 27, 2016
+.Dd September 16, 2016
 .Dt ZFS 1M
 .Os
 .Sh NAME
@@ -114,7 +114,7 @@
 .Oo Fl s Ar source Ns Oo , Ns Ar source Oc Ns ... Oc
 .Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
 .Cm all | Ar property Ns Oo , Ns Ar property Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns ...
+.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns | Ns Ar bookmark Ns ...
 .Nm
 .Cm inherit
 .Op Fl rS
@@ -618,6 +618,10 @@ property.
 For filesystems or volumes which have saved partially-completed state from
 .Sy zfs receive Fl s No Ns , this opaque token can be provided to Sy zfs send Fl t
 .No to resume and complete the Sy zfs receive.
+.It Sy redact_snaps
+For bookmarks, this is the list of snapshot guids the bookmark contains a redaction
+list for.  For snapshots, this is the list of snapshot guids the snapshot is
+redacted with respect to.
 .It Sy referenced
 The amount of data that is accessible by this dataset, which may or may not be
 shared with other datasets in the pool. When a snapshot or clone is created, it
@@ -2181,7 +2185,7 @@ section.
 .Oo Fl s Ar source Ns Oo , Ns Ar source Oc Ns ... Oc
 .Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
 .Cm all | Ar property Ns Oo , Ns Ar property Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns ...
+.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns | Ns Ar bookmark Ns ...
 .Xc
 Displays properties for the given datasets. If no datasets are specified, then
 the command displays properties for all datasets on the system. For each

@@ -139,7 +139,7 @@ zfs_validate_name(libzfs_handle_t *hdl, const char *path, int type,
 	char what;
 
 	(void) zfs_prop_get_table();
-	if (dataset_namecheck(path, &why, &what) != 0) {
+	if (entity_namecheck(path, &why, &what) != 0) {
 		if (hdl != NULL) {
 			switch (why) {
 			case NAME_ERR_TOOLONG:
@@ -168,9 +168,10 @@ zfs_validate_name(libzfs_handle_t *hdl, const char *path, int type,
 				    "'%c' in name"), what);
 				break;
 
-			case NAME_ERR_MULTIPLE_AT:
+			case NAME_ERR_MULTIPLE_DELIMITERS:
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "multiple '@' delimiters in name"));
+				    "multiple '@' and/or '#' delimiters in "
+				    "name"));
 				break;
 
 			case NAME_ERR_NOLETTER:
@@ -196,7 +197,7 @@ zfs_validate_name(libzfs_handle_t *hdl, const char *path, int type,
 	if (!(type & ZFS_TYPE_SNAPSHOT) && strchr(path, '@') != NULL) {
 		if (hdl != NULL)
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "snapshot delimiter '@' in filesystem name"));
+			    "snapshot delimiter '@' is not expected here"));
 		return (0);
 	}
 
@@ -204,6 +205,20 @@ zfs_validate_name(libzfs_handle_t *hdl, const char *path, int type,
 		if (hdl != NULL)
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "missing '@' delimiter in snapshot name"));
+		return (0);
+	}
+
+	if (!(type & ZFS_TYPE_BOOKMARK) && strchr(path, '#') != NULL) {
+		if (hdl != NULL)
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "bookmark delimiter '#' is not expected here"));
+		return (0);
+	}
+
+	if (type == ZFS_TYPE_BOOKMARK && strchr(path, '#') == NULL) {
+		if (hdl != NULL)
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "missing '#' delimiter in bookmark name"));
 		return (0);
 	}
 
@@ -631,8 +646,36 @@ make_bookmark_handle(zfs_handle_t *parent, const char *path,
 	return (zhp);
 }
 
+struct zfs_open_bookmarks_cb_data {
+	const char *path;
+	zfs_handle_t *zhp;
+};
+
+static int
+zfs_open_bookmarks_cb(zfs_handle_t *zhp, void *data)
+{
+	struct zfs_open_bookmarks_cb_data *dp = data;
+
+	/*
+	 * Is it the one we are looking for?
+	 */
+	if (strcmp(dp->path, zfs_get_name(zhp)) == 0) {
+		/*
+		 * We found it.  Save it and let the caller know we are done.
+		 */
+		dp->zhp = zhp;
+		return (EEXIST);
+	}
+
+	/*
+	 * Not found.  Close the handle and ask for another one.
+	 */
+	zfs_close(zhp);
+	return (0);
+}
+
 /*
- * Opens the given snapshot, filesystem, or volume.   The 'types'
+ * Opens the given snapshot, bookmark, filesystem, or volume.   The 'types'
  * argument is a mask of acceptable types.  The function will print an
  * appropriate error message and return NULL if it can't be opened.
  */
@@ -641,6 +684,7 @@ zfs_open(libzfs_handle_t *hdl, const char *path, int types)
 {
 	zfs_handle_t *zhp;
 	char errbuf[1024];
+	char *bookp;
 
 	(void) snprintf(errbuf, sizeof (errbuf),
 	    dgettext(TEXT_DOMAIN, "cannot open '%s'"), path);
@@ -648,20 +692,68 @@ zfs_open(libzfs_handle_t *hdl, const char *path, int types)
 	/*
 	 * Validate the name before we even try to open it.
 	 */
-	if (!zfs_validate_name(hdl, path, ZFS_TYPE_DATASET, B_FALSE)) {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "invalid dataset name"));
+	if (!zfs_validate_name(hdl, path, types, B_FALSE)) {
 		(void) zfs_error(hdl, EZFS_INVALIDNAME, errbuf);
 		return (NULL);
 	}
 
 	/*
-	 * Try to get stats for the dataset, which will tell us if it exists.
+	 * Bookmarks needs to be handled separately.
 	 */
-	errno = 0;
-	if ((zhp = make_dataset_handle(hdl, path)) == NULL) {
-		(void) zfs_standard_error(hdl, errno, errbuf);
-		return (NULL);
+	bookp = strchr(path, '#');
+	if (bookp == NULL) {
+		/*
+		 * Try to get stats for the dataset, which will tell us if it
+		 * exists.
+		 */
+		errno = 0;
+		if ((zhp = make_dataset_handle(hdl, path)) == NULL) {
+			(void) zfs_standard_error(hdl, errno, errbuf);
+			return (NULL);
+		}
+	} else {
+		char dsname[ZFS_MAX_DATASET_NAME_LEN];
+		zfs_handle_t *pzhp;
+		struct zfs_open_bookmarks_cb_data cb_data = {path, NULL};
+
+		/*
+		 * We need to cut out '#' and everything after '#'
+		 * to get the parent dataset name only.
+		 */
+		assert(bookp - path < sizeof (dsname));
+		(void) strncpy(dsname, path, bookp - path);
+		dsname[bookp - path] = '\0';
+
+		/*
+		 * Create handle for the parent dataset.
+		 */
+		errno = 0;
+		if ((pzhp = make_dataset_handle(hdl, dsname)) == NULL) {
+			(void) zfs_standard_error(hdl, errno, errbuf);
+			return (NULL);
+		}
+
+		/*
+		 * Iterate bookmarks to find the right one.
+		 */
+		errno = 0;
+		if ((zfs_iter_bookmarks(pzhp, zfs_open_bookmarks_cb,
+		    &cb_data) == 0) && (cb_data.zhp == NULL)) {
+			(void) zfs_error(hdl, EZFS_NOENT, errbuf);
+			zfs_close(pzhp);
+			return (NULL);
+		}
+		if (cb_data.zhp == NULL) {
+			(void) zfs_standard_error(hdl, errno, errbuf);
+			zfs_close(pzhp);
+			return (NULL);
+		}
+		zhp = cb_data.zhp;
+
+		/*
+		 * Cleanup.
+		 */
+		zfs_close(pzhp);
 	}
 
 	if (!(types & zhp->zfs_type)) {
@@ -2230,6 +2322,36 @@ zfs_get_clones_nvl(zfs_handle_t *zhp)
 	return (value);
 }
 
+static int
+get_rsnaps_string(zfs_handle_t *zhp, char *propbuf, size_t proplen)
+{
+	nvlist_t *value;
+	uint64_t *snaps;
+	uint_t nsnaps;
+
+	value = fnvlist_lookup_nvlist(zhp->zfs_props,
+	    zfs_prop_to_name(ZFS_PROP_REDACT_SNAPS));
+	if (nvlist_lookup_uint64_array(value, ZPROP_VALUE, &snaps,
+	    &nsnaps) != 0)
+		return (-1);
+	if (nsnaps == 0) {
+		/* There's no redaction snapshots; pass a special value back */
+		(void) snprintf(propbuf, proplen, "none");
+		return (0);
+	}
+	propbuf[0] = '\0';
+	for (int i = 0; i < nsnaps; i++) {
+		char buf[128];
+		if (propbuf[0] != '\0')
+			(void) strlcat(propbuf, ",", proplen);
+		(void) snprintf(buf, sizeof (buf), "%llu",
+		    (u_longlong_t)snaps[i]);
+		(void) strlcat(propbuf, buf, proplen);
+	}
+
+	return (0);
+}
+
 /*
  * Retrieve a property from the given object.  If 'literal' is specified, then
  * numbers are left as exact values.  Otherwise, numbers are converted to a
@@ -2352,6 +2474,11 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 		if (str == NULL)
 			return (-1);
 		(void) strlcpy(propbuf, str, proplen);
+		break;
+
+	case ZFS_PROP_REDACT_SNAPS:
+		if (get_rsnaps_string(zhp, propbuf, proplen) != 0)
+			return (-1);
 		break;
 
 	case ZFS_PROP_CLONES:
