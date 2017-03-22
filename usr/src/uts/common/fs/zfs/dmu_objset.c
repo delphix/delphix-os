@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -2239,4 +2239,21 @@ dmu_fsname(const char *snapname, char *buf)
 		return (SET_ERROR(ENAMETOOLONG));
 	(void) strlcpy(buf, snapname, atp - snapname + 1);
 	return (0);
+}
+
+/*
+ * Call when we think we're going to write/free space in open context to track
+ * the amount of dirty data in the open txg, which is also the amount
+ * of memory that can not be evicted until this txg syncs.
+ */
+void
+dmu_objset_willuse_space(objset_t *os, int64_t space, dmu_tx_t *tx)
+{
+	dsl_dataset_t *ds = os->os_dsl_dataset;
+	int64_t aspace = spa_get_worst_case_asize(os->os_spa, space);
+
+	if (ds != NULL) {
+		dsl_dir_willuse_space(ds->ds_dir, aspace, tx);
+		dsl_pool_dirty_space(dmu_tx_pool(tx), space, tx);
+	}
 }

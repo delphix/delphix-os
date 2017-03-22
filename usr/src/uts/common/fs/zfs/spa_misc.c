@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -1682,7 +1682,7 @@ spa_freeze_txg(spa_t *spa)
 
 /* ARGSUSED */
 uint64_t
-spa_get_asize(spa_t *spa, uint64_t lsize)
+spa_get_worst_case_asize(spa_t *spa, uint64_t lsize)
 {
 	return (lsize * spa_asize_inflation);
 }

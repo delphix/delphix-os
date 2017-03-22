@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -1839,25 +1839,6 @@ dnode_diduse_space(dnode_t *dn, int64_t delta)
 		dn->dn_phys->dn_flags |= DNODE_FLAG_USED_BYTES;
 	}
 	mutex_exit(&dn->dn_mtx);
-}
-
-/*
- * Call when we think we're going to write/free space in open context to track
- * the amount of memory in use by the currently open txg.
- */
-void
-dnode_willuse_space(dnode_t *dn, int64_t space, dmu_tx_t *tx)
-{
-	objset_t *os = dn->dn_objset;
-	dsl_dataset_t *ds = os->os_dsl_dataset;
-	int64_t aspace = spa_get_asize(os->os_spa, space);
-
-	if (ds != NULL) {
-		dsl_dir_willuse_space(ds->ds_dir, aspace, tx);
-		dsl_pool_dirty_space(dmu_tx_pool(tx), space, tx);
-	}
-
-	dmu_tx_willuse_space(tx, aspace);
 }
 
 /*
