@@ -22,7 +22,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -230,4 +230,17 @@ function redacted_cleanup
 
 	echo "zfs_allow_redacted_dataset_mount/W 0" | log_must mdb -kw
 	rm -f $(get_prop mountpoint $POOL)/tmp/*
+}
+
+# Retrieve the redaction list of a bookmark or snapshot, using
+# the redact_snaps property.
+function get_guid_list
+{
+	typeset filename=$1
+	typeset dataset=$2
+
+	guid_list=$(get_prop redact_snaps $dataset)
+	for guid in $(echo $guid_list | tr ',' ' '); do
+		echo $guid
+	done | sort >$filename
 }
