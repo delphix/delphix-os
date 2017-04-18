@@ -3883,7 +3883,7 @@ dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
 			    FTAG);
 		}
 
-		if (dspp.redact_data.rdl.numredactsnaps != 0) {
+		if (dspp.redact_data.rdl.redactsnaparr != NULL) {
 			kmem_free(dspp.redact_data.rdl.redactsnaparr,
 			    fnvlist_num_pairs(redactsnaps) *
 			    sizeof (dsl_dataset_t *));
