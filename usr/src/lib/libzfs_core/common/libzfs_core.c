@@ -997,3 +997,31 @@ lzc_initialize(const char *poolname, pool_initialize_func_t cmd_type,
 
 	return (error);
 }
+
+/*
+ * Set the nexbtoot configuration of the given pool.
+ */
+int
+lzc_set_nextboot(const char *pool, const char *command, const char *env,
+    uint32_t maxboots)
+{
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_string(args, "command", command);
+	fnvlist_add_string(args, "envmap", env);
+	fnvlist_add_uint32(args, "maxboots", maxboots);
+	int error = lzc_ioctl(ZFS_IOC_SET_NEXTBOOT, pool, args, NULL);
+	fnvlist_free(args);
+	return (error);
+}
+
+/*
+ * Get the nextboot configuration of the given pool.
+ */
+int
+lzc_get_nextboot(const char *pool, nvlist_t **outnvl)
+{
+	nvlist_t *args = fnvlist_alloc();
+	int error = lzc_ioctl(ZFS_IOC_GET_NEXTBOOT, pool, args, outnvl);
+	fnvlist_free(args);
+	return (error);
+}

@@ -1144,6 +1144,18 @@ hsfs_getapage(
 
 	/* file data size */
 	filsiz = hp->hs_dirent.ext_size;
+	if (off >= filsiz) {
+		io_off = off;
+		io_len = PAGESIZE;
+		pp = page_create_va(vp, io_off, io_len, PG_EXCL | PG_WAIT, seg,
+		    addr);
+		if (pp != NULL) {
+			va = ppmapin(pp, PROT_READ | PROT_WRITE, (caddr_t)-1);
+			ppmapout(va);
+			pvn_plist_init(pp, pl, plsz, off, io_len, rw);
+		}
+		return (0);
+	}
 
 	/* disk addr for start of file */
 	bof = LBN_TO_BYTE((offset_t)hp->hs_dirent.ext_lbn, vp->v_vfsp);

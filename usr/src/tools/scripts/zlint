@@ -1,0 +1,26 @@
+#!/bin/bash
+#
+# Copyright (c) 2015, 2017 by Delphix. All rights reserved.
+#
+
+dmake=dmake
+mkdir=mkdir
+
+#
+# Set up dependencies. Without building priv_const, lint fails. Without creating
+# the directories, lint fails when checking $SRC/uts/i86pc/unix.
+#
+(cd $SRC/uts/intel; $dmake $SRC/uts/common/os/priv_const.c) || exit 1
+$mkdir -p $SRC/uts/i86pc/unix/dboot/debug64 \
+    $SRC/uts/i86pc/unix/dboot/debug32 || exit 1
+
+(cd $SRC/uts/i86pc/unix; $dmake lint) || exit 1
+(cd $SRC/uts/intel/genunix; $dmake lint) || exit 1
+(cd $SRC/uts/intel/zfs; $dmake lint) || exit 1
+(cd $SRC/lib/libzpool; $dmake lint) || exit 1
+(cd $SRC/lib/libzfs; $dmake lint) || exit 1
+(cd $SRC/cmd/zfs; $dmake lint) || exit 1
+(cd $SRC/cmd/zpool; $dmake lint) || exit 1
+(cd $SRC/cmd/zdb; $dmake lint) || exit 1
+(cd $SRC/cmd/ztest; $dmake lint) || exit 1
+(cd $SRC/cmd/zhack; $dmake lint) || exit 1

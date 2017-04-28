@@ -39,7 +39,9 @@ $mapfile_version 2
 SYMBOL_VERSION ILLUMOS_0.2 {
 	global:
 
+	lzc_get_nextboot;
 	lzc_initialize;
+	lzc_set_nextboot;
 } ILLUMOS_0.1;
 
 SYMBOL_VERSION ILLUMOS_0.1 {

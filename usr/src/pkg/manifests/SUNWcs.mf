@@ -24,8 +24,9 @@
 # Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 # Copyright (c) 2013 Gary Mills
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
-# Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2017 by Delphix. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
 <include SUNWcs.man1.inc>
@@ -1310,6 +1311,7 @@ file path=usr/sbin/auditd mode=0555
 file path=usr/sbin/auditrecord mode=0555
 file path=usr/sbin/auditreduce mode=0555
 file path=usr/sbin/auditstat mode=0555
+file path=usr/sbin/bootcfg group=sys mode=0555
 file path=usr/sbin/cfgadm mode=0555
 file path=usr/sbin/chroot mode=0555
 file path=usr/sbin/clear_locks mode=0555
@@ -1830,6 +1832,10 @@ depend fmri=runtime/perl type=require
 # intrd uses sun-solaris Perl modules
 #
 depend fmri=runtime/perl/module/sun-solaris type=require
+#
+# The boot loader package
+#
+depend fmri=system/boot/loader type=require
 #
 # The loadkeys binary needs the keytables.
 #

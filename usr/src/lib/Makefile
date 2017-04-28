@@ -25,6 +25,7 @@
 # Copyright (c) 2012, Joyent, Inc. All rights reserved.
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 
 include ../Makefile.master
 
@@ -100,6 +101,7 @@ SUBDIRS += \
 	libcrypt	\
 	libdns_sd	\
 	libefi		\
+	libficl		\
 	libfstyp	\
 	libwanboot	\
 	libwanbootutil	\
@@ -568,7 +570,7 @@ libadt_jni:	libbsm
 libast: 	libsocket libm
 libadutils: 	libldap5 libresolv libsocket libnsl
 nsswitch:	libadutils libidmap
-libbe: 		libzfs
+libbe: 		libzfs libficl
 libbsm:		libtsol
 libcmd: 	libsum libast libsocket libnsl
 libcmdutils:	libavl
@@ -586,6 +588,7 @@ libdscfg:	libnsctl libunistat libsocket libnsl
 libdtrace:	libproc libgen libctf
 libdtrace_jni:	libuutil libdtrace
 libefi:		libuuid
+libficl:	libumem
 libfstyp:	libnvpair
 libelfsign:	libcryptoutil libkmf
 libidmap:	libadutils libldap5 libavl libsldap libuutil

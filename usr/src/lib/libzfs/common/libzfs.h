@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
@@ -756,6 +756,11 @@ extern int zpool_in_use(libzfs_handle_t *, int, pool_state_t *, char **,
  */
 extern int zpool_read_label(int, nvlist_t **);
 extern int zpool_clear_label(int);
+extern int zpool_reset_bootcount(zpool_handle_t *);
+extern int zpool_set_nextboot(zpool_handle_t *, const char *, nvlist_t *,
+    uint32_t);
+extern int zpool_get_nextboot(zpool_handle_t *, char **, nvlist_t **,
+    uint32_t *, uint32_t *);
 
 /* is this zvol valid for use as a dump device? */
 extern int zvol_check_dump_config(char *);

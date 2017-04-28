@@ -1,0 +1,275 @@
+#!/bin/bash
+#
+# Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+#
+
+function die
+{
+	echo "failed: $1" >&2
+	exit 1
+}
+
+function usage
+{
+	echo -e "$cmdname [-r]" \
+	    "[-m <build machine> -b <branch> [-u <username>]]" \
+	    "[-d <directory>]\n" \
+	    "\n" \
+	    "  This script is used to automatically load previously built\n" \
+	    "  ZFS modules into the current system. The modules must have\n" \
+	    "  have already been built, or this command will result in\n" \
+	    "  undefined behavior. This is done simply by copying the\n" \
+	    "  necessary binaries from the build tree into the system,\n" \
+	    "  perform minimal bootstrapping of the image so it can\n" \
+	    "  properly boot, and then optionally rebooting the system.\n" \
+	    "\n" \
+	    "  Options:\n" \
+	    "    -b  Each branch built using 'git zfs-make' is stored in a\n" \
+	    "        unique directory, this option specifies which of\n" \
+	    "        these branch directories to copy the build projects\n" \
+	    "        from.\n" \
+	    "    -d  For legacy purposes, it is possible to specify the\n" \
+	    "        full path to the directory from which the build\n" \
+	    "        products will be copied. This option is mutually\n" \
+	    "        exclusive with '-b', '-m', and '-u' options.\n" \
+	    "    -m  The build system which was used to previously build\n" \
+	    "        the ZFS modules. This system's NFS mount is used to\n" \
+	    "        access the build products and copy them into the\n" \
+	    "        system.\n" \
+	    "    -r  Reboot the system after the load process is finished.\n" \
+	    "    -t  Load only the ZFS test suite.\n" \
+	    "    -u  Each branch built using 'git zfs-make' is stored\n" \
+	    "        uniquely for each user. By default this user will be\n" \
+	    "        determined using logname(1), but this can be\n" \
+	    "        overridden using this option.\n" \
+	    "" >&2
+}
+
+function boot_devices
+{
+	/usr/sbin/zpool list -vH rpool | \
+	    /usr/bin/awk '! /rpool|mirror|replacing|spare/ {print $1}'
+}
+
+dir=
+branch=
+build_machine=
+user=
+do_reboot=false
+test_only=false
+while getopts "b:d:hm:rtu:" opt; do
+	case $opt in
+	    b)
+		branch="$OPTARG"
+		;;
+	    d)
+		dir="$OPTARG"
+		;;
+	    h)
+		usage
+		exit 2
+		;;
+	    m)
+		build_machine="$OPTARG"
+		;;
+	    r)
+		do_reboot=true
+		;;
+	    t)
+		test_only=true
+		;;
+	    u)
+		user="$OPTARG"
+		;;
+	    ?)
+		exit 2
+		;;
+	esac
+done
+
+if [[ -n "$dir" ]]; then
+	if [[ -n "$build_machine" ]] || \
+	   [[ -n "$branch" ]] || [[ -n "$user" ]]; then
+		die "cannot use '-d' option with '-b', '-m', or '-u' options"
+	fi
+else
+	[[ -z "$branch" ]] && die "no '-b' option specified"
+	[[ -z "$build_machine" ]] && die "no '-m' option specified"
+	[[ -z "$user" ]] && user=$(logname)
+	dir="/net/$build_machine/data/jenkins/zfs-make/$user/$branch"
+fi
+
+if [[ $UID -ne 0 ]]; then
+	die "This script must be run as root"
+	exit 1
+fi
+
+proto="$dir/proto/root_i386"
+[[ -d $proto ]] || die "No previous build found at $proto."
+
+# ZFS
+files="
+	/kernel/drv/zfs
+	/kernel/drv/amd64/zfs
+	/lib/libzfs.so.1
+	/lib/64/libzfs.so.1
+	/lib/libzfs_core.so.1
+	/lib/64/libzfs_core.so.1
+	/usr/lib/libzpool.so.1
+	/usr/lib/amd64/libzpool.so.1
+	/usr/lib/libnvpair.so.1
+	/usr/lib/amd64/libnvpair.so.1
+	/usr/lib/libshare.so.1
+	/usr/lib/amd64/libshare.so.1
+	/usr/lib/zfs/availdevs
+	/usr/lib/zfs/pyzfs.py
+	/usr/lib/zfs/pyzfs.pyc
+	/sbin/zfs
+	/sbin/zpool
+	/usr/sbin/zdb
+	/usr/sbin/amd64/zdb
+	/usr/sbin/i86/zdb
+	/usr/sbin/amd64/zinject
+	/usr/sbin/i86/zinject
+	/usr/bin/ztest
+	/usr/bin/zloop
+	/usr/bin/amd64/ztest
+	/usr/bin/i86/ztest
+	/usr/sbin/zhack
+	/usr/sbin/amd64/zhack
+	/usr/sbin/i86/zhack
+	/usr/sbin/zstreamdump
+	/usr/include/libzfs.h
+	/usr/include/libzfs_core.h
+	/usr/include/sys/fs/zfs.h
+	/usr/lib/mdb/kvm/zfs.so
+	/usr/lib/mdb/kvm/amd64/zfs.so
+	/kernel/kmdb/zfs
+	/kernel/kmdb/amd64/zfs
+	/usr/lib/mdb/proc/libzpool.so
+	/usr/lib/mdb/proc/amd64/libzpool.so
+	/usr/lib/mdb/proc/libnvpair.so
+	/usr/lib/mdb/proc/amd64/libnvpair.so
+	/usr/man/man1m/zfs.1m
+	/usr/man/man1m/zpool.1m
+	/usr/man/man1m/zdb.1m
+	/usr/man/man1m/zstreamdump.1m
+	/usr/man/man5/zpool-features.5
+	/kernel/drv/kmdb
+	/kernel/drv/amd64/kmdb
+	/kernel/misc/kmdbmod
+	/kernel/misc/amd64/kmdbmod
+	/kernel/kmdb/genunix
+	/kernel/kmdb/amd64/genunix
+	/usr/bin/amd64/mdb
+	/usr/bin/i86/mdb
+	/usr/lib/mdb/kvm/genunix.so
+	/usr/lib/mdb/kvm/amd64/genunix.so
+	/usr/lib/amd64/libsaveargs.*
+	/usr/lib/mdb/proc/libc.so
+	/usr/lib/mdb/proc/amd64/libc.so
+	/kernel/fs/dev
+	/kernel/fs/amd64/dev
+	/boot/gptzfsboot
+	/boot/zfsloader
+"
+# Paravirtual device drivers
+files+="
+	/kernel/drv/pvscsi
+	/kernel/drv/pvscsi.conf
+	/kernel/drv/vioblk
+	/kernel/drv/vioif
+	/kernel/drv/vmxnet3s
+	/kernel/drv/vmxnet3s.conf
+	/kernel/drv/amd64/pvscsi
+	/kernel/drv/amd64/vioblk
+	/kernel/drv/amd64/vioif
+	/kernel/drv/amd64/vmxnet3s
+	/kernel/misc/virtio
+	/kernel/misc/amd64/virtio
+	/platform/i86hvm/kernel/drv/xnf
+	/platform/i86hvm/kernel/drv/xdf
+	/platform/i86hvm/kernel/drv/amd64/xnf
+	/platform/i86hvm/kernel/drv/amd64/xdf
+"
+# Networking
+files+="
+	/kernel/drv/ip
+	/kernel/drv/ip6
+	/kernel/drv/amd64/ip
+	/kernel/drv/amd64/ip6
+	/lib/libdhcputil.so.1
+	/lib/libdhcpagent.so.1
+	/lib/libdladm.so.1
+	/lib/libipadm.so.1
+	/lib/libroute.so.1
+	/lib/amd64/libdhcputil.so.1
+	/lib/amd64/libdhcpagent.so.1
+	/lib/amd64/libdladm.so.1
+	/lib/amd64/libipadm.so.1
+	/lib/amd64/libroute.so.1
+	/sbin/dladm
+	/sbin/ipadm
+	/usr/bin/connstat
+	/usr/include/libdladm.h
+	/usr/include/libroute.h
+	/usr/lib/librstp.so.1
+	/usr/share/man/man1m/dladm.1m
+	/usr/share/man/man1m/ipadm.1m
+"
+# NFS server components
+files+="
+	/kernel/misc/nfssrv
+	/kernel/misc/klmmod
+	/kernel/misc/amd64/nfssrv
+	/kernel/misc/amd64/klmmod
+	/usr/lib/nfs/lockd
+"
+
+if ! $test_only; then
+	echo -n "Copying files from $proto ... "
+	for f in $files; do
+		cp $proto/$f /$f
+	done
+fi
+
+dirs="
+	/usr/lib/python2.6/vendor-packages/zfs/
+	/opt/test-runner/
+	/opt/zfs-tests/
+"
+
+for d in $dirs; do
+	rsync -a $proto/$d/ /$d/
+done
+echo "done."
+
+echo -n "Updating boot archive ... "
+/usr/sbin/bootadm update-archive >/dev/null || \
+    die "failed to bootadm update-archive."
+echo "done"
+
+for boot_device in $(boot_devices); do
+	echo -n "Installing loader on '/dev/rdsk/$boot_device' ... "
+
+	if [[ ! -e "/dev/rdsk/$boot_device" ]]; then
+		die "failed to find device '/dev/rdsk/$boot_device'"
+	fi
+
+	yes y | sudo /usr/sbin/installboot -Fm /boot/pmbr /boot/gptzfsboot \
+	    /dev/rdsk/$boot_device >/dev/null || \
+	    die "failed to install loader on '/dev/rdsk/$boot_device'."
+	echo "done."
+done
+
+echo -n "Syncing ... "
+/usr/sbin/sync
+echo "done."
+
+echo
+if $do_reboot; then
+	echo "zload successful, rebooting now."
+	reboot
+else
+	echo "zload successful, changes will take place on next reboot."
+fi

@@ -11,10 +11,10 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright (c) 2012, Joyent, Inc.  All rights reserved.
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
-# Copyright (c) 2012 Joyent, Inc. All rights reserved.
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright 2016 Joyent, Inc.
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 include		$(SRC)//Makefile.master
@@ -53,6 +53,7 @@ _MANFILES=	6to4relay.1m		\
 		beadm.1m		\
 		boot.1m			\
 		bootadm.1m		\
+		bootcfg.1m		\
 		bootconfchk.1m		\
 		busstat.1m		\
 		cachefsd.1m		\
@@ -221,6 +222,7 @@ _MANFILES=	6to4relay.1m		\
 		init.1m			\
 		inityp2l.1m		\
 		install.1m		\
+		installboot.1m		\
 		installf.1m		\
 		installgrub.1m		\
 		intrd.1m		\
@@ -589,6 +591,8 @@ _MANFILES=	6to4relay.1m		\
 		zstreamdump.1m
 
 i386_MANFILES=				\
+		acpidump.1m		\
+		acpixtract.1m		\
 		lms.1m
 
 sparc_MANFILES=	cvcd.1m			\

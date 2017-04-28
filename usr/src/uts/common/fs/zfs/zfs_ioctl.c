@@ -3434,6 +3434,67 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 }
 
 /*
+ * This ioctl is used to set the nextboot configuration on the current
+ * pool. This configuration is stored in the second padding area of the label,
+ * and it is used by the FreeBSD-derived bootloader used on Illumos when
+ * determining what dataset to boot. The nextboot configuratoin has 4 main
+ * elements. The first is the command to pass to the bootloader. This is
+ * primarily to be used to tell the bootloader what dataset to use as the
+ * bootfs. If this isn't used, the bootloader will use the bootfs property
+ * from the pool.  The second is the environment map. We use this to pass a
+ * few environment variables to the bootloader.  The third component is the
+ * number of boots to attempt before switching to the nextboot configuration.
+ * The final component is the number of boots that have been attempted.
+ *
+ * When we boot, we first increment the number of attempted boots. If the
+ * maximum number of boots is 0, or the number of attempted boots is equal to
+ * the maximum boot count, we clear the nextboot configuration and use the
+ * command and environment map to control the boot. Otherwise, we proceed with
+ * boot as normal.
+ */
+/* ARGSUSED */
+static int
+zfs_ioc_set_nextboot(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	spa_t *spa;
+	char *command;
+	char *envmap;
+	int error;
+	uint32_t maxboots;
+
+	if (nvlist_lookup_string(innvl, "command", &command) != 0)
+		return (EINVAL);
+	if (nvlist_lookup_uint32(innvl, "maxboots", &maxboots) != 0)
+		return (EINVAL);
+	if (nvlist_lookup_string(innvl, "envmap", &envmap) != 0)
+		return (EINVAL);
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	error = vdev_label_write_nextboot(spa->spa_root_vdev, command,
+	    envmap, maxboots, 0);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
+	spa_close(spa, FTAG);
+	return (error);
+}
+
+/* ARGSUSED */
+static int
+zfs_ioc_get_nextboot(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	spa_t *spa;
+	int error;
+
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	vdev_label_read_nextboot(spa->spa_root_vdev, outnvl);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
+	spa_close(spa, FTAG);
+	return (0);
+}
+
+/*
  * The dp_config_rwlock must not be held when calling this, because the
  * unmount may need to write out data.
  *
@@ -5961,6 +6022,14 @@ zfs_ioctl_init(void)
 	zfs_ioctl_register("initialize", ZFS_IOC_POOL_INITIALIZE,
 	    zfs_ioc_pool_initialize, zfs_secpolicy_config, POOL_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE);
+
+	zfs_ioctl_register("set_nextboot", ZFS_IOC_SET_NEXTBOOT,
+	    zfs_ioc_set_nextboot, zfs_secpolicy_config, POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_TRUE);
+
+	zfs_ioctl_register("get_nextboot", ZFS_IOC_GET_NEXTBOOT,
+	    zfs_ioc_get_nextboot, zfs_secpolicy_config, POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_TRUE);
 
 	/* IOCTLS that use the legacy function signature */
 

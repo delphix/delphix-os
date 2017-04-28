@@ -1,4 +1,4 @@
-#
+ #
 # CDDL HEADER START
 #
 # The contents of this file are subject to the terms of the
@@ -24,6 +24,9 @@
 #
 
 syntax: glob
+usr/src/boot/*
+usr/src/cmd/cmd-inet/usr.bin/dns-sd/dns-sd.c
+usr/src/cmd/boot/common/bblk_einfo.c
 usr/src/cmd/localedef/data/zh_CN.UTF-8.src
 usr/src/cmd/localedef/data/zh_HK.UTF-8.src
 usr/src/cmd/localedef/data/zh_MO.UTF-8.src

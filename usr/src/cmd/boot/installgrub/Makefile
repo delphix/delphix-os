@@ -37,9 +37,7 @@ SBINLINKS= $(PROG)
 include ../Makefile.com
 
 CPPFLAGS += -I$(SRC)/uts/i86pc -I$(SRC)/uts/intel -I$(SRC)/uts/common
-CERRWARN += -_gcc=-Wno-unused-label
-CERRWARN += -_gcc=-Wno-unused-function
-CERRWARN += -_gcc=-Wno-uninitialized
+CPPFLAGS += -I$(SRC)/common/util
 
 LDLIBS += -lmd5
 
@@ -55,8 +53,8 @@ LINTFLAGS += \
 	-erroff=E_FUNC_RET_MAYBE_IGNORED2 \
 	-xerroff=E_NAME_DEF_NOT_USED2
 
-C99MODE=	-xc99=%all
-C99LMODE=	-Xc99=%all
+
+C99MODE=	$(C99_ENABLE)
 
 .KEEP_STATE:
 

@@ -22,7 +22,7 @@
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  */
 
@@ -359,9 +359,11 @@ zpool_get_prop(zpool_handle_t *zhp, zpool_prop_t prop, char *buf, size_t len,
  * Assuming bootfs is a valid dataset name.
  */
 static boolean_t
-bootfs_name_valid(const char *pool, char *bootfs)
+bootfs_name_valid(const char *pool, const char *bootfs)
 {
 	int len = strlen(pool);
+	if (bootfs[0] == '\0')
+		return (B_TRUE);
 
 	if (!zfs_name_valid(bootfs, ZFS_TYPE_FILESYSTEM|ZFS_TYPE_SNAPSHOT))
 		return (B_FALSE);
@@ -505,8 +507,7 @@ zpool_valid_proplist(libzfs_handle_t *hdl, const char *poolname,
 			 * bootfs property value has to be a dataset name and
 			 * the dataset has to be in the same pool as it sets to.
 			 */
-			if (strval[0] != '\0' && !bootfs_name_valid(poolname,
-			    strval)) {
+			if (!bootfs_name_valid(poolname, strval)) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "'%s' "
 				    "is an invalid name"), strval);
 				(void) zfs_error(hdl, EZFS_INVALIDNAME, errbuf);
@@ -4183,4 +4184,128 @@ out:
 		zpool_close(zhp);
 	libzfs_fini(hdl);
 	return (ret);
+}
+
+int
+zpool_reset_bootcount(zpool_handle_t *zhp)
+{
+	char *nextboot;
+	nvlist_t *envlist;
+	uint32_t maxboots, ignored;
+	int err;
+	if ((err = zpool_get_nextboot(zhp, &nextboot, &envlist, &maxboots,
+	    &ignored)) != 0) {
+		return (err);
+	}
+	err = zpool_set_nextboot(zhp, nextboot, envlist, maxboots);
+	free(nextboot);
+	nvlist_free(envlist);
+	return (0);
+}
+
+int
+zpool_set_nextboot(zpool_handle_t *zhp, const char *rootds, nvlist_t *envlist,
+    uint32_t maxboots)
+{
+	char *command;
+	char envbuf[1024];
+	int error;
+	if (rootds[0] != '0' && !bootfs_name_valid(zhp->zpool_name, rootds)) {
+                (void) snprintf(envbuf, sizeof (envbuf), dgettext(TEXT_DOMAIN,
+                    "could not set nextboot"));
+                zfs_error_aux(zhp->zpool_hdl, dgettext(TEXT_DOMAIN, "'%s' "
+                    "is an invalid name"), rootds);
+                return (zfs_error(zhp->zpool_hdl, EZFS_INVALIDNAME, envbuf));
+        }
+
+	if (*rootds != '\0') {
+		command = zfs_asprintf(zhp->zpool_hdl, "zfs:%s:", rootds);
+	} else {
+		command = zfs_strdup(zhp->zpool_hdl, rootds);
+	}
+
+	envbuf[0] = '\0';
+	nvpair_t *elem = NULL;
+	boolean_t first = B_TRUE;
+	while (envlist != NULL && (elem = nvlist_next_nvpair(envlist, elem)) !=
+	    NULL) {
+		char *comma = (first ? "" : ",");
+		if (first)
+			first = B_FALSE;
+		if (nvpair_type(elem) != DATA_TYPE_STRING) {
+			free(command);
+			return (EINVAL);
+		}
+		(void) snprintf(envbuf + strlen(envbuf), sizeof (envbuf) -
+		    strlen(envbuf), "%s%s=%s", comma, nvpair_name(elem),
+		    fnvpair_value_string(elem));
+	}
+	error = lzc_set_nextboot(zhp->zpool_name, command, envbuf, maxboots);
+	free(command);
+
+	/* Cache the nextboot. */
+	return (error);
+}
+
+int
+zpool_get_nextboot(zpool_handle_t *zhp, char **dataset, nvlist_t **envlist,
+    uint32_t *maxboots, uint32_t *numboots)
+{
+	nvlist_t *nv;
+	char *data;
+	int error;
+
+	*dataset = NULL;
+	*envlist = NULL;
+	if ((error = lzc_get_nextboot(zhp->zpool_name, &nv)) != 0) {
+		return (error);
+	}
+	if (nvlist_lookup_string(nv, "command", &data) != 0) {
+		*dataset = zfs_strdup(zhp->zpool_hdl, "");
+		*envlist = fnvlist_alloc();
+		*maxboots = 0;
+		*numboots = 0;
+		fnvlist_free(nv);
+		return (0);
+	}
+
+	/* Extract dataset name from "zfs:dataset:" string. */
+	char *p = data;
+	if (*data != '\0') {
+		p = strchr(data, ':');
+		if (p != NULL)
+			p++;
+	}
+	char *tmp_ds = zfs_strdup(zhp->zpool_hdl, p);
+	p = &tmp_ds[strlen(tmp_ds) - 1];
+	if (*p == ':')
+		*p = '\0';
+
+	/* Convert envmap string into nvlist. */
+	nvlist_t *tmp_envlist = fnvlist_alloc();
+	char *envstr = fnvlist_lookup_string(nv, "envmap");
+	char *tok = strtok(envstr, ",");
+	while (tok != NULL) {
+		char *eq = strchr(tok, '=');
+		if (eq == NULL) {
+			error = EFAULT;
+			free(tmp_ds);
+			fnvlist_free(tmp_envlist);
+			break;
+		}
+		*eq = '\0';
+		fnvlist_add_string(tmp_envlist, tok, eq + 1);
+
+		tok = strtok(NULL, ",");
+	}
+
+	/* Output the nextboot configuration if there's no parsing error. */
+	if (error == 0) {
+		*dataset = tmp_ds;
+		*envlist = tmp_envlist;
+		*maxboots = fnvlist_lookup_uint32(nv, "maxboots");
+		*numboots = fnvlist_lookup_uint32(nv, "numboots");
+	}
+	nvlist_free(nv);
+	return (error);
 }

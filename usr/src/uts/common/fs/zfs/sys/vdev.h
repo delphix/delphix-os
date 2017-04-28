@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_VDEV_H
@@ -156,6 +156,9 @@ extern uint64_t vdev_label_offset(uint64_t psize, int l, uint64_t offset);
 extern int vdev_label_number(uint64_t psise, uint64_t offset);
 extern nvlist_t *vdev_label_read_config(vdev_t *vd, uint64_t txg);
 extern void vdev_uberblock_load(vdev_t *, struct uberblock *, nvlist_t **);
+extern void vdev_label_read_nextboot(vdev_t *, nvlist_t *);
+extern int vdev_label_write_nextboot(vdev_t *, const char *, const char *,
+    uint32_t, uint32_t);
 
 typedef enum {
 	VDEV_LABEL_CREATE,	/* create/add a new device */

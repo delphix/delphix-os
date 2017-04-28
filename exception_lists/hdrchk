@@ -1,3 +1,8 @@
+exception_lists/cstyleusr/src/boot/*
+usr/src/cmd/acpi/acpidump/acpidump.h
+usr/src/cmd/acpi/acpixtract/acpixtract.h
+usr/src/cmd/acpi/acpixtract/axmain.h
+usr/src/cmd/acpi/acpixtract/axutils.h
 usr/src/cmd/krb5/kadmin/cli/kadmin.h
 usr/src/cmd/krb5/kadmin/dbutil/import_err.h
 usr/src/cmd/krb5/kadmin/dbutil/kdb5_util.h
@@ -30,6 +35,7 @@ usr/src/cmd/mandoc/mdoc.h
 usr/src/cmd/mandoc/out.h
 usr/src/cmd/mandoc/term.h
 usr/src/common/openssl/crypto/krb5/krb5_asn.h
+usr/src/common/ficl/ficltokens.h
 usr/src/grub/grub-0.97/stage2/shared.h
 usr/src/lib/gss_mechs/mech_krb5/et/error_table.h
 usr/src/lib/gss_mechs/mech_krb5/et/internal.h
@@ -154,6 +160,7 @@ usr/src/lib/librstp/common/topoch.h
 usr/src/lib/librstp/common/transmit.h
 usr/src/lib/librstp/common/uid_stp.h
 usr/src/lib/librstp/common/vector.h
+usr/src/tools/btxld/*
 usr/src/uts/common/gssapi/mechs/krb5/include/aes_s2k.h
 usr/src/uts/common/gssapi/mechs/krb5/include/auth_con.h
 usr/src/uts/common/gssapi/mechs/krb5/include/cksumtypes.h

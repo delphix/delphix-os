@@ -104,6 +104,8 @@ int lzc_rollback(const char *, char *, int);
 int lzc_channel_program(const char *, const char *, uint64_t, uint64_t,
     nvlist_t *, nvlist_t **);
 
+int lzc_get_nextboot(const char *, nvlist_t **);
+int lzc_set_nextboot(const char *, const char *, const char *, uint32_t);
 #ifdef	__cplusplus
 }
 #endif

@@ -21,6 +21,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2017 by Delphix. All rights reserved.
+ */
+
 #ifndef _SYS_VDEV_IMPL_H
 #define	_SYS_VDEV_IMPL_H
 
@@ -30,7 +34,9 @@
 #define	MAX(x, y)		((x) > (y) ? (x) : (y))
 
 #define	VDEV_PAD_SIZE 		(8 << 10)
-/* 2 padding areas (vl_pad1 and vl_pad2) to skip */
+#define	VDEV_NEXTBOOT_SIZE	(1 << 10)
+#define	VDEV_BOOTMAP_SIZE	(1 << 10)
+/* 2 padding areas (vl_pad1 and vl_nextboot) to skip */
 #define	VDEV_SKIP_SIZE		VDEV_PAD_SIZE * 2
 #define	VDEV_PHYS_SIZE		(112 << 10)
 #define	VDEV_UBERBLOCK_RING	(128 << 10)
@@ -49,9 +55,29 @@ typedef struct vdev_phys {
 	zio_eck_t	vp_zbt;
 } vdev_phys_t;
 
+typedef enum vb_vers {
+	VB_STRUCTURE,
+	VB_NVLIST
+} vb_vers_t;
+
+typedef struct vdev_boot {
+	uint64_t	vb_version;
+	char		vb_nextboot[VDEV_NEXTBOOT_SIZE];
+	char		vb_bootmap[VDEV_BOOTMAP_SIZE];
+	uint64_t	vb_maxboots;
+	uint64_t	vb_numboots;
+} vdev_boot_t;
+
+typedef struct vdev_nextboot_block {
+	vdev_boot_t	vnb_boot;
+	char		vnb_padding[VDEV_PAD_SIZE - sizeof (vdev_boot_t) -
+			sizeof (zio_eck_t)];
+	zio_eck_t	vnb_zbt;
+} vdev_nextboot_block_t;
+
 typedef struct vdev_label {
 	char		vl_pad1[VDEV_PAD_SIZE];			/*  8K	*/
-	char		vl_pad2[VDEV_PAD_SIZE];			/*  8K	*/
+	vdev_nextboot_block_t	vl_nextboot;			/*  8K	*/
 	vdev_phys_t	vl_vdev_phys;				/* 112K	*/
 	char		vl_uberblock[VDEV_UBERBLOCK_RING];	/* 128K	*/
 } vdev_label_t;							/* 256K total */

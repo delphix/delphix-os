@@ -1,0 +1,80 @@
+'\" t
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright (c) 2017 by Delphix. All rights reserved.
+.\"
+.Dd Mar 10, 2017
+.Dt BOOTCFG 1M
+.Os
+.Sh NAME
+.Nm bootcfg
+.Nd utility for managing zfs nextboot configuration
+.Sh SYNOPSIS
+.Nm
+.Cm bootcfg
+.Ar pool
+.Nm
+.Cm bootcfg
+.Op Fl R
+.Ar pool
+.Nm
+.Cm bootcfg
+.Op Fl C
+.Ar pool
+.Nm
+.Cm bootcfg
+.Op Fl d Ar filesystem
+.Op Fl c Ar maxboot
+.Op Fl o Ar opts
+.Ar pool
+.Sh DESCRIPTION
+The
+.Nm
+command manages the
+.Xr zfs 1M
+nextboot configuration. This configuration is used to cause the system to boot
+into an alternate root environment the next time the system reboots, or
+some fixed number of boots in the future.  It can also provide limited
+arguments to the bootloader when the alternate root environment is
+selected.
+.Sh OPTIONS
+.Bl -tag -width "-C"
+.It Fl R
+Resets the boot count of the nextboot configuration.  This is only relevant
+if the nextboot configuration is set and has a non-zero
+.Sy maxboot
+count. It cannot be combined with other flags.
+.Nm
+.It Fl C
+Clears the nextboot configuration. Normal boot procedures will be followed
+on all subsequent boots, until a new configuration is set. It cannot be
+combined with other flags.
+.Nm
+.It Fl d Ar dataset
+Sets the nextboot configuration to boot from the specified dataset.
+.Nm
+.It Fl c Ar maxboot
+Sets the nextboot configuration to activate after a fixed number of boot
+attempts. Valid values are any non-negative integer; note that 1 and 0 have
+the same effect.
+.Nm
+.It Fl o Ar property Ns = Ns Ar value
+Sets environment variables to be passed to the bootloader when the nextboot configuration is used. Currently, the only implemented properties are
+.Sy console
+which can be set to any valid serial console name, and
+.Sy fstype .
+This option causes the dataset booted into to be interpreted as a zfs
+or ufs filesystem, depending on which argument is passed. ZFS is the
+default.
+.El
+.Sh "SEE ALSO"
+.Xr beadm (1M)

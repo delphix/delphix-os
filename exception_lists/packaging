@@ -25,6 +25,7 @@
 # Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
 #
@@ -1019,3 +1020,14 @@ usr/lib/sparcv9/llib-lpcidb.ln		sparc
 usr/lib/libpcidb.so
 usr/lib/llib-lpcidb
 usr/lib/llib-lpcidb.ln
+
+# libficl-sys is private
+#
+usr/include/ficllocal.h
+usr/lib/amd64/llib-lficl-sys.ln		i386
+usr/lib/amd64/libficl-sys.so		i386
+usr/lib/sparcv9/llib-lficl-sys.ln	sparc
+usr/lib/sparcv9/libficl-sys.so		sparc
+usr/lib/llib-lficl-sys
+usr/lib/llib-lficl-sys.ln
+usr/lib/libficl-sys.so

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  */
 
 /*
@@ -713,7 +713,7 @@ vdev_label_init(vdev_t *vd, uint64_t crtxg, vdev_labeltype_t reason)
 	nvlist_t *label;
 	vdev_phys_t *vp;
 	abd_t *vp_abd;
-	abd_t *pad2;
+	abd_t *nextboot;
 	uberblock_t *ub;
 	abd_t *ub_abd;
 	zio_t *zio;
@@ -874,8 +874,8 @@ vdev_label_init(vdev_t *vd, uint64_t crtxg, vdev_labeltype_t reason)
 	ub->ub_txg = 0;
 
 	/* Initialize the 2nd padding area. */
-	pad2 = abd_alloc_for_io(VDEV_PAD_SIZE, B_TRUE);
-	abd_zero(pad2, VDEV_PAD_SIZE);
+	nextboot = abd_alloc_for_io(VDEV_PAD_SIZE, B_TRUE);
+	abd_zero(nextboot, VDEV_PAD_SIZE);
 
 	/*
 	 * Write everything in parallel.
@@ -894,8 +894,8 @@ retry:
 		 * Zero out the 2nd padding area where it might have
 		 * left over data from previous filesystem format.
 		 */
-		vdev_label_write(zio, vd, l, pad2,
-		    offsetof(vdev_label_t, vl_pad2),
+		vdev_label_write(zio, vd, l, nextboot,
+		    offsetof(vdev_label_t, vl_nextboot),
 		    VDEV_PAD_SIZE, NULL, NULL, flags);
 
 		vdev_label_write(zio, vd, l, ub_abd,
@@ -911,7 +911,7 @@ retry:
 	}
 
 	nvlist_free(label);
-	abd_free(pad2);
+	abd_free(nextboot);
 	abd_free(ub_abd);
 	abd_free(vp_abd);
 
@@ -931,6 +931,149 @@ retry:
 	    spa_l2cache_exists(vd->vdev_guid, NULL)))
 		spa_l2cache_add(vd);
 
+	return (error);
+}
+
+/*
+ * Done callback for vdev_label_read_nextboot_impl. If this is the first
+ * callback to finish, store our abd in the callback pointer. Otherwise, we
+ * just free our abd and return.
+ */
+static void
+vdev_label_read_nextboot_done(zio_t *zio)
+{
+	zio_t *rio = zio->io_private;
+	abd_t **cbp = rio->io_private;
+
+	ASSERT3U(zio->io_size, ==, VDEV_PAD_SIZE);
+
+	if (zio->io_error == 0) {
+		mutex_enter(&rio->io_lock);
+		if (*cbp == NULL) {
+			/* Will free this buffer in vdev_label_read_nextboot. */
+			*cbp = zio->io_abd;
+		} else {
+			abd_free(zio->io_abd);
+		}
+		mutex_exit(&rio->io_lock);
+	}
+}
+
+static void
+vdev_label_read_nextboot_impl(zio_t *zio, vdev_t *vd, int flags)
+{
+	for (int c = 0; c < vd->vdev_children; c++)
+		vdev_label_read_nextboot_impl(zio, vd->vdev_child[c], flags);
+
+	/*
+	 * We only use the labels at the start of the disk, because that's all
+	 * the labels the bootloader can read or write to.  We just use the
+	 * first label that has a correct checksum; the bootloader should have
+	 * rewritten them all to be the same on boot, and any changes we made
+	 * since boot have been the same across all labels.
+	 */
+	if (vd->vdev_ops->vdev_op_leaf && vdev_readable(vd)) {
+		for (int l = 0; l < VDEV_LABELS / 2; l++) {
+			vdev_label_read(zio, vd, l,
+			    abd_alloc_linear(VDEV_PAD_SIZE, B_FALSE),
+			    offsetof(vdev_label_t, vl_nextboot), VDEV_PAD_SIZE,
+			    vdev_label_read_nextboot_done, zio, flags);
+		}
+	}
+}
+
+void
+vdev_label_read_nextboot(vdev_t *rvd, nvlist_t *command)
+{
+	zio_t *zio;
+	spa_t *spa = rvd->vdev_spa;
+	abd_t *cb = NULL;
+	int flags = ZIO_FLAG_CONFIG_WRITER | ZIO_FLAG_CANFAIL |
+	    ZIO_FLAG_SPECULATIVE | ZIO_FLAG_TRYHARD;
+
+	ASSERT(command);
+	ASSERT(spa_config_held(spa, SCL_ALL, RW_WRITER) == SCL_ALL);
+
+	zio = zio_root(spa, NULL, &cb, flags);
+	vdev_label_read_nextboot_impl(zio, rvd, flags);
+	(void) zio_wait(zio);
+
+	if (cb != NULL) {
+		vdev_nextboot_block_t *vp = abd_to_buf(cb);
+		if (vp->vnb_boot.vb_version != VB_STRUCTURE) {
+			abd_free(cb);
+			return;
+		}
+		fnvlist_add_string(command, "command",
+		    vp->vnb_boot.vb_nextboot);
+		fnvlist_add_string(command, "envmap",
+		    vp->vnb_boot.vb_bootmap);
+		fnvlist_add_uint32(command, "maxboots",
+		    vp->vnb_boot.vb_maxboots);
+		fnvlist_add_uint32(command, "numboots",
+		    vp->vnb_boot.vb_numboots);
+		/* cb was allocated in vdev_label_read_nextboot_impl() */
+		abd_free(cb);
+	}
+}
+
+int
+vdev_label_write_nextboot(vdev_t *vd, const char *buf, const char *envbuf,
+    uint32_t maxboots, uint32_t numboots)
+{
+	spa_t *spa = vd->vdev_spa;
+	zio_t *zio;
+	vdev_nextboot_block_t *nextboot;
+	abd_t *abd;
+	int flags = ZIO_FLAG_CONFIG_WRITER | ZIO_FLAG_CANFAIL;
+	int error = ENXIO, err;
+
+	if (strlen(buf) >= VDEV_NEXTBOOT_SIZE ||
+	    strlen(envbuf) >= VDEV_BOOTMAP_SIZE) {
+		return (EINVAL);
+	}
+
+	ASSERT(spa_config_held(spa, SCL_ALL, RW_WRITER) == SCL_ALL);
+
+	for (int c = 0; c < vd->vdev_children; c++) {
+		err = vdev_label_write_nextboot(vd->vdev_child[c], buf,
+		    envbuf, maxboots, numboots);
+		/* Return "best" error. */
+		if (err == 0)
+			error = err;
+	}
+
+	if (!vd->vdev_ops->vdev_op_leaf || vdev_is_dead(vd) ||
+	    !vdev_writeable(vd)) {
+		return (error);
+	}
+	ASSERT3U(sizeof (*nextboot), ==, VDEV_PAD_SIZE);
+	abd = abd_alloc_for_io(VDEV_PAD_SIZE, B_TRUE);
+	abd_zero(abd, VDEV_PAD_SIZE);
+	nextboot = abd_borrow_buf_copy(abd, VDEV_PAD_SIZE);
+	if (buf != NULL)
+		(void) strcpy(nextboot->vnb_boot.vb_nextboot, buf);
+	if (envbuf != NULL)
+		(void) strcpy(nextboot->vnb_boot.vb_bootmap, envbuf);
+	nextboot->vnb_boot.vb_maxboots = maxboots;
+	nextboot->vnb_boot.vb_numboots = numboots;
+	nextboot->vnb_boot.vb_version = VB_STRUCTURE;
+	abd_return_buf_copy(abd, nextboot, VDEV_PAD_SIZE);
+retry:
+	zio = zio_root(spa, NULL, NULL, flags);
+	for (int l = 0; l < VDEV_LABELS / 2; l++) {
+		vdev_label_write(zio, vd, l, abd,
+		    offsetof(vdev_label_t, vl_nextboot),
+		    VDEV_PAD_SIZE, NULL, NULL, flags);
+	}
+
+	error = zio_wait(zio);
+	if (error != 0 && !(flags & ZIO_FLAG_TRYHARD)) {
+		flags |= ZIO_FLAG_TRYHARD;
+		goto retry;
+	}
+
+	abd_free(abd);
 	return (error);
 }
 

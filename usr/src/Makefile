@@ -23,6 +23,7 @@
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
 #
@@ -37,7 +38,7 @@ include Targetdirs
 
 COMMON_SUBDIRS=	uts lib cmd ucblib ucbcmd psm man test
 sparc_SUBDIRS= stand
-i386_SUBDIRS= grub
+i386_SUBDIRS= grub boot
 
 #
 # sparc needs to build stand before psm

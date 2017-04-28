@@ -1,0 +1,115 @@
+#!/bin/bash
+#
+# Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+#
+
+function die
+{
+	echo "failed: $1" >&2
+	exit 1
+}
+
+[[ -z "$SRC" ]] && die "\$SRC is empty, did you run this under bldenv?"
+
+export NO_GENUNIX_UNIQUIFY=
+export CW_NO_SHADOW=1
+
+(cd $SRC; dmake rootdirs) || exit 1
+(cd $SRC/head; dmake) || exit 1
+(cd $SRC/uts; dmake install_h) || exit 1
+
+(cd $SRC; dmake libheaders) || exit 1
+(cd $SRC/lib/libzfs; dmake install_h) || exit 1
+(cd $SRC/uts/common/sys; dmake install_h) || exit 1
+
+# ZFS
+directories=(
+	$SRC/uts/intel/kmdb
+	$SRC/uts/intel/zfs
+	$SRC/uts/intel/dev
+	$SRC/man/man1m
+	$SRC/man/man5
+	$SRC/grub
+	$SRC/lib/libc
+	$SRC/lib/libmd
+	$SRC/lib/libavl
+	$SRC/lib/libnvpair
+	$SRC/lib/libsec
+	$SRC/lib/libsmbfs
+	$SRC/lib/libshare
+	$SRC/lib/libcmdutils
+	$SRC/lib/libdevinfo
+	$SRC/lib/libuutil
+	$SRC/lib/libbrand
+	$SRC/lib/libzonecfg
+	$SRC/lib/libinetutil
+	$SRC/lib/libdladm
+	$SRC/lib/libdlpi
+	$SRC/lib/libdiskmgt
+	$SRC/lib/libumem
+	$SRC/lib/libdisasm
+	$SRC/lib/libidmap
+	$SRC/lib/libdevid
+	$SRC/lib/libzfs_core
+	$SRC/lib/libzpool
+	$SRC/lib/libzfs
+	$SRC/lib/pyzfs
+	$SRC/lib/libzfs_jni
+	$SRC/lib/libsaveargs
+	$SRC/cmd/isaexec
+	$SRC/cmd/platexec
+	$SRC/cmd/devfsadm
+	$SRC/cmd/syseventd
+	$SRC/cmd/fstyp
+	$SRC/cmd/availdevs
+	$SRC/cmd/fs.d/zfs
+	$SRC/cmd/zdb
+	$SRC/cmd/zhack
+	$SRC/cmd/zfs
+	$SRC/cmd/pyzfs
+	$SRC/cmd/zinject
+	$SRC/cmd/zpool
+	$SRC/cmd/zstreamdump
+	$SRC/cmd/ztest
+	$SRC/cmd/terminfo
+	$SRC/cmd/mdb
+	$SRC/test/test-runner
+	$SRC/test/zfs-tests
+	$SRC/boot/sys/boot
+)
+# Paravirtual device drivers
+directories+=(
+	$SRC/uts/intel/pvscsi
+	$SRC/uts/intel/virtio
+	$SRC/uts/intel/vioif
+	$SRC/uts/intel/vioblk
+	$SRC/uts/intel/vmxnet3s
+	$SRC/uts/i86pc/i86hvm/xdf
+	$SRC/uts/i86pc/i86hvm/xnf
+)
+# Networking
+directories+=(
+	$SRC/uts/intel/ip
+	$SRC/uts/intel/ip6
+	$SRC/lib/libdhcputil
+	$SRC/lib/libdhcpagent
+	$SRC/lib/libdladm
+	$SRC/lib/libipadm
+	$SRC/lib/libroute
+	$SRC/lib/librstp
+	$SRC/cmd/connstat
+	$SRC/cmd/dladm
+	$SRC/cmd/cmd-inet/usr.sbin/ipadm
+)
+# NFS server components
+directories+=(
+	$SRC/uts/intel/nfssrv
+	$SRC/uts/intel/klmmod
+	$SRC/cmd/fs.d/nfs/lockd
+)
+
+for i in "${directories[@]}"; do
+	if [[ -d $i ]]; then
+		(cd $i; dmake install) || exit 1
+	fi
+done

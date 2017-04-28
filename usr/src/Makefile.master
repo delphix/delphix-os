@@ -25,6 +25,7 @@
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
 #
@@ -133,6 +134,7 @@ RPCGEN=		/usr/bin/rpcgen
 STABS=		$(ONBLD_TOOLS)/bin/$(MACH)/stabs
 ELFEXTRACT=	$(ONBLD_TOOLS)/bin/$(MACH)/elfextract
 MBH_PATCH=	$(ONBLD_TOOLS)/bin/$(MACH)/mbh_patch
+BTXLD=		$(ONBLD_TOOLS)/bin/$(MACH)/btxld
 ECHO=		echo
 INS=		/usr/sbin/install
 TRUE=		true
