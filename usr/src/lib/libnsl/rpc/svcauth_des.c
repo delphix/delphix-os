@@ -22,6 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2017 Joyent Inc
  */
 /* Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T */
 /* All Rights Reserved */
@@ -56,6 +57,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/debug.h>
 
 #include <syslog.h>
 
@@ -113,6 +115,16 @@ struct {
 } svcauthdes_stats;
 
 /*
+ * NOTE: this has to fit inside RQCRED_SIZE bytes. If you update this struct,
+ * double-check it still fits.
+ */
+struct authdes_area {
+	struct authdes_cred area_cred;
+	char area_netname[MAXNETNAMELEN+1];
+};
+CTASSERT(sizeof (struct authdes_area) <= RQCRED_SIZE);
+
+/*
  * Service side authenticator for AUTH_DES
  */
 enum auth_stat
@@ -129,12 +141,9 @@ __svcauth_des(struct svc_req *rqst, struct rpc_msg *msg)
 	des_block	*sessionkey, init_sessionkey;
 	des_block	ivec;
 	uint_t	window;
+	struct authdes_area *area;
 	struct timeval	timestamp;
 	uint32_t	namelen;
-	struct area {
-		struct authdes_cred area_cred;
-		char area_netname[MAXNETNAMELEN+1];
-	} *area;
 	int	fullname_rcvd = 0;
 	int from_cache = 0;
 
@@ -149,7 +158,7 @@ __svcauth_des(struct svc_req *rqst, struct rpc_msg *msg)
 	(void) mutex_unlock(&authdes_lock);
 
 	/* LINTED pointer cast */
-	area = (struct area *)rqst->rq_clntcred;
+	area = (struct authdes_area *)rqst->rq_clntcred;
 	cred = (struct authdes_cred *)&area->area_cred;
 
 	if ((uint_t)msg->rm_call.cb_cred.oa_length == 0)
