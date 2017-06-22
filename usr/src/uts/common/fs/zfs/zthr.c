@@ -242,12 +242,14 @@ zthr_wakeup(zthr_t *t)
 	mutex_exit(&t->zthr_lock);
 }
 
+/*
+ * Note: If the zthr is not running (e.g. has been cancelled
+ * already), this is a no-op.
+ */
 int
 zthr_cancel(zthr_t *t)
 {
 	int rc = 0;
-
-	ASSERT3P(t->zthr_thread, !=, NULL);
 
 	mutex_enter(&t->zthr_lock);
 
