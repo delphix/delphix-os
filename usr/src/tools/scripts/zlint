@@ -24,3 +24,13 @@ $mkdir -p $SRC/uts/i86pc/unix/dboot/debug64 \
 (cd $SRC/cmd/zdb; $dmake lint) || exit 1
 (cd $SRC/cmd/ztest; $dmake lint) || exit 1
 (cd $SRC/cmd/zhack; $dmake lint) || exit 1
+
+# Hyper-V
+(cd $SRC/cmd/hyperv; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_heartbeat; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_kvp; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_netvsc; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_shutdown; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_storvsc; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hv_timesync; $dmake lint) || exit 1
+(cd $SRC/uts/intel/hyperv; $dmake lint) || exit 1

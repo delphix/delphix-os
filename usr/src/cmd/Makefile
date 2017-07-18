@@ -481,6 +481,7 @@ i386_SUBDIRS=		\
 	addbadsec	\
 	biosdev		\
 	diskscan	\
+	hyperv		\
 	lms		\
 	rtc		\
 	ucodeadm	\

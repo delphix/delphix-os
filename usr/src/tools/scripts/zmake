@@ -77,6 +77,18 @@ directories=(
 	$SRC/test/zfs-tests
 	$SRC/boot/sys/boot
 )
+# Hyper-V components
+directories+=(
+	$SRC/cmd/hyperv
+	$SRC/uts/intel/hv_heartbeat
+	$SRC/uts/intel/hv_kvp
+	$SRC/uts/intel/hv_netvsc
+	$SRC/uts/intel/hv_shutdown
+	$SRC/uts/intel/hv_storvsc
+	$SRC/uts/intel/hv_timesync
+	$SRC/uts/intel/hv_vmbus
+	$SRC/uts/intel/hyperv
+)
 # Paravirtual device drivers
 directories+=(
 	$SRC/uts/intel/pvscsi
