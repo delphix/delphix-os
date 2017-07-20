@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -41,6 +41,8 @@ function cleanup
 	poolexists $POOL2 && destroy_pool $POOL2
 	poolexists $POOL3 && destroy_pool $POOL3
 	log_must zpool create $POOL2 $DISK2
+	log_must zpool create $POOL3 $DISK3
+	log_must zfs create ${BACKDIR#*/}
 }
 log_onexit cleanup
 
@@ -51,6 +53,7 @@ for compress in off gzip; do
 	for pool_opt in '' -d; do
 		poolexists $POOL3 && destroy_pool $POOL3
 		log_must zpool create $pool_opt $POOL3 $DISK3
+		log_must zfs create ${BACKDIR#*/}
 
 		datasetexists $send_ds && log_must zfs destroy -r $send_ds
 		datasetexists $recv_ds && log_must zfs destroy -r $recv_ds

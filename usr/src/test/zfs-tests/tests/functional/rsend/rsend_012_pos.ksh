@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -58,7 +58,7 @@ function edited_prop
 {
 	typeset behaviour=$1
 	typeset ds=$2
-	typeset backfile=$TESTDIR/edited_prop_$ds
+	typeset backfile=/tmp/edited_prop.$ds
 
 	case $behaviour in
 		"get")
@@ -104,20 +104,15 @@ function cleanup
 	log_must edited_prop "set" $POOL
 	log_must edited_prop "set" $POOL2
 
+	log_must rm -f /tmp/edited_prop*
+
 	typeset prop
 	for prop in $(fs_inherit_prop) ; do
 		log_must $ZFS inherit $prop $POOL
 		log_must $ZFS inherit $prop $POOL2
 	done
 
-	#if is_shared $POOL; then
-	#	log_must $ZFS set sharenfs=off $POOL
-	#fi
 	log_must setup_test_model $POOL
-
-	if [[ -d $TESTDIR ]]; then
-		log_must $RM -rf $TESTDIR/*
-	fi
 }
 
 log_assert "Verify zfs send -R will backup all the filesystem properties " \
@@ -188,14 +183,11 @@ while ((i < ${#pair[@]})); do
 done
 
 
-$ZPOOL upgrade -v | $GREP "Snapshot properties" > /dev/null 2>&1
-if (( $? == 0 )) ; then
-	i=0
-	while ((i < ${#pair[@]})); do
-		log_must cmp_ds_prop ${pair[$i]}@final ${pair[((i+1))]}@final
-		((i += 2))
-	done
-fi
+i=0
+while ((i < ${#pair[@]})); do
+	log_must cmp_ds_prop ${pair[$i]}@final ${pair[((i+1))]}@final
+	((i += 2))
+done
 
 log_pass "Verify zfs send -R will backup all the filesystem properties " \
 	"correctly."

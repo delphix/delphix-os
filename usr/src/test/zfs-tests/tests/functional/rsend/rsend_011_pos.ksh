@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -50,6 +50,9 @@ function cleanup
 	unset __ZFS_POOL_RESTRICT
 	log_must cleanup_pool $POOL
 	log_must cleanup_pool $POOL2
+
+	# The RESTRICT variable doesn't prevent BACKDIR from being unmounted
+	log_must zfs mount ${BACKDIR#*/}
 
 	log_must setup_test_model $POOL
 }

@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -42,6 +42,5 @@ else
 	cleanup_pool $POOL2
 	poolexists $POOL3 && cleanup_pool $POOL3
 fi
-log_must rm -rf $BACKDIR $TESTDIR
 
 log_pass

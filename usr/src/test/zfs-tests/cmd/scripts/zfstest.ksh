@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2017 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
 #
 
@@ -35,12 +35,18 @@ function fail
 
 function find_disks
 {
-	typeset all_disks=$(echo '' | sudo format | awk '/c[0-9]/ {print $2}')
+	typeset all_disks=$(echo '' | sudo format | awk \
+	    '/c[0-9]/ {print $2}' | grep c[0-9])
 	typeset used_disks=$(zpool status | awk \
 	    '/c[0-9]*t[0-9a-f]*d[0-9]/ {print $1}' | sed 's/s[0-9]//g')
 
 	typeset disk used avail_disks
 	for disk in $all_disks; do
+		# For Delphix, explicitly exclude IDE disks like `c3d0`
+		# because in our Azure environment the disks are of a
+		# different size, and have much worse performance.
+		[[ $disk =~ 't' ]] || continue
+
 		for used in $used_disks; do
 			[[ "$disk" = "$used" ]] && continue 2
 		done

@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -143,12 +143,6 @@ function cleanup_pool
 	fi
 
 	return 0
-}
-
-function cleanup_pools
-{
-	cleanup_pool $POOL2
-	destroy_pool $POOL3
 }
 
 #

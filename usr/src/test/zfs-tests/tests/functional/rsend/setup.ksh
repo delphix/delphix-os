@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -38,8 +38,8 @@ if is_global_zone ; then
 	log_must zpool create $POOL $DISK1
 	log_must zpool create $POOL2 $DISK2
 	log_must zpool create $POOL3 $DISK3
+	log_must zfs create ${BACKDIR#*/}
 fi
-log_must mkdir $BACKDIR $TESTDIR
 
 log_must setup_test_model $POOL
 

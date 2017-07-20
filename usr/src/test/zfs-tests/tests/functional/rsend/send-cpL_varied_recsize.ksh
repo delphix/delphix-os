@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2015 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2017 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/rsend/rsend.kshlib
@@ -163,7 +163,9 @@ typeset small=$((128 * 1024))
 typeset large=$((1024 * 1024))
 
 # Create POOL3 with features disabled and datasets to create test send streams
+poolexists $POOL3 && destroy_pool $POOL3
 log_must zpool create -d $POOL3 $DISK3
+log_must zfs create ${BACKDIR#*/}
 write_compressible $BACKDIR 32m
 for recsize in $small $large; do
 	log_must zfs create -o compress=gzip -o recsize=$recsize \
