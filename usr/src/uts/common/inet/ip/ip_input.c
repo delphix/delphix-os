@@ -23,6 +23,7 @@
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  *
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -260,6 +261,12 @@ ip_input_common_v4(ill_t *ill, ill_rx_ring_t *ip_ring, mblk_t *mp_chain,
 
 		ASSERT(DB_TYPE(mp) == M_DATA);
 
+		/*
+		 * Retrieve information from first fragment's metadata
+		 * while we still have it.
+		 */
+		iras.ira_lro_mss = (DB_LROFLAGS(mp) & HW_LRO) ?
+		    DB_LROMSS(mp) : 0;
 
 		/*
 		 * if db_ref > 1 then copymsg and free original. Packet

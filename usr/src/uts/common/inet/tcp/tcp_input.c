@@ -23,7 +23,7 @@
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011 Joyent, Inc. All rights reserved.
- * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
  */
 
 /* This file contains all TCP input processing functions. */
@@ -4693,6 +4693,18 @@ update_ack:
 				flags |= TH_ACK_NEEDED;
 			else
 				flags |= TH_ACK_TIMER_NEEDED;
+		} else if (ira->ira_lro_mss != 0) {
+			/*
+			 * If this is an LRO'd packet, send ack right away
+			 * Note: alternatively, we could divide packet size by
+			 * mss and increase tcp_rack_cnt by that amount, but it
+			 * is unclear if it is worth the extra division. Also,
+			 * it's better to send acks a bit more frequently than
+			 * not frequently enough.
+			 */
+			flags |= TH_ACK_NEEDED;
+			DTRACE_PROBE2(tcp_lro, uint16_t, ira->ira_lro_mss,
+			    uint_t, ira->ira_pktlen);
 		} else {
 			/* Start delayed ack timer */
 			flags |= TH_ACK_TIMER_NEEDED;

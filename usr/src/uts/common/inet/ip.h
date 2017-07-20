@@ -2336,6 +2336,7 @@ struct ip_recv_attr_s {
 	uint_t		ira_rifindex;	/* Received ifindex */
 	uint_t		ira_ruifindex;	/* Received upper ifindex */
 	ts_label_t	*ira_tsl;	/* Always set. NULL if not TX */
+	uint16_t	ira_lro_mss;	/* 0 if LRO is not set */
 	/*
 	 * ira_rill and ira_ill is set inside IP, but not when conn_recv is
 	 * called; ULPs should use ira_ruifindex instead.

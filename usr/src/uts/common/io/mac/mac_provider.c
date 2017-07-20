@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -1489,11 +1489,13 @@ void mac_hcksum_set(mblk_t *mp, uint32_t start, uint32_t stuff,
     uint32_t end, uint32_t value, uint32_t flags)
 {
 	ASSERT(DB_TYPE(mp) == M_DATA);
+	ASSERT3U(flags & ~HCK_FLAGS, ==, 0);
 
 	DB_CKSUMSTART(mp) = (intptr_t)start;
 	DB_CKSUMSTUFF(mp) = (intptr_t)stuff;
 	DB_CKSUMEND(mp) = (intptr_t)end;
-	DB_CKSUMFLAGS(mp) = (uint16_t)flags;
+	/* We need the OR to prevent overwriting LRO flags */
+	DB_CKSUMFLAGS(mp) |= (uint16_t)flags;
 	DB_CKSUM16(mp) = (uint16_t)value;
 }
 
@@ -1507,4 +1509,15 @@ mac_lso_get(mblk_t *mp, uint32_t *mss, uint32_t *flags)
 		if ((*flags != 0) && (mss != NULL))
 			*mss = (uint32_t)DB_LSOMSS(mp);
 	}
+}
+
+void
+mac_lro_set(mblk_t *mp, uint32_t mss, uint32_t flags)
+{
+	ASSERT(DB_TYPE(mp) == M_DATA);
+	ASSERT3U(flags & ~HW_LRO_FLAGS, ==, 0);
+
+	DB_LSOMSS(mp) = (uint16_t)mss;
+	/* We need the OR to prevent overwriting CKSUM flags */
+	DB_LROFLAGS(mp) |= (uint16_t)flags;
 }

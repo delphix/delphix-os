@@ -25,6 +25,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright (c) 2016, 2017 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -949,7 +950,7 @@ str_sendsig(vnode_t *vp, int event, uchar_t band, int error)
  */
 static void
 dosendsig(proc_t *proc, int events, int sevent, k_siginfo_t *info,
-	uchar_t band, int error)
+    uchar_t band, int error)
 {
 	ASSERT(MUTEX_HELD(&proc->p_lock));
 
@@ -2349,7 +2350,7 @@ mux_rmvedge(stdata_t *upstp, int muxid, str_stack_t *ss)
  */
 int
 devflg_to_qflag(struct streamtab *stp, uint32_t devflag, uint32_t *qflagp,
-	uint32_t *sqtypep)
+    uint32_t *sqtypep)
 {
 	uint32_t qflag = 0;
 	uint32_t sqtype = 0;
@@ -8086,7 +8087,7 @@ strflushrq(vnode_t *vp, int flag)
 
 void
 strsetrputhooks(vnode_t *vp, uint_t flags,
-		msgfunc_t protofunc, msgfunc_t miscfunc)
+    msgfunc_t protofunc, msgfunc_t miscfunc)
 {
 	struct stdata *stp = vp->v_stream;
 
@@ -8461,7 +8462,7 @@ hcksum_assoc(mblk_t *mp,  multidata_t *mmd, pdesc_t *pd,
 		DB_CKSUMSTART(mp) = (intptr_t)start;
 		DB_CKSUMSTUFF(mp) = (intptr_t)stuff;
 		DB_CKSUMEND(mp) = (intptr_t)end;
-		DB_CKSUMFLAGS(mp) = flags;
+		DB_CKSUMFLAGS(mp) |= flags;
 		DB_CKSUM16(mp) = (uint16_t)value;
 
 	} else {

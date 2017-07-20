@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_PATTR_H
@@ -102,8 +104,12 @@ typedef struct pattr_hcksum_s {
  */
 #define	HW_LSO			0x10	/* On Transmit: hardware does LSO */
 					/* On Receive: N/A */
+#define	HW_LRO			0x20	/* On Transmit: N/A */
+					/* On Receive: Packet underwent LRO */
 
 #define	HW_LSO_FLAGS		HW_LSO	/* All LSO flags, currently only one */
+
+#define	HW_LRO_FLAGS		HW_LRO	/* All LRO flags, currently only one */
 
 /*
  * Structure used for zerocopy attribute.

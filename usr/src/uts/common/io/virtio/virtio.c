@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2012 Nexenta Systems, Inc.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2012 Alexey Zaytsev <alexey.zaytsev@gmail.com>
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */

@@ -25,6 +25,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_STRSUBR_H
@@ -1337,6 +1339,8 @@ extern int SAMESTR(queue_t *);
 #define	DB_CKSUM32(mp)		((mp)->b_datap->db_cksum32)
 #define	DB_LSOFLAGS(mp)		((mp)->b_datap->db_struioun.cksum.flags)
 #define	DB_LSOMSS(mp)		((mp)->b_datap->db_struioun.cksum.pad)
+#define	DB_LROFLAGS(mp)		((mp)->b_datap->db_struioun.cksum.flags)
+#define	DB_LROMSS(mp)		((mp)->b_datap->db_struioun.cksum.pad)
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus

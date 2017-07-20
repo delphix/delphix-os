@@ -7963,6 +7963,7 @@ ip_fix_dbref(mblk_t *mp, ip_recv_attr_t *ira)
 		DB_CKSUMSTUFF(mp1) = DB_CKSUMSTUFF(mp);
 		DB_CKSUMEND(mp1) = DB_CKSUMEND(mp);
 		DB_CKSUM16(mp1) = DB_CKSUM16(mp);
+		DB_LROMSS(mp1) = DB_LROMSS(mp);
 	}
 	freemsg(mp);
 	return (mp1);

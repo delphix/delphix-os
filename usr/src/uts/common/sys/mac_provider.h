@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_MAC_PROVIDER_H
@@ -540,6 +541,8 @@ extern void			mac_hcksum_set(mblk_t *, uint32_t, uint32_t,
 				    uint32_t, uint32_t, uint32_t);
 
 extern void			mac_lso_get(mblk_t *, uint32_t *, uint32_t *);
+
+extern void			mac_lro_set(mblk_t *, uint32_t, uint32_t);
 
 #endif	/* _KERNEL */
 

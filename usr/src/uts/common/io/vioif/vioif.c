@@ -11,7 +11,7 @@
 
 /*
  * Copyright 2013 Nexenta Inc.  All rights reserved.
- * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
  */
 
 /* Based on the NetBSD virtio driver by Minoura Makoto. */
@@ -55,8 +55,8 @@
 #include <sys/debug.h>
 #include <sys/pci.h>
 #include <sys/ethernet.h>
-
-#define	VLAN_TAGSZ 4
+#include <sys/vlan.h>
+#include <sys/sdt.h>
 
 #include <sys/dlpi.h>
 #include <sys/taskq.h>
@@ -76,9 +76,14 @@
 #include "virtiovar.h"
 #include "virtioreg.h"
 
-#if !defined(__packed)
-#define	__packed __attribute__((packed))
-#endif /* __packed */
+/*
+ * Tunables
+ */
+
+/* support checksum offload on receive side */
+boolean_t vioif_hcksum_enable = B_TRUE;
+/* advertise support for LRO. vioif_hcksum_enable must also be TRUE */
+boolean_t vioif_lro_enable = B_TRUE;
 
 /* Configuration registers */
 #define	VIRTIO_NET_CONFIG_MAC		0 /* 8bit x 6byte */
@@ -107,6 +112,7 @@
 /* Status */
 #define	VIRTIO_NET_S_LINK_UP	1
 
+#pragma pack(1)
 /* Packet header structure */
 struct virtio_net_hdr {
 	uint8_t		flags;
@@ -116,8 +122,10 @@ struct virtio_net_hdr {
 	uint16_t	csum_start;
 	uint16_t	csum_offset;
 };
+#pragma pack()
 
-#define	VIRTIO_NET_HDR_F_NEEDS_CSUM	1 /* flags */
+#define	VIRTIO_NET_HDR_F_NEEDS_CSUM	1 /* pseudo-header cksum set */
+#define	VIRTIO_NET_HDR_F_DATA_VALID	2 /* cksum not set */
 #define	VIRTIO_NET_HDR_GSO_NONE		0 /* gso_type */
 #define	VIRTIO_NET_HDR_GSO_TCPV4	1 /* gso_type */
 #define	VIRTIO_NET_HDR_GSO_UDP		3 /* gso_type */
@@ -126,10 +134,12 @@ struct virtio_net_hdr {
 
 
 /* Control virtqueue */
+#pragma pack(1)
 struct virtio_net_ctrl_cmd {
 	uint8_t	class;
 	uint8_t	command;
-} __packed;
+};
+#pragma pack()
 
 #define	VIRTIO_NET_CTRL_RX		0
 #define	VIRTIO_NET_CTRL_RX_PROMISC	0
@@ -142,22 +152,24 @@ struct virtio_net_ctrl_cmd {
 #define	VIRTIO_NET_CTRL_VLAN_ADD	0
 #define	VIRTIO_NET_CTRL_VLAN_DEL	1
 
+#pragma pack(1)
 struct virtio_net_ctrl_status {
 	uint8_t	ack;
-} __packed;
+};
 
 struct virtio_net_ctrl_rx {
 	uint8_t	onoff;
-} __packed;
+};
 
 struct virtio_net_ctrl_mac_tbl {
 	uint32_t nentries;
 	uint8_t macs[][ETHERADDRL];
-} __packed;
+};
 
 struct virtio_net_ctrl_vlan {
 	uint16_t id;
-} __packed;
+};
+#pragma pack()
 
 static int vioif_quiesce(dev_info_t *);
 static int vioif_attach(dev_info_t *, ddi_attach_cmd_t);
@@ -302,6 +314,8 @@ struct vioif_softc {
 	uint64_t		sc_notxbuf;
 	uint64_t		sc_ierrors;
 	uint64_t		sc_oerrors;
+	uint64_t		sc_cksum_skipped;
+	uint64_t		sc_lro_pkts;
 };
 
 #define	ETHER_HEADER_LEN		sizeof (struct ether_header)
@@ -690,23 +704,10 @@ static uint_t
 vioif_add_rx(struct vioif_softc *sc, int kmflag)
 {
 	uint_t num_added = 0;
+	struct vq_entry *ve;
 
-	for (;;) {
-		struct vq_entry *ve;
-		struct vioif_rx_buf *buf;
-
-		ve = vq_alloc_entry(sc->sc_rx_vq);
-		if (!ve) {
-			/*
-			 * Out of free descriptors - ring already full.
-			 * It would be better to update sc_norxdescavail
-			 * but MAC does not ask for this info, hence we
-			 * update sc_norecvbuf.
-			 */
-			sc->sc_norecvbuf++;
-			break;
-		}
-		buf = sc->sc_rxbufs[ve->qe_index];
+	while ((ve = vq_alloc_entry(sc->sc_rx_vq)) != NULL) {
+		struct vioif_rx_buf *buf = sc->sc_rxbufs[ve->qe_index];
 
 		if (!buf) {
 			/* First run, allocate the buffer. */
@@ -799,6 +800,7 @@ vioif_process_rx(struct vioif_softc *sc)
 		}
 
 		len -= sizeof (struct virtio_net_hdr);
+
 		/*
 		 * We copy small packets that happen to fit into a single
 		 * cookie and reuse the buffers. For bigger ones, we loan
@@ -854,6 +856,29 @@ vioif_process_rx(struct vioif_softc *sc)
 		sc->sc_rbytes += len;
 		sc->sc_ipackets++;
 
+		/*
+		 * Check for cksum offload and LRO.
+		 */
+		struct virtio_net_hdr *hdr = (void *)buf->rb_mapping.vbm_buf;
+		if (hdr->flags != 0) {
+			/*
+			 * TODO: we might want to do some sanity checks on the
+			 * packet before setting HCK_FULLCKSUM_OK.
+			 */
+			ASSERT(hdr->flags == VIRTIO_NET_HDR_F_NEEDS_CSUM ||
+			    hdr->flags == VIRTIO_NET_HDR_F_DATA_VALID);
+			mac_hcksum_set(mp, 0, 0, 0, 0, HCK_FULLCKSUM_OK);
+			sc->sc_cksum_skipped++;
+		}
+		if (hdr->gso_type != 0) {
+			ASSERT(hdr->gso_type == VIRTIO_NET_HDR_GSO_TCPV4 ||
+			    hdr->gso_type == VIRTIO_NET_HDR_GSO_UDP);
+			mac_lro_set(mp, hdr->gso_size, HW_LRO);
+			sc->sc_lro_pkts++;
+		}
+		DTRACE_PROBE2(vioif_hdr, struct virtio_net_hdr *, hdr,
+		    uint32_t, len);
+
 		virtio_free_chain(ve);
 
 		if (lastmp == NULL) {
@@ -872,7 +897,7 @@ vioif_process_rx(struct vioif_softc *sc)
 	return (num_processed);
 }
 
-static int
+static uint_t
 vioif_reclaim_used_tx(struct vioif_softc *sc)
 {
 	struct vq_entry *ve;
@@ -1077,7 +1102,6 @@ vioif_send(struct vioif_softc *sc, mblk_t *mp)
 	(void) memset(buf->tb_inline_mapping.vbm_buf, 0,
 	    sizeof (struct virtio_net_hdr));
 
-	/* LINTED E_BAD_PTR_CAST_ALIGN */
 	net_header = (struct virtio_net_hdr *)
 	    buf->tb_inline_mapping.vbm_buf;
 
@@ -1481,6 +1505,7 @@ vioif_show_features(struct vioif_softc *sc, const char *prefix,
 
 	/* LINTED E_PTRDIFF_OVERFLOW */
 	bufp += virtio_show_features(features, bufp, bufend - bufp);
+	*bufp = '\0';
 
 	/* LINTED E_PTRDIFF_OVERFLOW */
 	bufp += snprintf(bufp, bufend - bufp, "Vioif ( ");
@@ -1555,15 +1580,29 @@ static int
 vioif_dev_features(struct vioif_softc *sc)
 {
 	uint32_t host_features;
-
-	host_features = virtio_negotiate_features(&sc->sc_virtio,
+	uint32_t guest_features =
 	    VIRTIO_NET_F_CSUM |
 	    VIRTIO_NET_F_HOST_TSO4 |
 	    VIRTIO_NET_F_HOST_ECN |
 	    VIRTIO_NET_F_MAC |
 	    VIRTIO_NET_F_STATUS |
 	    VIRTIO_F_RING_INDIRECT_DESC |
-	    VIRTIO_F_NOTIFY_ON_EMPTY);
+	    VIRTIO_F_NOTIFY_ON_EMPTY;
+
+	if (vioif_hcksum_enable)
+		guest_features |= VIRTIO_NET_F_GUEST_CSUM;
+
+	if (vioif_lro_enable) {
+		if (!vioif_hcksum_enable) {
+			dev_err(sc->sc_dev, CE_WARN, "LRO requires checksum "
+			    "offload to be also enabled.");
+		} else {
+			guest_features |= VIRTIO_NET_F_GUEST_TSO4;
+		}
+	}
+
+	host_features = virtio_negotiate_features(&sc->sc_virtio,
+	    guest_features);
 
 	vioif_show_features(sc, "Host features: ", host_features);
 	vioif_show_features(sc, "Negotiated features: ",
@@ -1810,7 +1849,7 @@ vioif_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 
 	sc->sc_tx_vq = virtio_alloc_vq(&sc->sc_virtio, 1,
 	    VIOIF_TX_QLEN, VIOIF_INDIRECT_MAX, "tx");
-	if (!sc->sc_rx_vq)
+	if (!sc->sc_tx_vq)
 		goto exit_alloc2;
 	virtio_stop_vq_intr(sc->sc_tx_vq);
 
