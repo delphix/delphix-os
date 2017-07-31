@@ -4,7 +4,7 @@
 
 [build]
 build_machine=westy
-zmake_machine=scottie.dcenter.delphix.com
+zmake_machine=westy
 dcenter_group=dlpx-trunk
 repo_dir=/data/{user}/dlpx-os-gate
 build_dir=/data/{user}/jenkins/{branch}
