@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2017 by Delphix. All rights reserved.
 #
 
 .KEEP_STATE:
@@ -35,7 +36,7 @@ ROOTPROG = $(ROOTUSRSBIN)/$(PROG)
 $(NOT_RELEASE_BUILD)CPPFLAGS += -DDEBUG
 CPPFLAGS += -I. -I../common -I../../include
 CFLAGS += $(CTF_FLAGS) $(CCVERBOSE) $(XSTRCONST)
-LDLIBS += -L$(ROOT)/usr/lib/fm -lfmd_log -lnvpair -ltopo -lfmd_msg
+LDLIBS += -L$(ROOT)/usr/lib/fm -lumem -lfmd_log -lnvpair -ltopo -lfmd_msg
 LDFLAGS += -R/usr/lib/fm
 LINTFLAGS += -mnu
 CERRWARN += -_gcc=-Wno-parentheses

@@ -22,7 +22,7 @@
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2017 by Delphix. All rights reserved.
 #
 
 PROG:sh=	cd ..; basename `pwd`
@@ -35,7 +35,9 @@ INCS +=	-I../../../lib/libzpool/common
 INCS +=	-I../../../uts/common/fs/zfs
 INCS +=	-I../../../uts/common/fs/zfs/lua
 
-LDLIBS += -lzpool -lzfs -lnvpair
+NOTLAZYLIBS = $(ZNOLAZYLOAD) -lzpool $(ZLAZYLOAD)
+lint := NOTLAZYLIBS = -lzpool
+LDLIBS += $(NOTLAZYLIBS) -lzfs -lnvpair
 
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all

@@ -22,6 +22,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2017 by Delphix. All rights reserved.
+#
 
 .KEEP_STATE:
 .SUFFIXES:
@@ -43,7 +45,7 @@ LINTFILES += $(STAT_LINTFILES)
 $(NOT_RELEASE_BUILD)CPPFLAGS += -DDEBUG
 CPPFLAGS += -I. -I../common -I$(STATCOMMONDIR)
 CFLAGS += $(CTF_FLAGS) $(CCVERBOSE) $(XSTRCONST)
-LDLIBS += -L$(ROOT)/usr/lib/fm -lfmd_adm
+LDLIBS += -L$(ROOT)/usr/lib/fm -lfmd_adm -lumem
 LDFLAGS += -R/usr/lib/fm
 LINTFLAGS += -mnu
 

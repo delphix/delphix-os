@@ -23,6 +23,7 @@
 # Use is subject to license terms.
 # 
 # Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+# Copyright (c) 2017 by Delphix. All rights reserved.
 #
 
 PROG= bootadm
@@ -38,7 +39,7 @@ include ../Makefile.com
 .KEEP_STATE:
 
 LDLIBS_i386= -lfdisk
-LDLIBS +=	-lnvpair -lgen -ladm -lefi -lscf -lbe -lzfs $(LDLIBS_$(MACH))
+LDLIBS +=	-lumem -lnvpair -lgen -ladm -lefi -lscf -lbe -lzfs $(LDLIBS_$(MACH))
 
 # There's no lint library for zlib, so only include this when building
 $(PROG) := LDLIBS +=	-lz

@@ -24,6 +24,8 @@
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2017 by Delphix. All rights reserved.
+#
 #ident	"%Z%%M%	%I%	%E% SMI"
 
 .KEEP_STATE:
@@ -41,7 +43,7 @@ ROOTPROG = $(ROOTLIBFMD)/$(PROG)
 $(NOT_RELEASE_BUILD)CPPFLAGS += -DDEBUG
 CPPFLAGS += -I. -I../common
 CFLAGS += $(CTF_FLAGS) $(CCVERBOSE) $(XSTRCONST)
-LDLIBS += -L$(ROOT)/usr/lib/fm -ltopo -lnvpair
+LDLIBS += -L$(ROOT)/usr/lib/fm -ltopo -lnvpair -lumem
 LDFLAGS += -R/usr/lib/fm
 LINTFLAGS += -mnu
 

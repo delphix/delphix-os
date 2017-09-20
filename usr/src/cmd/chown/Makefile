@@ -24,6 +24,8 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright (c) 2017 by Delphix. All rights reserved.
+#
 
 PROG= chown
 XPG4PROG= chown
@@ -35,7 +37,7 @@ include ../Makefile.cmd
 
 $(XPG4) :=	CFLAGS += -DXPG4
 CPPFLAGS += -D_FILE_OFFSET_BITS=64
-LDLIBS += -lcmdutils -lsec
+LDLIBS += -lumem -lcmdutils -lsec
 
 .KEEP_STATE:
 
