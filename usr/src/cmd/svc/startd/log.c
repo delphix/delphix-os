@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2011 Nexenta Systems. All rights reserved.
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
 /*
@@ -121,7 +122,7 @@
 #include "startd.h"
 
 
-#define	LOGBUF_SZ	(60 * 80)			/* 60 lines */
+#define	LOGBUF_SZ	(1000 * 80)			/* 1000 lines */
 
 static FILE *logfile = NULL;
 

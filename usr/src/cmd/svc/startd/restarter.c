@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
 /*
@@ -1814,8 +1815,12 @@ again:
 
 		case RESTARTER_EVENT_TYPE_REMOVE_INSTANCE:
 			restarter_delete_inst(inst);
-			inst = NULL;
-			goto cont;
+			/*
+			 * since we have freed the instance and its event
+			 * queue (including the current event), we should exit
+			 * the thread now.
+			 */
+			goto out;
 
 		case RESTARTER_EVENT_TYPE_STOP_RESET:
 			reset_start_times(inst);
@@ -1939,8 +1944,8 @@ out:
 }
 
 static int
-is_admin_event(restarter_event_type_t t) {
-
+is_admin_event(restarter_event_type_t t)
+{
 	switch (t) {
 	case RESTARTER_EVENT_TYPE_ADMIN_MAINT_ON:
 	case RESTARTER_EVENT_TYPE_ADMIN_MAINT_ON_IMMEDIATE:
