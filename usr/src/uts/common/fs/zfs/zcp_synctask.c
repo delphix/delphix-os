@@ -245,6 +245,15 @@ zcp_synctask_snapshot(lua_State *state, boolean_t sync, nvlist_t *err_details)
 	zcp_run_info_t *ri = zcp_run_info(state);
 
 	/*
+	 * On old pools, the ZIL must not be active when a snapshot is created,
+	 * but we can't suspend the ZIL because we're already in syncing
+	 * context.
+	 */
+	if (spa_version(ri->zri_pool->dp_spa) < SPA_VERSION_FAST_SNAP) {
+		return (ENOTSUP);
+	}
+
+	/*
 	 * We only allow for a single snapshot rather than a list, so the
 	 * error list output is unnecessary.
 	 */
@@ -254,18 +263,13 @@ zcp_synctask_snapshot(lua_State *state, boolean_t sync, nvlist_t *err_details)
 	ddsa.ddsa_snaps = fnvlist_alloc();
 	fnvlist_add_boolean(ddsa.ddsa_snaps, dsname);
 
-	/*
-	 * On old pools, the ZIL must not be active when a snapshot is created,
-	 * but we can't suspend the ZIL because we're already in syncing
-	 * context.
-	 */
-	if (spa_version(ri->zri_pool->dp_spa) < SPA_VERSION_FAST_SNAP) {
-		return (ENOTSUP);
-	}
+	zcp_cleanup_handler_t *zch = zcp_register_cleanup(state,
+	    (zcp_cleanup_t *)&fnvlist_free, ddsa.ddsa_snaps);
 
 	err = zcp_sync_task(state, dsl_dataset_snapshot_check,
 	    dsl_dataset_snapshot_sync, &ddsa, sync, dsname);
 
+	zcp_deregister_cleanup(state, zch);
 	fnvlist_free(ddsa.ddsa_snaps);
 
 	return (err);
