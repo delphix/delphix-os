@@ -9,7 +9,7 @@
 [branch "master"]
         gate-release = Jocacean
         codename = Jocacean
-        gate-approvers = gatekeepers-os
+        gate-approvers = gatekeepers-52
         gate-slack-notify = pushes
         gate-allowed-issuetypes = 1,2,3,5,10001,10302
         gate-release-check = skip
