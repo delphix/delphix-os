@@ -218,7 +218,7 @@ enumerate_disks(di_opts_t *opts)
 	int err, i;
 	int filter[] = { DM_DT_FIXED, -1 };
 	dm_descriptor_t *disk, *controller;
-	nvlist_t *mattrs, *dattrs, *cattrs = NULL;
+	nvlist_t *mattrs, *dattrs;
 
 	uint64_t size, total;
 	uint32_t blocksize;
@@ -256,6 +256,7 @@ enumerate_disks(di_opts_t *opts)
 
 	for (i = 0; media != NULL && media[i] != NULL; i++) {
 		char *ctype = NULL;
+		nvlist_t *cattrs = NULL;
 
 		if ((disk = dm_get_associated_descriptors(media[i],
 		    DM_DRIVE, &err)) == NULL) {
