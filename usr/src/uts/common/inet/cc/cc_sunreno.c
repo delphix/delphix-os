@@ -195,7 +195,7 @@ sunreno_cong_signal(struct cc_var *ccv, uint32_t type)
 		 */
 		if (!CCV(ccv, tcp_cwr) || CCV(ccv, tcp_rexmit)) {
 			if (CCV(ccv, tcp_timer_backoff) != 0)
-				npkt = CCV(ccv, tcp_cwnd_ssthresh) / mss;
+				npkt = CCV(ccv, tcp_cwnd_ssthresh) / 2 / mss;
 			CCV(ccv, tcp_cwnd_ssthresh) = MAX(npkt, 2) * mss;
 		}
 		CCV(ccv, tcp_cwnd) = mss;
