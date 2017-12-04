@@ -257,7 +257,7 @@ get_usage(zpool_help_t idx)
 		return (gettext("\treplace [-f] <pool> <device> "
 		    "[new-device]\n"));
 	case HELP_REMOVE:
-		return (gettext("\tremove <pool> <device> ...\n"));
+		return (gettext("\tremove [-nps] <pool> <device> ...\n"));
 	case HELP_REOPEN:
 		return (gettext("\treopen <pool>\n"));
 	case HELP_INITIALIZE:
@@ -618,11 +618,19 @@ zpool_do_remove(int argc, char **argv)
 	int i, ret = 0;
 	zpool_handle_t *zhp;
 	boolean_t stop = B_FALSE;
+	boolean_t noop = B_FALSE;
+	boolean_t parsable = B_FALSE;
 	char c;
 
 	/* check options */
-	while ((c = getopt(argc, argv, "s")) != -1) {
+	while ((c = getopt(argc, argv, "nps")) != -1) {
 		switch (c) {
+		case 'n':
+			noop = B_TRUE;
+			break;
+		case 'p':
+			parsable = B_TRUE;
+			break;
 		case 's':
 			stop = B_TRUE;
 			break;
@@ -647,6 +655,11 @@ zpool_do_remove(int argc, char **argv)
 	if ((zhp = zpool_open(g_zfs, poolname)) == NULL)
 		return (1);
 
+	if (stop && noop) {
+		(void) fprintf(stderr, gettext("stop request ignored\n"));
+		return (0);
+	}
+
 	if (stop) {
 		if (argc > 1) {
 			(void) fprintf(stderr, gettext("too many arguments\n"));
@@ -661,8 +674,29 @@ zpool_do_remove(int argc, char **argv)
 		}
 
 		for (i = 1; i < argc; i++) {
-			if (zpool_vdev_remove(zhp, argv[i]) != 0)
-				ret = 1;
+			if (noop) {
+				uint64_t size;
+
+				if (zpool_vdev_indirect_size(zhp, argv[i],
+				    &size) != 0) {
+					ret = 1;
+					break;
+				}
+				if (parsable) {
+					(void) printf("%s %llu\n",
+					    argv[i], size);
+				} else {
+					char valstr[32];
+					zfs_nicenum(size, valstr,
+					    sizeof (valstr));
+					(void) printf("Memory that will be "
+					    "used after removing %s: %s\n",
+					    argv[i], valstr);
+				}
+			} else {
+				if (zpool_vdev_remove(zhp, argv[i]) != 0)
+					ret = 1;
+			}
 		}
 	}
 

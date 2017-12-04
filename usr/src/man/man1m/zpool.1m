@@ -142,6 +142,7 @@
 .Ar pool
 .Nm
 .Cm remove
+.Op Fl np
 .Ar pool Ar device Ns ...
 .Nm
 .Cm remove
@@ -1522,18 +1523,19 @@ Reopen all the vdevs associated with the pool.
 .It Xo
 .Nm
 .Cm remove
+.Op Fl np
 .Ar pool Ar device Ns ...
 .Xc
 Removes the specified device from the pool.
 This command currently only supports removing hot spares, cache, and log
-devices;  and removing top-level vdevs from non-redundant pools.
+devices; and removing top-level vdevs from non-redundant pools.
 .Pp
 Removing a top-level vdev reduces the total amount of space in the storage pool.
-The specified device must be evacuated by copying all allocated space from it to
+The specified device will be evacuated by copying all allocated space from it to
 the other devices in the pool.
 In this case, the
 .Nm zpool Cm remove
-command initiates the removal and continues while the evacuation continues in
+command initiates the removal and returns, while the evacuation continues in
 the background.
 The removal progress can be monitored with
 .Nm zpool Cm status.
@@ -1546,6 +1548,19 @@ Non-log devices that are part of a mirrored configuration can be removed using
 the
 .Nm zpool Cm detach
 command.
+.Bl -tag -width Ds
+.It Fl n
+Do not actually perform the removal ("no-op").
+Instead, print the estimated amount of memory that will be used by the
+mapping table after the removal completes.
+This is nonzero only for top-level vdevs.
+.El
+.Bl -tag -width Ds
+.It Fl p
+Used in conjunction with the
+.Fl p
+flag, displays numbers as parsable (exact) values.
+.El
 .It Xo
 .Nm
 .Cm remove
