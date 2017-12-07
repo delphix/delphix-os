@@ -532,7 +532,7 @@ zil_alloc_lwb(zilog_t *zilog, blkptr_t *bp, boolean_t slog, uint64_t txg)
 
 	ASSERT(!MUTEX_HELD(&lwb->lwb_vdev_lock));
 	ASSERT(avl_is_empty(&lwb->lwb_vdev_tree));
-	ASSERT(list_is_empty(&lwb->lwb_waiters));
+	VERIFY(list_is_empty(&lwb->lwb_waiters));
 
 	return (lwb);
 }
@@ -542,7 +542,8 @@ zil_free_lwb(zilog_t *zilog, lwb_t *lwb)
 {
 	ASSERT(MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(!MUTEX_HELD(&lwb->lwb_vdev_lock));
-	ASSERT(list_is_empty(&lwb->lwb_waiters));
+	VERIFY(list_is_empty(&lwb->lwb_waiters));
+	ASSERT3U(lwb->lwb_max_txg, <=, spa_syncing_txg(zilog->zl_spa));
 
 	if (lwb->lwb_state == LWB_STATE_OPENED) {
 		avl_tree_t *t = &lwb->lwb_vdev_tree;
@@ -966,6 +967,12 @@ zil_commit_waiter_skip(zil_commit_waiter_t *zcw)
 static void
 zil_commit_waiter_link_lwb(zil_commit_waiter_t *zcw, lwb_t *lwb)
 {
+	/*
+	 * The lwb_waiters field of the lwb is protected by the zilog's
+	 * zl_lock, thus it must be held when calling this function.
+	 */
+	ASSERT(MUTEX_HELD(&lwb->lwb_zilog->zl_lock));
+
 	mutex_enter(&zcw->zcw_lock);
 	ASSERT(!list_link_active(&zcw->zcw_node));
 	ASSERT3P(zcw->zcw_lwb, ==, NULL);
@@ -1422,8 +1429,10 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	 * For more details, see the comment above zil_commit().
 	 */
 	if (lrc->lrc_txtype == TX_COMMIT) {
+		mutex_enter(&zilog->zl_lock);
 		zil_commit_waiter_link_lwb(itx->itx_private, lwb);
 		itx->itx_private = NULL;
+		mutex_exit(&zilog->zl_lock);
 		return (lwb);
 	}
 
@@ -2165,7 +2174,6 @@ zil_commit_writer(zilog_t *zilog, zil_commit_waiter_t *zcw)
 {
 	ASSERT(!MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(spa_writeable(zilog->zl_spa));
-	ASSERT0(zilog->zl_suspend);
 
 	mutex_enter(&zilog->zl_writer_lock);
 
@@ -2337,7 +2345,6 @@ zil_commit_waiter(zilog_t *zilog, zil_commit_waiter_t *zcw)
 	ASSERT(!MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(!MUTEX_HELD(&zilog->zl_writer_lock));
 	ASSERT(spa_writeable(zilog->zl_spa));
-	ASSERT0(zilog->zl_suspend);
 
 	mutex_enter(&zcw->zcw_lock);
 
@@ -2642,6 +2649,12 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 		return;
 	}
 
+	zil_commit_impl(zilog, foid);
+}
+
+void
+zil_commit_impl(zilog_t *zilog, uint64_t foid)
+{
 	/*
 	 * Move the "async" itxs for the specified foid to the "sync"
 	 * queues, such that they will be later committed (or skipped)
@@ -3054,7 +3067,22 @@ zil_suspend(const char *osname, void **cookiep)
 	zilog->zl_suspending = B_TRUE;
 	mutex_exit(&zilog->zl_lock);
 
-	zil_commit(zilog, 0);
+	/*
+	 * We need to use zil_commit_impl to ensure we wait for all
+	 * LWB_STATE_OPENED and LWB_STATE_ISSUED lwb's to be committed
+	 * to disk before proceeding. If we used zil_commit instead, it
+	 * would just call txg_wait_synced(), because zl_suspend is set.
+	 * txg_wait_synced() doesn't wait for these lwb's to be
+	 * LWB_STATE_DONE before returning.
+	 */
+	zil_commit_impl(zilog, 0);
+
+	/*
+	 * Now that we've ensured all lwb's are LWB_STATE_DONE, we use
+	 * txg_wait_synced() to ensure the data from the zilog has
+	 * migrated to the main pool before calling zil_destroy().
+	 */
+	txg_wait_synced(zilog->zl_dmu_pool, 0);
 
 	zil_destroy(zilog, B_FALSE);
 
