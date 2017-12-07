@@ -1578,6 +1578,12 @@ spa_is_initializing(spa_t *spa)
 	return (spa->spa_is_initializing);
 }
 
+boolean_t
+spa_indirect_vdevs_loaded(spa_t *spa)
+{
+	return (spa->spa_indirect_vdevs_loaded);
+}
+
 blkptr_t *
 spa_get_rootblkptr(spa_t *spa)
 {

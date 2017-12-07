@@ -414,6 +414,12 @@ spa_remove_init(spa_t *spa)
 		indirect_vdev_id = vic->vic_prev_indirect_vdev;
 	}
 	spa_config_exit(spa, SCL_STATE, FTAG);
+
+	/*
+	 * Now that we've loaded all the indirect mappings, we can allow
+	 * reads from other blocks (e.g. via predictive prefetch).
+	 */
+	spa->spa_indirect_vdevs_loaded = B_TRUE;
 	return (0);
 }
 

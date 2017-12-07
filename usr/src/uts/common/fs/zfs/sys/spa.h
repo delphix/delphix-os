@@ -800,6 +800,7 @@ extern void spa_claim_notify(zio_t *zio);
 extern boolean_t spa_shutting_down(spa_t *spa);
 extern struct dsl_pool *spa_get_dsl(spa_t *spa);
 extern boolean_t spa_is_initializing(spa_t *spa);
+extern boolean_t spa_indirect_vdevs_loaded(spa_t *spa);
 extern blkptr_t *spa_get_rootblkptr(spa_t *spa);
 extern void spa_set_rootblkptr(spa_t *spa, const blkptr_t *bp);
 extern void spa_altroot(spa_t *, char *, size_t);
