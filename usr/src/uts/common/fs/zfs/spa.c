@@ -1432,6 +1432,8 @@ spa_unload(spa_t *spa)
 
 	spa->spa_async_suspended = 0;
 
+	spa->spa_indirect_vdevs_loaded = B_FALSE;
+
 	if (spa->spa_comment != NULL) {
 		spa_strfree(spa->spa_comment);
 		spa->spa_comment = NULL;
