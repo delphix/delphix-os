@@ -543,31 +543,12 @@ zil_free_lwb(zilog_t *zilog, lwb_t *lwb)
 	ASSERT(MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(!MUTEX_HELD(&lwb->lwb_vdev_lock));
 	VERIFY(list_is_empty(&lwb->lwb_waiters));
-	ASSERT3U(lwb->lwb_max_txg, <=, spa_syncing_txg(zilog->zl_spa));
-
-	if (lwb->lwb_state == LWB_STATE_OPENED) {
-		avl_tree_t *t = &lwb->lwb_vdev_tree;
-		void *cookie = NULL;
-		zil_vdev_node_t *zv;
-
-		while ((zv = avl_destroy_nodes(t, &cookie)) != NULL)
-			kmem_free(zv, sizeof (*zv));
-
-		ASSERT3P(lwb->lwb_root_zio, !=, NULL);
-		ASSERT3P(lwb->lwb_write_zio, !=, NULL);
-
-		zio_cancel(lwb->lwb_root_zio);
-		zio_cancel(lwb->lwb_write_zio);
-
-		lwb->lwb_root_zio = NULL;
-		lwb->lwb_write_zio = NULL;
-	} else {
-		ASSERT3S(lwb->lwb_state, !=, LWB_STATE_ISSUED);
-	}
-
 	ASSERT(avl_is_empty(&lwb->lwb_vdev_tree));
 	ASSERT3P(lwb->lwb_write_zio, ==, NULL);
 	ASSERT3P(lwb->lwb_root_zio, ==, NULL);
+	ASSERT3U(lwb->lwb_max_txg, <=, spa_syncing_txg(zilog->zl_spa));
+	IMPLY(lwb->lwb_state != LWB_STATE_CLOSED,
+	    lwb->lwb_state == LWB_STATE_DONE);
 
 	/*
 	 * Clear the zilog's field to indicate this lwb is no longer
@@ -2049,7 +2030,7 @@ zil_process_commit_list(zilog_t *zilog)
 		boolean_t synced = txg <= spa_last_synced_txg(spa);
 		boolean_t frozen = txg > spa_freeze_txg(spa);
 
-		if (!synced || frozen) {
+		if (!synced || frozen || lrc->lrc_txtype == TX_COMMIT) {
 			if (lwb != NULL) {
 				lwb = zil_lwb_commit(zilog, itx, lwb);
 			} else if (lrc->lrc_txtype == TX_COMMIT) {
@@ -2057,22 +2038,6 @@ zil_process_commit_list(zilog_t *zilog)
 				zil_commit_waiter_link_nolwb(
 				    itx->itx_private, &nolwb_waiters);
 			}
-		} else if (lrc->lrc_txtype == TX_COMMIT) {
-			ASSERT3B(synced, ==, B_TRUE);
-			ASSERT3B(frozen, ==, B_FALSE);
-
-			/*
-			 * If this is a commit itx, then there will be a
-			 * thread that is either: already waiting for
-			 * it, or soon will be waiting.
-			 *
-			 * This itx has already been committed to disk
-			 * via spa_sync() so we don't bother committing
-			 * it to an lwb. As a result, we cannot use the
-			 * lwb zio callback to signal the waiter and
-			 * mark it as done, so we must do that here.
-			 */
-			zil_commit_waiter_skip(itx->itx_private);
 		}
 
 		list_remove(&zilog->zl_itx_commit_list, itx);
