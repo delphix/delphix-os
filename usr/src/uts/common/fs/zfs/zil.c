@@ -547,7 +547,7 @@ zil_free_lwb(zilog_t *zilog, lwb_t *lwb)
 	ASSERT3P(lwb->lwb_write_zio, ==, NULL);
 	ASSERT3P(lwb->lwb_root_zio, ==, NULL);
 	ASSERT3U(lwb->lwb_max_txg, <=, spa_syncing_txg(zilog->zl_spa));
-	IMPLY(lwb->lwb_state != LWB_STATE_CLOSED,
+	ASSERT(lwb->lwb_state == LWB_STATE_CLOSED ||
 	    lwb->lwb_state == LWB_STATE_DONE);
 
 	/*
@@ -2021,16 +2021,54 @@ zil_process_commit_list(zilog_t *zilog)
 			    zilog_t *, zilog, itx_t *, itx);
 		}
 
-		/*
-		 * This is inherently racy and may result in us writing
-		 * out a log block for a txg that was just synced. This
-		 * is ok since we'll end cleaning up that log block the
-		 * next time we call zil_sync().
-		 */
 		boolean_t synced = txg <= spa_last_synced_txg(spa);
 		boolean_t frozen = txg > spa_freeze_txg(spa);
 
-		if (!synced || frozen || lrc->lrc_txtype == TX_COMMIT) {
+		/*
+		 * If the txg of this itx has already been synced out, then
+		 * we don't need to commit this itx to an lwb. This is
+		 * because the data of this itx will have already been
+		 * written to the main pool. This is inherently racy, and
+		 * it's still ok to commit an itx whose txg has already
+		 * been synced; this will result in a write that's
+		 * unnecessary, but will do no harm.
+		 *
+		 * With that said, we always want to commit TX_COMMIT itxs
+		 * to an lwb, regardless of whether or not that itx's txg
+		 * has been synced out. We do this to ensure any OPENED lwb
+		 * will always have at least one zil_commit_waiter_t linked
+		 * to the lwb.
+		 *
+		 * As a counter-example, if we skipped TX_COMMIT itx's
+		 * whose txg had already been synced, the following
+		 * situation could occur if we happened to be racing with
+		 * spa_sync:
+		 *
+		 * 1. we commit a non-TX_COMMIT itx to an lwb, where the
+		 *    itx's txg is 10 and the last synced txg is 9.
+		 * 2. spa_sync finishes syncing out txg 10.
+		 * 3. we move to the next itx in the list, it's a TX_COMMIT
+		 *    whose txg is 10, so we skip it rather than committing
+		 *    it to the lwb used in (1).
+		 *
+		 * If the itx that is skipped in (3) is the last TX_COMMIT
+		 * itx in the commit list, than it's possible for the lwb
+		 * used in (1) to remain in the OPENED state indefinitely.
+		 *
+		 * To prevent the above scenario from occuring, ensuring
+		 * that once an lwb is OPENED it will transition to ISSUED
+		 * and eventually DONE, we always commit TX_COMMIT itx's to
+		 * an lwb here, even if that itx's txg has already been
+		 * synced.
+		 *
+		 * Finally, if the pool is frozen, we _always_ commit the
+		 * itx.  The point of freezing the pool is to prevent data
+		 * from being written to the main pool via spa_sync, and
+		 * instead rely solely on the ZIL to persistently store the
+		 * data; i.e.  when the pool is frozen, the last synced txg
+		 * value can't be trusted.
+		 */
+		if (frozen || !synced || lrc->lrc_txtype == TX_COMMIT) {
 			if (lwb != NULL) {
 				lwb = zil_lwb_commit(zilog, itx, lwb);
 			} else if (lrc->lrc_txtype == TX_COMMIT) {
