@@ -2217,10 +2217,24 @@ zil_commit_waiter_timeout(zilog_t *zilog, zil_commit_waiter_t *zcw)
 	ASSERT3P(lwb, ==, zcw->zcw_lwb);
 
 	/*
-	 * We've already checked this above, but since we hadn't
-	 * acquired the zilog's zl_writer_lock, we have to perform this
-	 * check a second time while holding the lock. We can't call
+	 * We've already checked this above, but since we hadn't acquired
+	 * the zilog's zl_writer_lock, we have to perform this check a
+	 * second time while holding the lock.
+	 *
+	 * We don't need to hold the zl_lock since the lwb cannot transition
+	 * from OPENED to ISSUED while we hold the zl_writer_lock. The lwb
+	 * _can_ transition from ISSUED to DONE, but it's OK to race with
+	 * that transition since we treat the lwb the same, whether it's in
+	 * the ISSUED or DONE states.
+	 *
+	 * The important thing, is we treat the lwb differently depending on
+	 * if it's ISSUED or OPENED, and block any other threads that might
+	 * attempt to issue this lwb. For that reason we hold the
+	 * zl_writer_lock when checking the lwb_state; we must not call
 	 * zil_lwb_write_issue() if the lwb had already been issued.
+	 *
+	 * See the comment above the lwb_state_t structure definition for
+	 * more details on the lwb states, and locking requirements.
 	 */
 	if (lwb->lwb_state == LWB_STATE_ISSUED ||
 	    lwb->lwb_state == LWB_STATE_DONE)
