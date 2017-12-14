@@ -2403,6 +2403,8 @@ file path=opt/zfs-tests/tests/functional/removal/removal_remap mode=0555
 file path=opt/zfs-tests/tests/functional/removal/removal_remap_deadlists \
     mode=0555
 file path=opt/zfs-tests/tests/functional/removal/removal_reservation mode=0555
+file path=opt/zfs-tests/tests/functional/removal/removal_resume_export \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/removal/removal_sanity mode=0555
 file path=opt/zfs-tests/tests/functional/removal/removal_with_add mode=0555
 file path=opt/zfs-tests/tests/functional/removal/removal_with_create_fs \

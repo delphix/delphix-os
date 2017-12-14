@@ -6897,6 +6897,8 @@ spa_async_resume(spa_t *spa)
 	spa->spa_async_suspended--;
 	mutex_exit(&spa->spa_async_lock);
 
+	spa_restart_removal(spa);
+
 	zthr_t *condense_thread = spa->spa_condense_zthr;
 	if (condense_thread != NULL && !zthr_isrunning(condense_thread))
 		zthr_resume(condense_thread);

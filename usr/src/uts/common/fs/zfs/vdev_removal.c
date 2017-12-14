@@ -431,12 +431,23 @@ spa_restart_removal(spa_t *spa)
 	if (svr == NULL)
 		return;
 
+	/*
+	 * In general when this function is called there is no
+	 * removal thread running. The only scenario where this
+	 * is not true is during spa_import() where this function
+	 * is called twice [once from spa_import_impl() and
+	 * spa_async_resume()]. Thus, in the scenario where we
+	 * import a pool that has an ongoing removal we don't
+	 * want to spawn a second thread.
+	 */
+	if (svr->svr_thread != NULL)
+		return;
+
 	vdev_t *vd = svr->svr_vdev;
 	vdev_indirect_mapping_t *vim = vd->vdev_indirect_mapping;
 
 	ASSERT3P(vd, !=, NULL);
 	ASSERT(vd->vdev_removing);
-	ASSERT3P(svr->svr_thread, ==, NULL);
 
 	zfs_dbgmsg("restarting removal of %llu at count=%llu",
 	    vd->vdev_id, vdev_indirect_mapping_num_entries(vim));
