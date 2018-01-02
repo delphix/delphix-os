@@ -202,9 +202,8 @@ function build {
 	    egrep -v "cc .* -o error " | \
 	    egrep -v "warning" | tee $TMPDIR/build_errs${SUFFIX} \
 	    >> $mail_msg_file
-	cat $SRC/${INSTALLOG}.out | \
 	    sed -n "/^Undefined[ 	]*first referenced$/,/^ld: fatal:/p" \
-	    >> $mail_msg_file
+	    < $SRC/${INSTALLOG}.out >> $mail_msg_file
 	if [[ -s $TMPDIR/build_errs${SUFFIX} ]]; then
 		build_ok=n
 		this_build_ok=n
@@ -260,7 +259,6 @@ function build {
 			| egrep -v 'chars, width' \
 			| egrep -v "symbol (\`|')timezone' has differing types:" \
 			| egrep -v 'PSTAMP' \
-			| egrep -v '|%WHOANDWHERE%|' \
 			| egrep -v '^Manifying' \
 			| egrep -v 'Ignoring unknown host' \
 			| egrep -v 'Processing method:' \
