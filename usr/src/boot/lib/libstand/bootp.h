@@ -108,6 +108,7 @@ struct bootp {
 #define TAG_T2			((unsigned char)  59)
 #define TAG_CLASSID		((unsigned char)  60)
 #define TAG_CLIENTID		((unsigned char)  61)
+#define TAG_USER_CLASS		((unsigned char)  77)
 #endif
 
 #define TAG_END			((unsigned char) 255)
@@ -149,6 +150,7 @@ struct cmu_vend {
 
 /* cached bootp response/dhcp ack */
 extern struct bootp *bootp_response;
+extern size_t bootp_response_size;
 
 int	dhcp_try_rfc1048(uint8_t *cp, size_t len);
 

@@ -7126,8 +7126,9 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
  * This thread feeds the L2ARC at regular intervals.  This is the beating
  * heart of the L2ARC.
  */
+/* ARGSUSED */
 static void
-l2arc_feed_thread(void)
+l2arc_feed_thread(void *unused)
 {
 	callb_cpr_t cpr;
 	l2arc_dev_t *dev;

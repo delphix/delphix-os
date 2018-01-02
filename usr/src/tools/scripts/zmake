@@ -42,6 +42,7 @@ directories=(
 	$SRC/lib/libcmdutils
 	$SRC/lib/libdevinfo
 	$SRC/lib/libuutil
+	$SRC/lib/libsff
 	$SRC/lib/libbrand
 	$SRC/lib/libzonecfg
 	$SRC/lib/libinetutil

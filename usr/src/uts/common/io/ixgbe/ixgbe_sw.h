@@ -27,7 +27,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 Saso Kiselkov. All rights reserved.
  * Copyright 2016 OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2017 Joyent, Inc.
+ * Copyright (c) 2017, Joyent, Inc.
  */
 
 #ifndef	_IXGBE_SW_H
@@ -819,6 +819,7 @@ typedef struct ixgbe_stat {
 	kstat_named_t mptc;	/* Multicast Packets Xmited Count */
 	kstat_named_t bptc;	/* Broadcast Packets Xmited Count */
 	kstat_named_t lroc;	/* LRO Packets Received Count */
+	kstat_named_t dev_gone;	/* Number of device gone events encountered */
 } ixgbe_stat_t;
 
 /*
@@ -855,6 +856,10 @@ void ixgbe_fill_group(void *arg, mac_ring_type_t, const int,
     mac_group_info_t *, mac_group_handle_t);
 int ixgbe_rx_ring_intr_enable(mac_intr_handle_t);
 int ixgbe_rx_ring_intr_disable(mac_intr_handle_t);
+
+int ixgbe_transceiver_info(void *, uint_t, mac_transceiver_info_t *);
+int ixgbe_transceiver_read(void *, uint_t, uint_t, void *, size_t, off_t,
+    size_t *);
 
 /*
  * Function prototypes in ixgbe_gld.c

@@ -106,8 +106,8 @@
  * now transition to the syncing state.
  */
 
-static void txg_sync_thread(dsl_pool_t *dp);
-static void txg_quiesce_thread(dsl_pool_t *dp);
+static void txg_sync_thread(void *arg);
+static void txg_quiesce_thread(void *arg);
 
 int zfs_txg_timeout = 5;	/* max seconds worth of delta per txg */
 
@@ -469,8 +469,9 @@ txg_has_quiesced_to_sync(dsl_pool_t *dp)
 }
 
 static void
-txg_sync_thread(dsl_pool_t *dp)
+txg_sync_thread(void *arg)
 {
+	dsl_pool_t *dp = arg;
 	spa_t *spa = dp->dp_spa;
 	tx_state_t *tx = &dp->dp_tx;
 	callb_cpr_t cpr;
@@ -552,8 +553,9 @@ txg_sync_thread(dsl_pool_t *dp)
 }
 
 static void
-txg_quiesce_thread(dsl_pool_t *dp)
+txg_quiesce_thread(void *arg)
 {
+	dsl_pool_t *dp = arg;
 	tx_state_t *tx = &dp->dp_tx;
 	callb_cpr_t cpr;
 

@@ -26,7 +26,7 @@ SRCDIR=		../common
 LIBS=		$(DYNLIB) $(LINTLIB)
 SRCS=		$(SRCDIR)/ofmt.c
 
-$(LINTLIB):=	SRCS = $(SRCDIR)/$(LINTSRC)
+$(LINTLIB)	:= SRCS = $(SRCDIR)/$(LINTSRC)
 LDLIBS +=	-lc
 
 .KEEP_STATE:

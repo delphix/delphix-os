@@ -23,6 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
 #ifndef _ISCSIT_H_
@@ -62,9 +63,6 @@
 #define	ISCSIT_MAX_WINDOW	1024
 #define	ISCSIT_RXPDU_QUEUE_LEN	2048
 
-#define	ISCSIT_CMDSN_LT_EXPCMDSN	-1
-#define	ISCSIT_CMDSN_EQ_EXPCMDSN	1
-#define	ISCSIT_CMDSN_GT_EXPCMDSN	0
 /*
  * MC/S: A timeout is maintained to recover from lost CmdSN (holes in the
  * CmdSN ordering). When the timeout is reached, the ExpCmdSN is advanced

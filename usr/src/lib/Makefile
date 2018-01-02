@@ -44,7 +44,7 @@ include ../Makefile.master
 
 # Build libc and its dependencies
 SUBDIRS=			\
-	common			\
+	crt			\
 	../cmd/sgs/libconv	\
 	../cmd/sgs/libdl	\
 	libc			\
@@ -200,6 +200,7 @@ SUBDIRS +=				\
 	libsec		\
 	libsecdb	\
 	libsendfile	\
+	libsff		\
 	libshare	\
 	libshell	\
 	libsip		\
@@ -451,6 +452,7 @@ HDRSUBDIRS=				\
 	libsasl		\
 	libscf		\
 	libsec		\
+	libsff		\
 	libshare	\
 	libshell	\
 	libsip		\
@@ -551,8 +553,8 @@ _msg:			$(MSGSUBDIRS:%=%-nodepend) .WAIT _dc
 _dc:			$(DCSUBDIRS:%=%-nodepend)
 
 # Library interdependencies are called out explicitly here.
-../cmd/sgs/libconv: common
-../cmd/sgs/libdl: common
+../cmd/sgs/libconv: crt
+../cmd/sgs/libdl: crt
 libc:		../cmd/sgs/libconv ../cmd/sgs/libdl
 
 libm:		libc
@@ -577,7 +579,7 @@ auditd_plugins: libbsm libsecdb libgss libmtmalloc
 brand:		libzonecfg libmapmalloc
 cfgadm_plugins:	libdevice libdevinfo libhotplug librcm hbaapi libkstat libscf
 fm:		libexacct libipmi libzfs scsi libdevinfo libdevid libcfgadm \
-		libcontract libsysevent ../cmd/sgs/libelf
+		libcontract libsysevent ../cmd/sgs/libelf libdladm
 $(SPARC_BLD)fm:	libpri
 gss_mechs/mech_dh: libgss
 gss_mechs/mech_dummy: libgss
@@ -651,6 +653,7 @@ libsasl:	libgss pkcs11
 libsaveargs:	libdisasm
 libscf:		libuutil libgen libsmbios
 libsec:		libavl libidmap
+libsff:		libnvpair
 libshare:	libscf libzfs libuuid libfsmgt libsecdb libumem libsmbfs
 libshell:	libast libcmd libdll libsecdb
 libsip:		libmd5

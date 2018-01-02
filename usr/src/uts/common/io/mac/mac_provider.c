@@ -354,6 +354,8 @@ mac_register(mac_register_t *mregp, mac_handle_t *mhp)
 
 	mac_addr_factory_init(mip);
 
+	mac_transceiver_init(mip);
+
 	/*
 	 * Enforce the virtrualization level registered.
 	 */
@@ -1529,4 +1531,18 @@ mac_lro_set(mblk_t *mp, uint32_t mss, uint32_t flags)
 	DB_LSOMSS(mp) = (uint16_t)mss;
 	/* We need the OR to prevent overwriting CKSUM flags */
 	DB_LROFLAGS(mp) |= (uint16_t)flags;
+}
+
+void
+mac_transceiver_info_set_present(mac_transceiver_info_t *infop,
+    boolean_t present)
+{
+	infop->mti_present = present;
+}
+
+void
+mac_transceiver_info_set_usable(mac_transceiver_info_t *infop,
+    boolean_t usable)
+{
+	infop->mti_usable = usable;
 }
