@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  */
 
@@ -1081,7 +1081,12 @@ dmu_tx_wait(dmu_tx_t *tx)
 		mutex_exit(&dn->dn_mtx);
 		tx->tx_needassign_txh = NULL;
 	} else {
-		txg_wait_open(tx->tx_pool, tx->tx_lasttried_txg + 1);
+		/*
+		 * If we have a lot of dirty data just wait until we sync
+		 * out a TXG at which point we'll hopefully have synced
+		 * a portion of the changes.
+		 */
+		txg_wait_synced(dp, spa_last_synced_txg(spa) + 1);
 	}
 }
 
