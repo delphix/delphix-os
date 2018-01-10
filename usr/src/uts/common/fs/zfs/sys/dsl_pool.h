@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -53,7 +53,7 @@ struct dsl_scan;
 
 extern uint64_t zfs_dirty_data_max;
 extern uint64_t zfs_dirty_data_max_max;
-extern uint64_t zfs_dirty_data_sync;
+extern uint64_t zfs_dirty_data_sync_pct;
 extern int zfs_dirty_data_max_percent;
 extern int zfs_delay_min_dirty_percent;
 extern uint64_t zfs_delay_scale;
