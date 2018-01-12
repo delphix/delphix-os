@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2015, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/debug.h>
@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <sys/uuid.h>
 #include <uuid/uuid.h>
+#include <pwd.h>
 
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
@@ -44,6 +45,7 @@
 
 #include <libintl.h>
 
+#define	CLI_UID	65434
 #define	DEFAULT_SECRET_KEY_FILE	"/etc/challenge_response.key"
 #define	DEFAULT_REGISTRATION_FILE	"/etc/engine-code"
 #define	POOL_LENGTH	4
@@ -253,7 +255,8 @@ toint_truncate(unsigned char *str, int digits)
  */
 static int
 calculate_response(char *challenge, char *key,
-    char response[RESPONSE_LENGTH + 1]) {
+    char response[RESPONSE_LENGTH + 1])
+{
 	int hmac_offset;
 	unsigned int response_val;
 	unsigned char hmac[EVP_MAX_MD_SIZE];
@@ -327,6 +330,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	char reg_msg[PAM_MAX_NUM_MSG][PAM_MAX_MSG_SIZE];
 	char err_str[256];
 	char *username;
+	struct passwd *user_entry;
 
 	if ((err = pam_get_item(pamh, PAM_USER, (void **)&username)) !=
 	    PAM_SUCCESS) {
@@ -335,8 +339,14 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 		return (err);
 	}
 
-	/* Skip challenge response if Delphix CLI is being accessed. */
-	if (strchr(username, '@') != NULL) {
+	if ((user_entry = getpwnam(username)) == NULL) {
+		syslog(LOG_ERR | LOG_AUTH,
+		    "pam_challenge_response: cannot find username's pw entry");
+		return (err);
+	}
+
+	/* Challenge response only applies to OS (non-CLI) users. */
+	if (strchr(username, '@') != NULL || user_entry->pw_uid == CLI_UID) {
 		return (PAM_IGNORE);
 	}
 
