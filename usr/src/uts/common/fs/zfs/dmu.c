@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  */
 /* Copyright (c) 2013 by Saso Kiselkov. All rights reserved. */
 /* Copyright (c) 2013, Joyent, Inc. All rights reserved. */
@@ -1005,14 +1005,11 @@ dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 }
 
 static int
-dmu_object_remap_one_indirect(objset_t *os, dnode_t *dn,
-    uint64_t last_removal_txg, uint64_t offset)
+dmu_object_remap_one_indirect(dmu_buf_impl_t *dbuf, uint64_t last_removal_txg)
 {
-	uint64_t l1blkid = dbuf_whichblock(dn, 1, offset);
 	int err = 0;
 
-	dmu_buf_impl_t *dbuf = dbuf_hold_level(dn, 1, l1blkid, FTAG);
-	ASSERT3P(dbuf, !=, NULL);
+	ASSERT3U(dbuf->db_level, >, 0);
 
 	/*
 	 * If the block hasn't been written yet, this default will ensure
@@ -1032,8 +1029,8 @@ dmu_object_remap_one_indirect(objset_t *os, dnode_t *dn,
 	if (birth <= last_removal_txg &&
 	    dbuf_read(dbuf, NULL, DB_RF_MUST_SUCCEED) == 0 &&
 	    dbuf_can_remap(dbuf)) {
-		dmu_tx_t *tx = dmu_tx_create(os);
-		dmu_tx_hold_remap_l1indirect(tx, dn->dn_object);
+		dmu_tx_t *tx = dmu_tx_create(dbuf->db_objset);
+		dmu_tx_hold_remap_l1indirect(tx, dbuf->db.db_object);
 		err = dmu_tx_assign(tx, TXG_WAIT);
 		if (err == 0) {
 			(void) dbuf_dirty(dbuf, tx);
@@ -1042,8 +1039,6 @@ dmu_object_remap_one_indirect(objset_t *os, dnode_t *dn,
 			dmu_tx_abort(tx);
 		}
 	}
-
-	dbuf_rele(dbuf, FTAG);
 
 	delay(zfs_object_remap_one_indirect_delay_ticks);
 
@@ -1113,10 +1108,21 @@ dmu_object_remap_indirects(objset_t *os, uint64_t object,
 			err = SET_ERROR(EINTR);
 			break;
 		}
-		if ((err = dmu_object_remap_one_indirect(os, dn,
-		    last_removal_txg, offset)) != 0) {
+		uint64_t l1blkid = dbuf_whichblock(dn, 1, offset);
+		dmu_buf_impl_t *dbuf = dbuf_hold_level(dn, 1, l1blkid, FTAG);
+
+		/*
+		 * We can't hold the dn_struct_rwlock() while doing the
+		 * remap because it creates a tx.  See the comment in
+		 * dmu_tx_try_assign() for details.
+		 */
+		rw_exit(&dn->dn_struct_rwlock);
+		err = dmu_object_remap_one_indirect(dbuf, last_removal_txg);
+		dbuf_rele(dbuf, FTAG);
+
+		rw_enter(&dn->dn_struct_rwlock, RW_WRITER);
+		if (err != 0)
 			break;
-		}
 		offset += l1span;
 	}
 	rw_exit(&dn->dn_struct_rwlock);
