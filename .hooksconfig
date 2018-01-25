@@ -286,7 +286,7 @@
         gate-review-check = skip
         gate-triage-check = skip
 [branch "5.1/release"]
-        gate-release = 5.1.9.1
+        gate-release = 5.1.10.1
         gate-slack-notify = pushes
         gate-approvers = gatekeepers-51
         gate-allowed-issuetypes = 10405
@@ -294,7 +294,7 @@
         gate-slack-notify = pushes
         gate-approvers = gatekeepers-51
         gate-allowed-issuetypes = 10405
-        gate-release = 5.1.10.0
+        gate-release = 5.1.11.0
 [branch "5.2/release"]
         gate-slack-notify = pushes
         gate-approvers = gatekeepers-52
