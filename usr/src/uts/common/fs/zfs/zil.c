@@ -1291,12 +1291,12 @@ zil_lwb_write_issue(zilog_t *zilog, lwb_t *lwb)
 	tx = dmu_tx_create(zilog->zl_os);
 
 	/*
-	 * Since we are not going to create any new dirty data and we
+	 * Since we are not going to create any new dirty data, and we
 	 * can even help with clearing the existing dirty data, we
 	 * should not be subject to the dirty data based delays. We
-	 * (ab)use TXG_WAITED to bypass the delay mechanism.
+	 * use TXG_NOTHROTTLE to bypass the delay mechanism.
 	 */
-	VERIFY0(dmu_tx_assign(tx, TXG_WAITED));
+	VERIFY0(dmu_tx_assign(tx, TXG_WAIT | TXG_NOTHROTTLE));
 
 	dsl_dataset_dirty(dmu_objset_ds(zilog->zl_os), tx);
 	txg = dmu_tx_get_txg(tx);
@@ -2288,7 +2288,7 @@ zil_commit_waiter_timeout(zilog_t *zilog, zil_commit_waiter_t *zcw)
 	 */
 	lwb_t *nlwb = zil_lwb_write_issue(zilog, lwb);
 
-	ASSERT3S(lwb->lwb_state, !=, LWB_STATE_OPENED);
+	IMPLY(nlwb != NULL, lwb->lwb_state != LWB_STATE_OPENED);
 
 	/*
 	 * Since the lwb's zio hadn't been issued by the time this thread
