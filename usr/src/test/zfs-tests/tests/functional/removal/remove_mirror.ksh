@@ -15,16 +15,16 @@
 #
 
 #
-# Copyright (c) 2014, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2014, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
 . $STF_SUITE/tests/functional/removal/removal.kshlib
 
 TMPDIR=${TMPDIR:-/tmp}
-log_must mkfile $MINVDEVSIZE $TMPDIR/dsk1
-log_must mkfile $MINVDEVSIZE $TMPDIR/dsk2
-log_must mkfile $MINVDEVSIZE $TMPDIR/dsk3
+log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk1
+log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk2
+log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk3
 DISKS="$TMPDIR/dsk1 mirror $TMPDIR/dsk2 $TMPDIR/dsk3"
 
 function cleanup
@@ -37,12 +37,16 @@ log_must default_setup_noexit "$DISKS"
 log_onexit cleanup
 
 # Attempt to remove the non mirrored disk.
-log_mustnot zpool remove $TESTPOOL $TMPDIR/dsk1
+log_must zpool remove $TESTPOOL $TMPDIR/dsk1
 
 # Attempt to remove one of the disks in the mirror.
 log_mustnot zpool remove $TESTPOOL $TMPDIR/dsk2
 
-# Attempt to remove the mirror.
-log_mustnot zpool remove $TESTPOOL mirror-1
+# Add back the first disk.
+log_must wait_for_removal $TESTPOOL
+log_must zpool add $TESTPOOL $TMPDIR/dsk1
 
-log_pass "Removal will not succeed if there is a top level mirror."
+# Now attempt to remove the mirror.
+log_must zpool remove $TESTPOOL mirror-1
+
+log_pass "Removal will succeed for top level vdev(s)."

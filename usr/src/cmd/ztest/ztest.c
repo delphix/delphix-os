@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -5695,10 +5695,12 @@ ztest_random_concrete_vdev_leaf(vdev_t *vd)
 	int eligible_idx = 0, i;
 	for (i = 0; i < vd->vdev_children; i++) {
 		vdev_t *cvd = vd->vdev_child[i];
+		if (cvd->vdev_top->vdev_removing)
+			continue;
 		if (cvd->vdev_children > 0 ||
-		    (vdev_is_concrete(cvd) && !cvd->vdev_detached &&
-		    !cvd->vdev_top->vdev_removing))
-			eligible[eligible_idx++] = cvd;
+		    (vdev_is_concrete(cvd) && !cvd->vdev_detached)) {
+				eligible[eligible_idx++] = cvd;
+		}
 	}
 	VERIFY(eligible_idx > 0);
 

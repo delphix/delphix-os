@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
@@ -1378,8 +1378,8 @@ zpool_add(zpool_handle_t *zhp, nvlist_t *nvroot)
 
 		case EINVAL:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-			    "Invalid config; a pool with removing/removed "
-			    "vdevs does not support redundant vdevs"));
+			    "invalid config; a pool with removing/removed "
+			    "vdevs does not support adding raidz vdevs"));
 			(void) zfs_error(hdl, EZFS_BADDEV, msg);
 			break;
 
@@ -3287,9 +3287,8 @@ zpool_vdev_remove(zpool_handle_t *zhp, const char *path)
 
 	case EINVAL:
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "invalid config; all top-level vdevs must be "
-		    "non-redundant (i.e. not mirror or raidz), and "
-		    "all have the same sector size"));
+		    "invalid config; all top-level vdevs must "
+		    "have the same sector size and not be raidz."));
 		(void) zfs_error(hdl, EZFS_INVALCONFIG, msg);
 		break;
 

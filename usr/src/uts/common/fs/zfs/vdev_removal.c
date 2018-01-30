@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -50,7 +50,7 @@
  * This file contains the necessary logic to remove vdevs from a
  * storage pool.  Currently, the only devices that can be removed
  * are log, cache, and spare devices; and top level vdevs from a pool
- * w/o raidz or mirrors.  (Note that members of a mirror can be removed
+ * w/o raidz.  (Note that members of a mirror can also be removed
  * by the detach operation.)
  *
  * Log vdevs are removed by evacuating them and then turning the vdev
@@ -88,6 +88,7 @@ typedef struct vdev_copy_seg_arg {
 	vdev_copy_arg_t	*vcsa_copy_arg;
 	uint64_t	vcsa_txg;
 	dva_t		*vcsa_dest_dva;
+	blkptr_t	*vcsa_dest_bp;
 } vdev_copy_seg_arg_t;
 
 /*
@@ -115,6 +116,8 @@ int zfs_remove_max_segment = 1024 * 1024;
  * actions happen while in the middle of a removal.
  */
 uint64_t zfs_remove_max_bytes_pause = UINT64_MAX;
+
+#define	VDEV_REMOVAL_ZAP_OBJS	"lzap"
 
 static void spa_vdev_remove_thread(void *arg);
 
@@ -220,8 +223,11 @@ vdev_remove_initiate_sync(void *arg, dmu_tx_t *tx)
 	vdev_indirect_config_t *vic = &vd->vdev_indirect_config;
 	spa_t *spa = vd->vdev_spa;
 	objset_t *mos = spa->spa_dsl_pool->dp_meta_objset;
-	spa_vdev_removal_t *svr = spa_vdev_removal_create(vd);
+	spa_vdev_removal_t *svr = NULL;
 	uint64_t txg = dmu_tx_get_txg(tx);
+
+	ASSERT3P(vd->vdev_ops, !=, &vdev_raidz_ops);
+	svr = spa_vdev_removal_create(vd);
 
 	ASSERT(vd->vdev_removing);
 	ASSERT3P(vd->vdev_indirect_mapping, ==, NULL);
@@ -319,9 +325,8 @@ vdev_remove_initiate_sync(void *arg, dmu_tx_t *tx)
 	 */
 	vdev_config_dirty(vd);
 
-	zfs_dbgmsg("starting removal thread for vdev %llu (%p) in %llu "
-	    "im_obj=%llu", vd->vdev_id, vd,
-	    dmu_tx_get_txg(tx),
+	zfs_dbgmsg("starting removal thread for vdev %llu (%p) in txg %llu "
+	    "im_obj=%llu", vd->vdev_id, vd, dmu_tx_get_txg(tx),
 	    vic->vic_mapping_object);
 
 	spa_history_log_internal(spa, "vdev remove started", tx,
@@ -441,6 +446,9 @@ spa_restart_removal(spa_t *spa)
 	 * want to spawn a second thread.
 	 */
 	if (svr->svr_thread != NULL)
+		return;
+
+	if (!spa_writeable(spa))
 		return;
 
 	vdev_t *vd = svr->svr_vdev;
@@ -740,6 +748,7 @@ spa_vdev_copy_segment_write_done(zio_t *zio)
 	mutex_exit(&vca->vca_lock);
 
 	ASSERT0(zio->io_error);
+	kmem_free(vcsa->vcsa_dest_bp, sizeof (blkptr_t));
 	kmem_free(vcsa, sizeof (vdev_copy_seg_arg_t));
 }
 
@@ -751,15 +760,36 @@ spa_vdev_copy_segment_read_done(zio_t *zio)
 	uint64_t txg = vcsa->vcsa_txg;
 	spa_t *spa = zio->io_spa;
 	vdev_t *dest_vd = vdev_lookup_top(spa, DVA_GET_VDEV(dest_dva));
+	blkptr_t *bp = NULL;
+	dva_t *dva = NULL;
+	uint64_t size = zio->io_size;
 
 	ASSERT3P(dest_vd, !=, NULL);
 	ASSERT0(zio->io_error);
 
-	zio_nowait(zio_write_phys(spa->spa_txg_zio[txg & TXG_MASK], dest_vd,
-	    DVA_GET_OFFSET(dest_dva) + VDEV_LABEL_START_SIZE,
-	    zio->io_size, zio->io_abd,
-	    ZIO_CHECKSUM_OFF, spa_vdev_copy_segment_write_done,
-	    vcsa, ZIO_PRIORITY_REMOVAL, 0, B_FALSE));
+	vcsa->vcsa_dest_bp = kmem_alloc(sizeof (blkptr_t), KM_SLEEP);
+	bp = vcsa->vcsa_dest_bp;
+	dva = bp->blk_dva;
+
+	BP_ZERO(bp);
+
+	/* initialize with dest_dva */
+	bcopy(dest_dva, dva, sizeof (dva_t));
+	BP_SET_BIRTH(bp, TXG_INITIAL, TXG_INITIAL);
+
+	BP_SET_LSIZE(bp, size);
+	BP_SET_PSIZE(bp, size);
+	BP_SET_COMPRESS(bp, ZIO_COMPRESS_OFF);
+	BP_SET_CHECKSUM(bp, ZIO_CHECKSUM_OFF);
+	BP_SET_TYPE(bp, DMU_OT_NONE);
+	BP_SET_LEVEL(bp, 0);
+	BP_SET_DEDUP(bp, 0);
+	BP_SET_BYTEORDER(bp, ZFS_HOST_BYTEORDER);
+
+	zio_nowait(zio_rewrite(spa->spa_txg_zio[txg & TXG_MASK], spa,
+	    txg, bp, zio->io_abd, size,
+	    spa_vdev_copy_segment_write_done, vcsa,
+	    ZIO_PRIORITY_REMOVAL, 0, NULL));
 }
 
 static int
@@ -772,6 +802,8 @@ spa_vdev_copy_segment(vdev_t *vd, uint64_t start, uint64_t size, uint64_t txg,
 	vdev_indirect_mapping_entry_t *entry;
 	vdev_copy_seg_arg_t *private;
 	dva_t dst = { 0 };
+	blkptr_t blk, *bp = &blk;
+	dva_t *dva = bp->blk_dva;
 
 	ASSERT3U(size, <=, SPA_MAXBLOCKSIZE);
 
@@ -807,11 +839,32 @@ spa_vdev_copy_segment(vdev_t *vd, uint64_t start, uint64_t size, uint64_t txg,
 	 */
 	spa_config_enter(spa, SCL_STATE, spa, RW_READER);
 
-	zio_nowait(zio_read_phys(spa->spa_txg_zio[txg & TXG_MASK],
-	    vd, start + VDEV_LABEL_START_SIZE,
-	    size, abd_alloc_for_io(size, B_FALSE),
-	    ZIO_CHECKSUM_OFF, spa_vdev_copy_segment_read_done, private,
-	    ZIO_PRIORITY_REMOVAL, 0, B_FALSE));
+	/*
+	 * Do logical I/O, letting the redundancy vdevs (like mirror)
+	 * handle their own I/O instead of duplicating that code here.
+	 */
+	BP_ZERO(bp);
+
+	DVA_SET_VDEV(&dva[0], vd->vdev_id);
+	DVA_SET_OFFSET(&dva[0], start);
+	DVA_SET_GANG(&dva[0], 0);
+	DVA_SET_ASIZE(&dva[0], vdev_psize_to_asize(vd, size));
+
+	BP_SET_BIRTH(bp, TXG_INITIAL, TXG_INITIAL);
+
+	BP_SET_LSIZE(bp, size);
+	BP_SET_PSIZE(bp, size);
+	BP_SET_COMPRESS(bp, ZIO_COMPRESS_OFF);
+	BP_SET_CHECKSUM(bp, ZIO_CHECKSUM_OFF);
+	BP_SET_TYPE(bp, DMU_OT_NONE);
+	BP_SET_LEVEL(bp, 0);
+	BP_SET_DEDUP(bp, 0);
+	BP_SET_BYTEORDER(bp, ZFS_HOST_BYTEORDER);
+
+	zio_nowait(zio_read(spa->spa_txg_zio[txg & TXG_MASK], spa,
+	    bp, abd_alloc_for_io(size, B_FALSE), size,
+	    spa_vdev_copy_segment_read_done, private,
+	    ZIO_PRIORITY_REMOVAL, 0, NULL));
 
 	list_insert_tail(&svr->svr_new_segments[txg & TXG_MASK], entry);
 	ASSERT3U(start + size, <=, vd->vdev_ms_count << vd->vdev_ms_shift);
@@ -842,13 +895,15 @@ vdev_remove_complete_sync(void *arg, dmu_tx_t *tx)
 	    spa->spa_removing_phys.sr_to_copy);
 
 	vdev_destroy_spacemaps(vd, tx);
-	/*
-	 * This only works when removing data devices that are both leaves
-	 * and top levels.
-	 */
-	ASSERT3U(vd->vdev_leaf_zap, !=, 0);
-	vdev_destroy_unlink_zap(vd, vd->vdev_leaf_zap, tx);
-	vd->vdev_leaf_zap = 0;
+
+	/* destroy leaf zaps, if any */
+	ASSERT3P(svr->svr_zaplist, !=, NULL);
+	for (nvpair_t *pair = nvlist_next_nvpair(svr->svr_zaplist, NULL);
+	    pair != NULL;
+	    pair = nvlist_next_nvpair(svr->svr_zaplist, pair)) {
+		vdev_destroy_unlink_zap(vd, fnvpair_value_uint64(pair), tx);
+	}
+	fnvlist_free(svr->svr_zaplist);
 
 	spa_finish_removal(dmu_tx_pool(tx)->dp_spa, DSS_FINISHED, tx);
 	/* vd->vdev_path is not available here */
@@ -888,6 +943,24 @@ vdev_indirect_state_transfer(vdev_t *ivd, vdev_t *vd)
 }
 
 static void
+vdev_remove_enlist_zaps(vdev_t *vd, nvlist_t *zlist)
+{
+	ASSERT3P(zlist, !=, NULL);
+	ASSERT3P(vd->vdev_ops, !=, &vdev_raidz_ops);
+
+	if (vd->vdev_leaf_zap != 0) {
+		char zkey[32];
+		(void) snprintf(zkey, sizeof (zkey), "%s-%"PRIu64,
+		    VDEV_REMOVAL_ZAP_OBJS, vd->vdev_leaf_zap);
+		fnvlist_add_uint64(zlist, zkey, vd->vdev_leaf_zap);
+	}
+
+	for (uint64_t id = 0; id < vd->vdev_children; id++) {
+		vdev_remove_enlist_zaps(vd->vdev_child[id], zlist);
+	}
+}
+
+static void
 vdev_remove_replace_with_indirect(vdev_t *vd, uint64_t txg)
 {
 	vdev_t *ivd;
@@ -895,9 +968,16 @@ vdev_remove_replace_with_indirect(vdev_t *vd, uint64_t txg)
 	spa_t *spa = vd->vdev_spa;
 	spa_vdev_removal_t *svr = spa->spa_vdev_removal;
 
+	/*
+	 * First, build a list of leaf zaps to be destroyed.
+	 * This is passed to the sync context thread,
+	 * which does the actual unlinking.
+	 */
+	svr->svr_zaplist = fnvlist_alloc();
+	vdev_remove_enlist_zaps(vd, svr->svr_zaplist);
+
 	ivd = vdev_add_parent(vd, &vdev_indirect_ops);
 
-	ivd->vdev_leaf_zap = vd->vdev_leaf_zap;
 	vd->vdev_leaf_zap = 0;
 
 	vdev_remove_child(ivd, vd);
@@ -908,7 +988,6 @@ vdev_remove_replace_with_indirect(vdev_t *vd, uint64_t txg)
 	svr->svr_vdev = ivd;
 
 	ASSERT(!ivd->vdev_removing);
-	ASSERT(!list_link_active(&vd->vdev_config_dirty_node));
 	ASSERT(!list_link_active(&vd->vdev_state_dirty_node));
 
 	tx = dmu_tx_create_assigned(spa->spa_dsl_pool, txg);
@@ -917,8 +996,8 @@ vdev_remove_replace_with_indirect(vdev_t *vd, uint64_t txg)
 	dmu_tx_commit(tx);
 
 	/*
-	 * Indicate that this thread has exited.  After this, we can not use
-	 * svr.
+	 * Indicate that this thread has exited.
+	 * After this, we can not use svr.
 	 */
 	mutex_enter(&svr->svr_lock);
 	svr->svr_thread = NULL;
@@ -947,7 +1026,7 @@ vdev_remove_complete(vdev_t *vd)
 	txg_wait_synced(spa->spa_dsl_pool, 0);
 
 	txg = spa_vdev_enter(spa);
-	zfs_dbgmsg("finishing device removal for vdev %llu in %llu",
+	zfs_dbgmsg("finishing device removal for vdev %llu in txg %llu",
 	    vd->vdev_id, txg);
 
 	/*
@@ -1085,8 +1164,8 @@ spa_vdev_copy_impl(spa_vdev_removal_t *svr, vdev_copy_arg_t *vca,
  *    - Allocate space for it on another vdev.
  *    - Create a new mapping from the old location to the new location
  *      (as a record in svr_new_segments).
- *    - Initiate a physical read zio to get the data off the removing disk.
- *    - In the read zio's done callback, initiate a physical write zio to
+ *    - Initiate a logical read zio to get the data off the removing disk.
+ *    - In the read zio's done callback, initiate a logical write zio to
  *      write it to the new vdev.
  * Note that all of this will take effect when a particular TXG syncs.
  * The sync thread ensures that all the phys reads and writes for the syncing
@@ -1157,10 +1236,6 @@ spa_vdev_remove_thread(void *arg)
 			 * ms_sm's sm_length and sm_alloc may not reflect
 			 * what's in the object contents, if we are in between
 			 * metaslab_sync() and metaslab_sync_done().
-			 *
-			 * Note: space_map_open() drops and reacquires the
-			 * caller-provided lock.  Therefore we can not provide
-			 * any lock that we are using (e.g. ms_lock, svr_lock).
 			 */
 			VERIFY0(space_map_open(&sm,
 			    spa->spa_dsl_pool->dp_meta_objset,
@@ -1552,6 +1627,7 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	    "%s vdev %llu (log) %s", spa_name(spa), vd->vdev_id,
 	    (vd->vdev_path != NULL) ? vd->vdev_path : "-");
 
+	/* Make sure these changes are sync'ed */
 	spa_vdev_config_exit(spa, NULL, *txg, 0, FTAG);
 
 	/* Stop initializing */
@@ -1559,6 +1635,8 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 
 	*txg = spa_vdev_config_enter(spa);
 
+	sysevent_t *ev = spa_event_create(spa, vd, NULL,
+	    ESC_ZFS_VDEV_REMOVE_DEV);
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 	ASSERT(spa_config_held(spa, SCL_ALL, RW_WRITER) == SCL_ALL);
 
@@ -1579,6 +1657,9 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	 */
 	vdev_remove_make_hole_and_free(vd);
 
+	if (ev != NULL)
+		spa_event_post(ev);
+
 	return (0);
 }
 
@@ -1588,7 +1669,7 @@ spa_vdev_remove_top_check(vdev_t *vd)
 	spa_t *spa = vd->vdev_spa;
 
 	if (vd != vd->vdev_top)
-		return (SET_ERROR(EINVAL));
+		return (SET_ERROR(ENOTSUP));
 
 	if (!spa_feature_is_enabled(spa, SPA_FEATURE_DEVICE_REMOVAL))
 		return (SET_ERROR(ENOTSUP));
@@ -1632,8 +1713,8 @@ spa_vdev_remove_top_check(vdev_t *vd)
 	}
 
 	/*
-	 * All vdevs in normal class must be nonredundant, and
-	 * have the same ashift.
+	 * All vdevs in normal class must have the same ashift
+	 * and not be raidz.
 	 */
 	vdev_t *rvd = spa->spa_root_vdev;
 	int num_indirect = 0;
@@ -1645,8 +1726,19 @@ spa_vdev_remove_top_check(vdev_t *vd)
 			num_indirect++;
 		if (!vdev_is_concrete(cvd))
 			continue;
-		if (cvd->vdev_children != 0)
+		if (cvd->vdev_ops == &vdev_raidz_ops)
 			return (SET_ERROR(EINVAL));
+		/*
+		 * Need the mirror to be mirror of leaf vdevs only
+		 */
+		if (cvd->vdev_ops == &vdev_mirror_ops) {
+			for (uint64_t cid = 0;
+			    cid < cvd->vdev_children; cid++) {
+				vdev_t *tmp = cvd->vdev_child[cid];
+				if (!tmp->vdev_ops->vdev_op_leaf)
+					return (SET_ERROR(EINVAL));
+			}
+		}
 	}
 
 	return (0);
@@ -1749,12 +1841,12 @@ int
 spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 {
 	vdev_t *vd;
-	sysevent_t *ev = NULL;
 	nvlist_t **spares, **l2cache, *nv;
 	uint64_t txg = 0;
 	uint_t nspares, nl2cache;
 	int error = 0;
 	boolean_t locked = MUTEX_HELD(&spa_namespace_lock);
+	sysevent_t *ev = NULL;
 
 	ASSERT(spa_writeable(spa));
 
@@ -1788,7 +1880,8 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 			spa_history_log_internal(spa, "vdev remove", NULL,
 			    "%s vdev (%s) %s", spa_name(spa),
 			    VDEV_TYPE_SPARE, nvstr);
-
+			if (vd == NULL)
+				vd = spa_lookup_by_guid(spa, guid, B_TRUE);
 			ev = spa_event_create(spa, vd, NULL,
 			    ESC_ZFS_VDEV_REMOVE_AUX);
 			spa_vdev_remove_aux(spa->spa_spares.sav_config,
@@ -1808,6 +1901,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		/*
 		 * Cache devices can always be removed.
 		 */
+		vd = spa_lookup_by_guid(spa, guid, B_TRUE);
 		ev = spa_event_create(spa, vd, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
 		spa_vdev_remove_aux(spa->spa_l2cache.sav_config,
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
@@ -1815,7 +1909,6 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		spa->spa_l2cache.sav_sync = B_TRUE;
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
-		ev = spa_event_create(spa, vd, NULL, ESC_ZFS_VDEV_REMOVE_DEV);
 		error = spa_vdev_remove_log(vd, &txg);
 	} else if (vd != NULL) {
 		ASSERT(!locked);

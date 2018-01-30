@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Toomas Soome <tsoome@me.com>
@@ -401,17 +401,23 @@ vdev_compact_children(vdev_t *pvd)
 
 	ASSERT(spa_config_held(pvd->vdev_spa, SCL_ALL, RW_WRITER) == SCL_ALL);
 
+	if (oldc == 0)
+		return;
+
 	for (int c = newc = 0; c < oldc; c++)
 		if (pvd->vdev_child[c])
 			newc++;
 
-	newchild = kmem_alloc(newc * sizeof (vdev_t *), KM_SLEEP);
-
-	for (int c = newc = 0; c < oldc; c++) {
-		if ((cvd = pvd->vdev_child[c]) != NULL) {
-			newchild[newc] = cvd;
-			cvd->vdev_id = newc++;
+	if (newc > 0) {
+		newchild = kmem_zalloc(newc * sizeof (vdev_t *), KM_SLEEP);
+		for (int c = newc = 0; c < oldc; c++) {
+			if ((cvd = pvd->vdev_child[c]) != NULL) {
+				newchild[newc] = cvd;
+				cvd->vdev_id = newc++;
+			}
 		}
+	} else {
+		newchild = NULL;
 	}
 
 	kmem_free(pvd->vdev_child, oldc * sizeof (vdev_t *));
@@ -3242,6 +3248,12 @@ vdev_clear(spa_t *spa, vdev_t *vd)
 
 	for (int c = 0; c < vd->vdev_children; c++)
 		vdev_clear(spa, vd->vdev_child[c]);
+
+	/*
+	 * It makes no sense to "clear" an indirect vdev.
+	 */
+	if (!vdev_is_concrete(vd))
+		return;
 
 	/*
 	 * If we're in the FAULTED state or have experienced failed I/O, then

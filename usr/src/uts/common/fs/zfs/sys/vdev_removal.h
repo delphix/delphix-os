@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_VDEV_REMOVAL_H
@@ -58,6 +58,9 @@ typedef struct spa_vdev_removal {
 	 * we got around to copying it.
 	 */
 	uint64_t	svr_bytes_done[TXG_SIZE];
+
+	/* List of leaf zap objects to be unlinked */
+	nvlist_t	*svr_zaplist;
 } spa_vdev_removal_t;
 
 typedef struct spa_condensing_indirect {

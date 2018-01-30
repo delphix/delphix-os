@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2015, Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -5529,20 +5529,34 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	 * If we are in the middle of a device removal, we can only add
 	 * devices which match the existing devices in the pool.
 	 * If we are in the middle of a removal, or have some indirect
-	 * vdevs, we can not add redundant toplevels.  This ensures that
-	 * we do not rely on resilver, which does not properly handle
-	 * indirect vdevs.
+	 * vdevs, we can not add raidz toplevels.
 	 */
 	if (spa->spa_vdev_removal != NULL ||
 	    spa->spa_removing_phys.sr_prev_indirect_vdev != -1) {
 		for (int c = 0; c < vd->vdev_children; c++) {
+			tvd = vd->vdev_child[c];
 			if (spa->spa_vdev_removal != NULL &&
-			    vd->vdev_child[c]->vdev_ashift !=
+			    tvd->vdev_ashift !=
 			    spa->spa_vdev_removal->svr_vdev->vdev_ashift) {
 				return (spa_vdev_exit(spa, vd, txg, EINVAL));
 			}
-			if (vd->vdev_child[c]->vdev_children != 0) {
+			/* Fail if top level vdev is raidz */
+			if (tvd->vdev_ops == &vdev_raidz_ops) {
 				return (spa_vdev_exit(spa, vd, txg, EINVAL));
+			}
+			/*
+			 * Need the top level mirror to be
+			 * a mirror of leaf vdevs only
+			 */
+			if (tvd->vdev_ops == &vdev_mirror_ops) {
+				for (uint64_t cid = 0;
+				    cid < tvd->vdev_children; cid++) {
+					vdev_t *cvd = tvd->vdev_child[cid];
+					if (!cvd->vdev_ops->vdev_op_leaf) {
+						return (spa_vdev_exit(spa, vd,
+						    txg, EINVAL));
+					}
+				}
 			}
 		}
 	}

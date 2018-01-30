@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2015, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2015, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/dmu_tx.h>
@@ -134,9 +134,8 @@ vdev_indirect_mapping_size(vdev_indirect_mapping_t *vim)
 static int
 dva_mapping_overlap_compare(const void *v_key, const void *v_array_elem)
 {
-	const uint64_t const *key = v_key;
-	const vdev_indirect_mapping_entry_phys_t const *array_elem =
-	    v_array_elem;
+	const uint64_t *key = v_key;
+	const vdev_indirect_mapping_entry_phys_t *array_elem = v_array_elem;
 	uint64_t src_offset = DVA_MAPPING_GET_SRC_OFFSET(array_elem);
 
 	if (*key < src_offset) {
