@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/pool_checkpoint/pool_checkpoint.kshlib
@@ -23,25 +23,22 @@
 #	and blocks.
 #
 # STRATEGY:
-#	1. Create pool
-#	2. Attempt to fragment it
-#	3. Introduce indirection by removing and re-adding devices.
-#	4. Take checkpoint
-#	5. Apply a destructive action and do more random writes
-#	6. Run zdb on both current and checkpointed data and make
+#	1. Import pool that's slightly fragmented
+#	2. Introduce indirection by removing and re-adding devices
+#	3. Take checkpoint
+#	4. Apply a destructive action and do more random writes
+#	5. Run zdb on both current and checkpointed data and make
 #	   sure that zdb returns with no errors
 #
 
 verify_runnable "global"
 
-setup_nested_pools
+setup_nested_pool_state
 log_onexit cleanup_nested_pools
 
 #
-# Populate and fragment pool. Also, remove and re-add
-# all disks.
+# Remove and re-add all disks.
 #
-fragment_before_checkpoint
 introduce_indirection
 
 #

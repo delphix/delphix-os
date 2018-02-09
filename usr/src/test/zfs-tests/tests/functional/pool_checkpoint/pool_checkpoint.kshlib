@@ -103,9 +103,21 @@ NESTEDFS2FILE=/$NESTEDFS2/$TESTFILE2
 #   files.
 # * We always have 2 big files present of 512M each, which
 #   should account for 40%~50% capacity by the end of each
-#   test with fragmentation ~80%.
+#   test with fragmentation around 50~60%.
 # * At each file we attempt to do enough random writes to
-#   touch every offset at least twice.
+#   touch every offset twice on average.
+#
+# Note that the amount of random writes per files are based
+# on the following calculation:
+#
+# ((512M / 8K) * 3) * 2 = ~400000
+#
+# Given that the file is 512M and one write is 8K, we would
+# need (512M / 8K) writes to go through the whole file.
+# Assuming though that each write has a compression ratio of
+# 3, then we want 3 times that to cover the same amount of
+# space. Finally, we multiply that by 2 since our goal is to
+# touch each offset twice on average.
 #
 # Examples of those tests are checkpoint_big_rewind and
 # checkpoint_discard_busy.
@@ -113,7 +125,7 @@ NESTEDFS2FILE=/$NESTEDFS2/$TESTFILE2
 FILEDISKSIZE=1g
 DISKSIZE=1g
 BIGFILESIZE=512M
-RANDOMWRITES=2000000
+RANDOMWRITES=400000
 
 
 #
@@ -328,3 +340,53 @@ function nested_wait_discard_finish
 	wait_discard_finish $NESTEDPOOL
 }
 
+#
+# Creating the setup for the second group of tests mentioned in
+# block comment of this file can take some time as we are doing
+# random writes to raise capacity and fragmentation before taking
+# the checkpoint. Thus we create this setup once and save the
+# disks of the nested pool in a temporary directory where we can
+# reuse it for each test that requires that setup.
+#
+SAVEDPOOLDIR="/var/tmp/ckpoint_saved_pool"
+
+function test_group_premake_nested_pools
+{
+	setup_nested_pools
+
+	#
+	# Populate and fragment the pool.
+	#
+	fragment_before_checkpoint
+
+	#
+	# Export and save the pool for other tests.
+	#
+	log_must zpool export $NESTEDPOOL
+	log_must mkdir $SAVEDPOOLDIR
+	log_must cp $FILEDISKS $SAVEDPOOLDIR
+
+	#
+	# Reimport pool to be destroyed by
+	# cleanup_nested_pools function
+	#
+	log_must zpool import -d $FILEDISKDIR $NESTEDPOOL
+}
+
+function test_group_destroy_saved_pool
+{
+	log_must rm -rf $SAVEDPOOLDIR
+}
+
+#
+# Recreate nested pool setup from saved pool.
+#
+function setup_nested_pool_state
+{
+	setup_test_pool
+
+	log_must zfs create $DISKFS
+	log_must cp $SAVEDPOOLDIR/* $FILEDISKDIR
+
+	log_must zpool import -d $FILEDISKDIR $NESTEDPOOL
+}
