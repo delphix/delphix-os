@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -82,7 +82,7 @@ traverse_zil_block(zilog_t *zilog, blkptr_t *bp, void *arg, uint64_t claim_txg)
 		return (0);
 
 	if (claim_txg == 0 && bp->blk_birth >= spa_min_claim_txg(td->td_spa))
-		return (0);
+		return (-1);
 
 	SET_BOOKMARK(&zb, td->td_objset, ZB_ZIL_OBJECT, ZB_ZIL_LEVEL,
 	    bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
@@ -121,23 +121,17 @@ static void
 traverse_zil(traverse_data_t *td, zil_header_t *zh)
 {
 	uint64_t claim_txg = zh->zh_claim_txg;
-	zilog_t *zilog;
 
 	/*
 	 * We only want to visit blocks that have been claimed but not yet
-	 * replayed; plus, in read-only mode, blocks that are already stable,
-	 * except from the case where we are opening the checkpointed state
-	 * of the pool. [see comment in zil_claim()]
+	 * replayed; plus blocks that are already stable in read-only mode.
 	 */
-	if (claim_txg == 0 && (spa_writeable(td->td_spa) ||
-	    td->td_spa->spa_uberblock.ub_checkpoint_txg != 0))
+	if (claim_txg == 0 && spa_writeable(td->td_spa))
 		return;
 
-	zilog = zil_alloc(spa_get_dsl(td->td_spa)->dp_meta_objset, zh);
-
+	zilog_t *zilog = zil_alloc(spa_get_dsl(td->td_spa)->dp_meta_objset, zh);
 	(void) zil_parse(zilog, traverse_zil_block, traverse_zil_record, td,
 	    claim_txg);
-
 	zil_free(zilog);
 }
 
