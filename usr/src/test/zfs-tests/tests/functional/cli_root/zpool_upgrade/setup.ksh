@@ -26,13 +26,13 @@
 #
 
 #
-# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
 
 verify_runnable "global"
-verify_disk_count "$DISKS" 2
+verify_disk_count "$DISKS" 3
 
 # give us a pool to play in
-default_mirror_setup $DISKS
+default_setup "$DISKS"

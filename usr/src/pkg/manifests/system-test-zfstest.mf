@@ -1700,46 +1700,91 @@ file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_status/zpool_status_002_pos \
     mode=0555
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-broken-mirror1-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-broken-mirror1.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-broken-mirror2-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-broken-mirror2.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v10-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v10.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v11-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v11.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v12-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v12.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v13-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v13.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v14-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v14.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v15-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v15.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror1-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror1.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror3-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1mirror3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz1-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz1.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz3-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1raidz3.dat.bz2 \
@@ -1754,22 +1799,43 @@ file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1stripe3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror1-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror1.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror3-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2mirror3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz1-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz1.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz3-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2raidz3.dat.bz2 \
@@ -1784,7 +1850,13 @@ file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v2stripe3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3hotspare1-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3hotspare1.dat.bz2 \
@@ -1796,28 +1868,55 @@ file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3hotspare3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror1-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror1.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror2-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror2.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror3-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3mirror3.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz1-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz1.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz2-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz2.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz21-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz21.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz22-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz22.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz23-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz23.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz3-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3raidz3.dat.bz2 \
@@ -1832,28 +1931,40 @@ file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v3stripe3.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v4-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v4.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v5-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v5.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v6-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v6.dat.bz2 \
+    mode=0444
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v7-2.dat.bz2 \
     mode=0444
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v7.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v8-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v8.dat.bz2 \
     mode=0444
 file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v9-2.dat.bz2 \
+    mode=0444
+file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v9.dat.bz2 \
-    mode=0444
-file \
-    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v999.dat.bz2 \
-    mode=0444
-file \
-    path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-vBROKEN.dat.bz2 \
     mode=0444
 file path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/cleanup \
     mode=0555

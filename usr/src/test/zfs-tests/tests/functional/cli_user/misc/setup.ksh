@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/cli_user/misc/misc.cfg
@@ -153,9 +153,9 @@ then
 	done
 
 	# copy a v1 pool from cli_root
-	cp $STF_SUITE/tests/functional/cli_root/zpool_upgrade/blockfiles/zfs-pool-v1.dat.bz2 \
-	    /$TESTDIR
-	log_must bunzip2 /$TESTDIR/zfs-pool-v1.dat.bz2
+	typeset dir=$STF_SUITE/tests/functional/cli_root/zpool_upgrade/
+	cp $dir/blockfiles/zfs-pool-{v1,v1-2}.dat.bz2 /$TESTDIR
+	log_must bunzip2 /$TESTDIR/*bz2
 	log_must zpool import -d /$TESTDIR v1-pool
 fi
 log_pass

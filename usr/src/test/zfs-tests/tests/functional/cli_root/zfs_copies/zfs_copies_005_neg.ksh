@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -49,26 +49,25 @@ function cleanup
 		destroy_pool $ZPOOL_VERSION_1_NAME
 	fi
 
-	if [[ -f $TESTDIR/$ZPOOL_VERSION_1_FILES ]]; then
-		rm -f $TESTDIR/$ZPOOL_VERSION_1_FILES
-	fi
+	cd $TESTDIR && rm -f ${ZPOOL_VERSION_1_FILES//\.bz2/}
 }
 
 log_onexit cleanup
 
-cp $STF_SUITE/tests/functional/cli_root/zpool_upgrade/blockfiles/$ZPOOL_VERSION_1_FILES $TESTDIR
-bunzip2 $TESTDIR/$ZPOOL_VERSION_1_FILES
+typeset dir=$STF_SUITE/tests/functional/cli_root/zpool_upgrade/blockfiles
+for file in $ZPOOL_VERSION_1_FILES; do
+	bzcat $dir/$file >$TESTDIR/$file
+done
 log_must zpool import -d $TESTDIR $ZPOOL_VERSION_1_NAME
 log_must zfs create $ZPOOL_VERSION_1_NAME/$TESTFS
 log_must zfs create -V 1m $ZPOOL_VERSION_1_NAME/$TESTVOL
 
 for val in 3 2 1; do
-	for ds in $ZPOOL_VERSION_1_NAME/$TESTFS $ZPOOL_VERSION_1_NAME/$TESTVOL; do
-		log_mustnot zfs set copies=$val $ds
-	done
-	for ds in $ZPOOL_VERSION_1_NAME/$TESTFS1 $ZPOOL_VERSION_1_NAME/$TESTVOL1; do
-		log_mustnot zfs create -o copies=$val $ds
-	done
+	log_mustnot zfs set copies=$val $ZPOOL_VERSION_1_NAME/$TESTFS
+	log_mustnot zfs set copies=$val $ZPOOL_VERSION_1_NAME/$TESTVOL
+
+	log_mustnot zfs create -o copies=$val $ZPOOL_VERSION_1_NAME/$TESTFS1
+	log_mustnot zfs create -o copies=$val $ZPOOL_VERSION_1_NAME/$TESTVOL1
 done
 
 log_pass "Verification pass: copies cannot be set with pool version 1. "
