@@ -299,12 +299,12 @@
         gate-slack-notify = pushes
         gate-approvers = gatekeepers-52
         gate-allowed-issuetypes = 10405
-        gate-release = 5.2.2.1
+        gate-release = 5.2.3.1
 [branch "5.2/stage"]
         gate-slack-notify = pushes
         gate-approvers = gatekeepers-52
         gate-allowed-issuetypes = 10405
-        gate-release = 5.2.3.0
+        gate-release = 5.2.4.0
 [branch "projects/storvsc"]
         gate-notify = eng-azure@delphix.com
         gate-user-check = on
