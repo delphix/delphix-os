@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
@@ -1733,6 +1733,7 @@ typedef struct mdb_metaslab_alloc_trace {
 	uint64_t mat_weight;
 	uint64_t mat_offset;
 	uint32_t mat_dva_id;
+	int mat_allocator;
 } mdb_metaslab_alloc_trace_t;
 
 static void
@@ -1808,8 +1809,9 @@ metaslab_trace(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
-		mdb_printf("%<u>%6s %6s %8s %11s %18s %18s%</u>\n",
-		    "MSID", "DVA", "ASIZE", "WEIGHT", "RESULT", "VDEV");
+		mdb_printf("%<u>%6s %6s %8s %11s %11s %18s %18s%</u>\n",
+		    "MSID", "DVA", "ASIZE", "ALLOCATOR", "WEIGHT", "RESULT",
+		    "VDEV");
 	}
 
 	if (mat.mat_msp != NULL) {
@@ -1824,7 +1826,8 @@ metaslab_trace(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		mdb_printf("%6s ", "-");
 	}
 
-	mdb_printf("%6d %8llx ", mat.mat_dva_id, mat.mat_size);
+	mdb_printf("%6d %8llx %11llx ", mat.mat_dva_id, mat.mat_size,
+	    mat.mat_allocator);
 
 	metaslab_print_weight(mat.mat_weight);
 

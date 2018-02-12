@@ -672,7 +672,8 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 		    alloctype == VDEV_ALLOC_SPLIT ||
 		    alloctype == VDEV_ALLOC_ROOTPOOL);
 		vd->vdev_mg = metaslab_group_create(islog ?
-		    spa_log_class(spa) : spa_normal_class(spa), vd);
+		    spa_log_class(spa) : spa_normal_class(spa), vd,
+		    spa->spa_alloc_count);
 	}
 
 	if (vd->vdev_ops->vdev_op_leaf &&
@@ -1047,7 +1048,6 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 
 	vd->vdev_ms = mspp;
 	vd->vdev_ms_count = newc;
-
 	for (m = oldc; m < newc; m++) {
 		uint64_t object = 0;
 
@@ -2867,8 +2867,9 @@ vdev_sync_done(vdev_t *vd, uint64_t txg)
 	ASSERT(vdev_is_concrete(vd));
 
 	while ((msp = txg_list_remove(&vd->vdev_ms_list, TXG_CLEAN(txg)))
-	    != NULL)
+	    != NULL) {
 		metaslab_sync_done(msp, txg);
+	}
 
 	if (reassess)
 		metaslab_sync_reassess(vd->vdev_mg);
