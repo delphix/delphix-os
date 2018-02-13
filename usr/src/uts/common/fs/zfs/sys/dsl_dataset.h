@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -230,6 +230,7 @@ typedef struct dsl_dataset {
 
 	uint64_t ds_reserved;	/* cached refreservation */
 	uint64_t ds_quota;	/* cached refquota */
+	uint64_t ds_blksize;	/* cached blocksize */
 
 	kmutex_t ds_sendstream_lock;
 	list_t ds_sendstreams;

@@ -1,5 +1,5 @@
 '\" te
-.\" Copyright (c) 2015, 2017 by Delphix. All rights reserved.
+.\" Copyright (c) 2015, 2018 by Delphix. All rights reserved.
 .\" Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 .\" Copyright (c) 2014, Joyent, Inc. All rights reserved.
 .\" Copyright (c) 2014 Integros [integros.com]
@@ -705,6 +705,28 @@ send streams creates redacted datasets when received.  These datasets are
 missing some of their blocks, and so cannot be safely mounted, and their
 contents cannot be safely read.  For more information about redacted receive,
 see \fBzfs\fR(1M).
+
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBlivelist\fR\fR
+.ad
+.RS 4n
+.TS
+l l .
+GUID	com.delphix:livelist
+READ\-ONLY COMPATIBLE	yes
+DEPENDENCIES	none
+.TE
+
+This feature allows clones to be deleted faster than the traditional method
+when there are large number of random/sparse writes made to the clone.
+All blocks allocated and freed after a clone is created are tracked by the
+the clone's livelist which is referenced during the deletion of the clone.
+The feature is activated when a clone is created and remains active until all
+clones have been destroyed.
 
 .SH "SEE ALSO"
 \fBzfs\fR(1M), \fBzpool\fR(1M)
