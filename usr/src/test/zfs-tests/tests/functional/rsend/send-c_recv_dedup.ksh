@@ -42,7 +42,7 @@ log_must zfs create -o compress=lz4 $sendfs
 log_must zfs create -o compress=lz4 -o dedup=verify $recvfs
 typeset dir=$(get_prop mountpoint $sendfs)
 for i in {0..10}; do
-    log_must cp /kernel/genunix $dir/file.$i
+    log_must cp /kernel/amd64/genunix $dir/file.$i
 done
 log_must zfs snapshot $sendfs@snap0
 log_must eval "zfs send -c $sendfs@snap0 >$stream0"
