@@ -38,6 +38,7 @@ UTSBASE	= ../..
 #
 UNIX		= unix
 DBOOT		= dboot
+MULTIBOOT	= multiboot
 
 OBJECTS		= $(SPECIAL_OBJS:%=$(OBJS_DIR)/%) \
 		  $(CORE_OBJS:%=$(OBJS_DIR)/%) \
@@ -52,6 +53,7 @@ LINTS		= $(SPECIAL_OBJS:%.o=$(LINTS_DIR)/%.ln) \
 		  $(LINTS_DIR)/modstubs.ln
 
 ROOTMODULE	= $(ROOT_PSM_KERN_DIR)/$(UNIX)
+ROOT_MULTIBOOT	= $(ROOT_PSM_DIR)/$(MULTIBOOT)
 
 UNIX_BIN	= $(OBJS_DIR)/$(UNIX)
 
@@ -83,9 +85,9 @@ include $(UTSBASE)/i86pc/Makefile.i86pc
 #
 #	Define targets
 #
-ALL_TARGET	= $(UNIX_BIN)
+ALL_TARGET	= $(UNIX_BIN) $(MULTIBOOT)
 LINT_TARGET	= $(LINT_LIB) $(DBOOT_LINT_LIB)
-INSTALL_TARGET	= $(UNIX_BIN) $(ROOTMODULE)
+INSTALL_TARGET	= $(UNIX_BIN) $(MULTIBOOT) $(ROOTMODULE) $(ROOT_MULTIBOOT)
 
 #
 #	This is UNIX_DIR. Use a short path.
@@ -124,7 +126,7 @@ CLEANFILES	+= \
 	$(ZLIB_OBJS:%.o=$(OBJS_DIR)/%.o) \
 	$(ZLIB_OBJS:%.o=$(OBJS_DIR)/%.ln)
 
-CLOBBERFILES	= $(CLEANFILES) $(UNIX_BIN)
+CLOBBERFILES	= $(CLEANFILES) $(UNIX_BIN) $(MULTIBOOT)
 CLEANLINTFILES	+= $(LINT_LIB) $(DBOOT_LINT_LIB) $(DBOOT_LINTS)
 
 # instr_size needs a special header
@@ -223,6 +225,14 @@ $(COMMP_CTF_SRC):	$(UTSBASE)/i86pc/ml/comm_page.s
 $(OBJS_DIR)/comm_page_ctf.o:	$(COMMP_CTF_SRC)
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
+
+#
+# dboot is built as an intermediate target in dboot.o, so just make
+# dboot.o the dependency here.
+#
+$(MULTIBOOT):	$(DBOOT_O)
+	$(CP)	$(DBOOT_BIN) $(MULTIBOOT)
+	$(POST_PROCESS)
 
 #
 #	Special rules for generating assym.h for inclusion in assembly files.

@@ -36,6 +36,8 @@
  * contributors.
  */
 
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
+
 #include <libintl.h>
 #include <stdlib.h>
 
@@ -70,7 +72,7 @@ int	csi_width[4] = {
  */
 
 tchar
-setz(void)
+setz()
 {
 	tchar i;
 
@@ -80,7 +82,7 @@ setz(void)
 }
 
 int
-setline(void)
+setline()
 {
 	tchar *i;
 	tchar c;
@@ -138,7 +140,8 @@ s1:
 
 
 int
-eat(int c)
+eat(c)
+int	c;
 {
 	int	i;
 
@@ -149,7 +152,7 @@ eat(int c)
 
 
 int
-setov(void)
+setov()
 {
 	int	j, k;
 	tchar i, o[NOV];
@@ -198,7 +201,7 @@ setov(void)
 
 
 int
-setbra(void)
+setbra()
 {
 	int	k;
 	tchar i, *j, dwn;
@@ -243,7 +246,7 @@ setbra(void)
 
 
 int
-setvline(void)
+setvline()
 {
 	int	i;
 	tchar c, rem, ver, neg;
@@ -305,13 +308,10 @@ setvline(void)
 
 #define	NPAIR	(NC/2-6)	/* max pairs in spline, etc. */
 
-/*
- * Generate internal cookies for a drawing function.
- */
 int
-setdraw(void)
+setdraw()	/* generate internal cookies for a drawing function */
 {
-	int i, j, k, dx[NPAIR], dy[NPAIR], delim, type __unused;
+	int i, j, k, dx[NPAIR], dy[NPAIR], delim, type;
 	tchar c, drawbuf[NC];
 
 	/* input is \D'f dx dy dx dy ... c' (or at least it had better be) */
@@ -387,7 +387,7 @@ setdraw(void)
 
 
 int
-casefc(void)
+casefc()
 {
 	int	i;
 	tchar j;
@@ -408,7 +408,8 @@ casefc(void)
 
 
 tchar
-setfield(int x)
+setfield(x)
+int	x;
 {
 	tchar ii, jj, *fp;
 	int	i, j;
@@ -558,7 +559,7 @@ rtn:
 #ifdef NROFF
 /* locale specific initialization */
 int
-localize(void)
+localize()
 {
 	extern int	wdbindf();
 	extern wchar_t	*wddelim();
@@ -570,7 +571,7 @@ localize(void)
 		multi_locale = 1;
 	else {
 		if (*codeset == '\0' ||
-		    (strcmp(codeset, ISO646) == 0)) {
+			(strcmp(codeset, ISO646) == 0)) {
 			/*
 			 * if codeset is an empty string
 			 * assumes this is C locale (7-bit) locale.

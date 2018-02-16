@@ -19,6 +19,9 @@
 #
 # CDDL HEADER END
 #
+#
+#ident	"%Z%%M%	%I%	%E% SMI"
+#
 # Copyright 2003 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
@@ -31,7 +34,8 @@ include ../Makefile.cmd
 SED= sed
 DCFILE= $(PROG).dc
 
-SUBDIRS += $(MACH64)
+$(64ONLY)SUBDIRS= $(MACH)
+$(BUILD64)SUBDIRS += $(MACH64)
 
 all	:=	TARGET = all
 install	:=	TARGET = install
@@ -46,6 +50,8 @@ all:	$(SUBDIRS)
 clean clobber lint:	$(SUBDIRS)
 
 install:	$(SUBDIRS) $(ROOTETCPROG)
+	-$(RM) $(ROOTUSRSBINPROG)
+	-$(LN) $(ISAEXEC) $(ROOTUSRSBINPROG)
 
 $(SUBDIRS):	FRC
 	@cd $@; pwd; $(MAKE) $(TARGET)

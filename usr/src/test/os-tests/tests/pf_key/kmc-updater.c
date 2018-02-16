@@ -26,10 +26,6 @@
 #define	COOKIE32 0x90125
 #define	RESERVED 0xc0ffee
 
-#define	EXIT_SETUP_FAIL -1
-#define	EXIT_TEST_FAIL 1
-#define	EXIT_SUCCESS 0
-
 /*
  * Exits app on failure.
  */
@@ -37,28 +33,28 @@ static void
 write_and_read(int s, sadb_msg_t *samsg, uint64_t *readbuf, int readlen,
     char *msgtypestr)
 {
-	ssize_t rc;
+	int rc;
 	uint8_t msgtype = samsg->sadb_msg_type;
 	pid_t pid = samsg->sadb_msg_pid;
 	uint8_t seq = samsg->sadb_msg_seq;
 
 	rc = write(s, samsg, SADB_64TO8(samsg->sadb_msg_len));
 	if (rc == -1)
-		err(EXIT_SETUP_FAIL, "%s write error", msgtypestr);
+		err(-1, "%s write error", msgtypestr);
 
 	/* Yes, parameter re-use, but we're done writing. */
 	samsg = (sadb_msg_t *)readbuf;
 	do {
 		rc = read(s, readbuf, readlen);
 		if (rc == -1)
-			err(EXIT_SETUP_FAIL, "%s read reply error", msgtypestr);
+			err(-1, "%s read reply error", msgtypestr);
 	} while (samsg->sadb_msg_seq != seq || samsg->sadb_msg_pid != pid ||
 	    samsg->sadb_msg_type != msgtype);
 
 	if (samsg->sadb_msg_errno != 0) {
 		errno = samsg->sadb_msg_errno;
-		err(EXIT_SETUP_FAIL, "%s reply has error (diag = %d)",
-		    msgtypestr, samsg->sadb_x_msg_diagnostic);
+		err(-1, "%s reply has error (diag = %d)", msgtypestr,
+		    samsg->sadb_x_msg_diagnostic);
 	}
 }
 
@@ -82,25 +78,24 @@ main(int argc, char *argv[])
 	if (argc != 2 && argc != 3) {
 		(void) fprintf(stderr, "Usage: %s <spi-value> {64}\n",
 		    argv[0]);
-		exit(EXIT_SETUP_FAIL);
+		exit(-1);
 	}
 	do_64_test = (argc == 3);
 
-	errno = 0;	/* Clear for strtoul() call. */
 	spi = strtoul(argv[1], NULL, 0);
 	if (spi == 0) {
 		if (errno != 0) {
-			err(EXIT_SETUP_FAIL,
-			    "Argument %s is not a parsable number:", argv[1]);
+			err(-1, "Argument %s is not a parsable number:",
+			    argv[1]);
 		} else {
 			errno = EINVAL;
-			err(EXIT_SETUP_FAIL, "Zero SPI not allowed:");
+			err(-1, "Zero SPI not allowed:");
 		}
 	}
 
 	s = socket(PF_KEY, SOCK_RAW, PF_KEY_V2);
 	if (s == -1)
-		err(EXIT_SETUP_FAIL, "socket(PF_KEY)");
+		err(-1, "socket(PF_KEY)");
 
 	/* Base message. */
 	samsg = (sadb_msg_t *)writebuf;
@@ -190,7 +185,7 @@ main(int argc, char *argv[])
 
 	if (extptr == endptr) {
 		(void) fprintf(stderr, "Can't find KMC extension in reply.\n");
-		exit(EXIT_SETUP_FAIL);
+		exit(-1);
 	}
 	kmcext = (sadb_x_kmc_t *)extptr;
 
@@ -203,7 +198,7 @@ main(int argc, char *argv[])
 			(void) fprintf(stderr, "64-bit cookie recevied was "
 			    "0x%"PRIx64", expecting 0x%"PRIx64"\n",
 			    kmcext->sadb_x_kmc_cookie64, COOKIE64);
-			exit(EXIT_TEST_FAIL);
+			exit(1);
 		}
 	} else {
 		if (kmcext->sadb_x_kmc_proto != SADB_X_KMP_IKE ||
@@ -218,9 +213,9 @@ main(int argc, char *argv[])
 			(void) fprintf(stderr, "32-bit reserved recevied was "
 			    "0x%"PRIx32", expecting 0\n",
 			    kmcext->sadb_x_kmc_cookie64);
-			exit(EXIT_TEST_FAIL);
+			exit(1);
 		}
 	}
 
-	exit(EXIT_SUCCESS);
+	exit(0);
 }

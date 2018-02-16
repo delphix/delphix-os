@@ -1457,15 +1457,22 @@ xattr_dir_readdir(vnode_t *dvp, uio_t *uiop, cred_t *cr, int *eofp,
 static void
 xattr_dir_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 {
-	xattr_dir_t *dp;
+	gfs_file_t *fp;
+	xattr_dir_t *xattr_dir;
+	vnode_t *real_vp = NULL;
 
-	dp = gfs_dir_inactive(vp);	/* will track v_count */
-	if (dp != NULL) {
-		/* vp was freed */
-		if (dp->xattr_realvp != NULL)
-			VN_RELE(dp->xattr_realvp);
-
-		kmem_free(dp, ((gfs_file_t *)dp)->gfs_size);
+	mutex_enter(&vp->v_lock);
+	xattr_dir = vp->v_data;
+	if (xattr_dir->xattr_realvp) {
+		real_vp = xattr_dir->xattr_realvp;
+		xattr_dir->xattr_realvp = NULL;
+	}
+	mutex_exit(&vp->v_lock);
+	if (real_vp != NULL)
+		VN_RELE(real_vp);
+	fp = gfs_dir_inactive(vp);
+	if (fp != NULL) {
+		kmem_free(fp, fp->gfs_size);
 	}
 }
 
@@ -1664,18 +1671,22 @@ xattr_dir_lookup(vnode_t *dvp, vnode_t **vpp, int flags, cred_t *cr)
 
 			ASSERT((*vpp)->v_count == 1);
 			vn_free(*vpp);
-			VN_RELE_LOCKED(dvp);
 
 			mutex_destroy(&dp->gfsd_lock);
 			kmem_free(dp->gfsd_static,
 			    dp->gfsd_nstatic * sizeof (gfs_dirent_t));
 			kmem_free(dp, dp->gfsd_file.gfs_size);
 
-			/* dvp was held by winner in gfs_dir_create */
+			/*
+			 * There is an implied VN_HOLD(dvp) here.  We should
+			 * be doing a VN_RELE(dvp) to clean up the reference
+			 * from *vpp, and then a VN_HOLD(dvp) for the new
+			 * reference.  Instead, we just leave the count alone.
+			 */
+
 			*vpp = dvp->v_xattrdir;
 			VN_HOLD(*vpp);
 		} else {
-			/* winner */
 			(*vpp)->v_flag |= (V_XATTRDIR|V_SYSATTR);
 			dvp->v_xattrdir = *vpp;
 		}

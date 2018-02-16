@@ -25,10 +25,14 @@
 
 include ../../Makefile.common
 
-MODULES = $(COMMON_MODULES_PROC) $(COMMON_MODULES_PROC_32BIT)
+MODULES = $(COMMON_MODULES_PROC) $(COMMON_MODULES_PROC_32BIT) \
+    $(COMMON_MODULES_KVM) uhci
 
-SUBDIRS = mdb .WAIT $(MODULES)
+SUBDIRS = mdb mdb_ks kmdb libstandctf libstand .WAIT $(MODULES)
 
 include ../../Makefile.subdirs
 
 .PARALLEL: $(SUBDIRS)
+
+# inter-module dependencies
+kmdb: libstand libstandctf mdb_ks

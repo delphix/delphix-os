@@ -86,8 +86,7 @@ typedef enum dmu_objset_type {
  * by the change.  Properties must be registered in zfs_prop_init().
  */
 typedef enum {
-	ZPROP_CONT = -2,
-	ZPROP_INVAL = -1,
+	ZFS_PROP_BAD = -1,
 	ZFS_PROP_TYPE = 0,
 	ZFS_PROP_CREATION,
 	ZFS_PROP_USED,
@@ -183,7 +182,6 @@ extern const char *zfs_userquota_prop_prefixes[ZFS_NUM_USERQUOTA_PROPS];
  * by the change.  Properties must be registered in zpool_prop_init().
  */
 typedef enum {
-	ZPOOL_PROP_INVAL = -1,
 	ZPOOL_PROP_NAME,
 	ZPOOL_PROP_SIZE,
 	ZPOOL_PROP_CAPACITY,
@@ -216,6 +214,9 @@ typedef enum {
 
 /* Small enough to not hog a whole line of printout in zpool(1M). */
 #define	ZPROP_MAX_COMMENT	32
+
+#define	ZPROP_CONT		-2
+#define	ZPROP_INVAL		-1
 
 #define	ZPROP_VALUE		"value"
 #define	ZPROP_SOURCE		"source"
