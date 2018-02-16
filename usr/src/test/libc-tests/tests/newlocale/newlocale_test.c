@@ -45,7 +45,7 @@ struct ldata {
 	{ "C", "Sunday", "" },
 	{ "en_US.UTF-8", "Sunday", "$" },
 	{ "de_DE.UTF-8", "Sonntag", "€" },
-	{ "ru_RU.UTF-8", "воскресенье", "₽" },
+	{ "ru_RU.UTF-8", "воскресенье", "руб." },
 	{ "ja_JP.UTF-8", "日曜日", "￥" },
 };
 

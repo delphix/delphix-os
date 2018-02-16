@@ -39,13 +39,16 @@ COMMON_SUBDIRS= \
 	codesign \
 	cscope-fast \
 	ctf \
+	depcheck \
 	env \
 	findunref \
+	gk \
 	install.bin \
 	lintdump \
 	make \
 	ndrgen \
 	onbld \
+	pmodes \
 	protocmp \
 	protolist \
 	scripts
@@ -106,6 +109,7 @@ ROOTDIRS= \
 	$(ROOTONBLD)/etc \
 	$(ROOTONBLD)/etc/exception_lists \
 	$(ROOTONBLD)/share \
+	$(ROOTONBLD)/gk \
 	$(ROOTONBLD)/man \
 	$(ROOTONBLD)/man/man1onbld
 

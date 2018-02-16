@@ -31,6 +31,7 @@ SHFILES= \
 	build_cscope \
 	bringovercheck \
 	checkpaths \
+	checkproto \
 	cstyle \
 	elfcmp \
 	flg.flp \

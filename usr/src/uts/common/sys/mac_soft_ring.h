@@ -22,7 +22,6 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2017 Joyent, Inc.
  */
 /*
  * Copyright (c) 2012 by Delphix. All rights reserved.
