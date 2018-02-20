@@ -2081,7 +2081,11 @@ verify_dd_livelist(objset_t *os)
 	    &used, &comp, &uncomp));
 	dsl_dataset_rele(origin_ds, FTAG);
 	dsl_pool_config_exit(dp, FTAG);
-	if (used != ll_used || comp != ll_comp || uncomp != ll_uncomp) {
+	/*
+	 *  It's possible that the dataset's uncomp space is larger than the
+	 *  livelist's because livelists do not track embedded block pointers
+	 */
+	if (used != ll_used || comp != ll_comp || uncomp < ll_uncomp) {
 		char nice_used[32], nice_comp[32], nice_uncomp[32];
 		(void) printf("Discrepancy in space accounting:\n");
 		zdb_nicenum(used, nice_used, sizeof (nice_used));
