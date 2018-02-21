@@ -1174,7 +1174,7 @@ update_temp(struct menu_lst *menu, char *dummy, char *opt)
 		fp = fopen(path, "w");
 		if (fp == NULL)
 			return (BAM_ERROR);
-		(void) fprintf(fp, "bootfile=\"%s\"\n", opt);
+		(void) fprintf(fp, "bootfile=\"%s;unix\"\n", opt);
 		(void) fclose(fp);
 		return (BAM_SUCCESS);
 	}
@@ -1182,7 +1182,7 @@ update_temp(struct menu_lst *menu, char *dummy, char *opt)
 	fp = fopen(path, "w");
 	if (fp == NULL)
 		return (BAM_ERROR);
-	(void) fprintf(fp, "bootfile=\"%s\"\n", opt);
+	(void) fprintf(fp, "bootfile=\"%s;unix\"\n", opt);
 
 	if (env != NULL) {
 		env = getenv("boot-args");
