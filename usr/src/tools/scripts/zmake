@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+# Copyright (c) 2014, 2018 by Delphix. All rights reserved.
 #
 
 function die
@@ -150,6 +150,13 @@ if [[ $1 = "-t" ]]; then
 		$SRC/test/zfs-tests
 	)
 fi
+
+# comstar drivers
+directories+=(
+	$SRC/uts/intel/stmf
+	$SRC/uts/intel/stmf_sbd
+)
+
 
 for i in "${directories[@]}"; do
 	if [[ -d $i ]]; then

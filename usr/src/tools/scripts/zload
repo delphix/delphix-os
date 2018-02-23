@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+# Copyright (c) 2014, 2018 by Delphix. All rights reserved.
 #
 
 function die
@@ -256,6 +256,14 @@ files+="
 	/kernel/misc/amd64/nfssrv
 	/kernel/misc/amd64/klmmod
 	/usr/lib/nfs/lockd
+"
+
+# comstar drivers
+files+="
+	/kernel/drv/stmf
+	/kernel/drv/stmf_sbd
+	/kernel/drv/amd64/stmf
+	/kernel/drv/amd64/stmf_sbd
 "
 
 echo -n "Copying files from $proto ... "
