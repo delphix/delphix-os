@@ -231,18 +231,18 @@ uint64_t	zfs_max_missing_tvds_scan = 0;
 boolean_t	zfs_pause_spa_sync = B_FALSE;
 
 /*
- * Variables to inject delays in the condense zthr and synctask to use
- * when testing condense cancellation.
+ * Variables to indicate the livelist condense zthr func should wait at certain
+ * points for the livelist to be removed - used to test condense/destroy races
  */
-int zfs_livelist_condense_zthr_delay = 0;
-int zfs_livelist_condense_sync_delay = 0;
+int zfs_livelist_condense_zthr_pause = 0;
+int zfs_livelist_condense_sync_pause = 0;
 
 /*
  * Variables to track whether or not condense cancellation has been
  * triggered in testing.
  */
-int zfs_livelist_condense_cancel_sync = 0;
-int zfs_livelist_condense_cancel_zthr = 0;
+int zfs_livelist_condense_sync_cancel = 0;
+int zfs_livelist_condense_zthr_cancel = 0;
 
 /*
  * ==========================================================================
@@ -2356,7 +2356,7 @@ spa_livelist_condense_sync(void *arg, dmu_tx_t *tx)
 
 	/* Have we been cancelled? */
 	if (spa->spa_to_condense.cancelled) {
-		zfs_livelist_condense_cancel_sync++;
+		zfs_livelist_condense_sync_cancel++;
 		goto out;
 	}
 
@@ -2414,8 +2414,9 @@ out:
 int
 spa_livelist_condense_cb(void *arg, zthr_t *t)
 {
-	delay(zfs_livelist_condense_zthr_delay);
-
+	while (zfs_livelist_condense_zthr_pause &&
+	    !(zthr_iswaited(t) || zthr_iscancelled(t)))
+		delay(1);
 	int err;
 	spa_t *spa = arg;
 	dsl_deadlist_entry_t *first = spa->spa_to_condense.first;
@@ -2430,7 +2431,9 @@ spa_livelist_condense_cb(void *arg, zthr_t *t)
 	err = dsl_process_sub_livelist(&next->dle_bpobj, &lca->to_keep, t);
 
 	if (err == 0) {
-		delay(zfs_livelist_condense_sync_delay);
+		while (zfs_livelist_condense_sync_pause &&
+		    !(zthr_iswaited(t) || zthr_iscancelled(t)))
+			delay(1);
 
 		dmu_tx_t *tx = dmu_tx_create_dd(spa_get_dsl(spa)->dp_mos_dir);
 		dmu_tx_mark_netfree(tx);
@@ -2463,7 +2466,7 @@ spa_livelist_condense_cb(void *arg, zthr_t *t)
 	dmu_buf_rele(spa->spa_to_condense.ds->ds_dbuf, spa);
 	spa->spa_to_condense.ds = NULL;
 	if (err == EINTR)
-		zfs_livelist_condense_cancel_zthr++;
+		zfs_livelist_condense_zthr_cancel++;
 	return (0);
 }
 
