@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2018 by Delphix. All rights reserved.
 #
 . $STF_SUITE/tests/functional/scrub_mirror/default.cfg
 
@@ -52,11 +52,7 @@ function overwrite_verify_mirror
 	log_must dd if=$OVERWRITING_DEVICE of=/dev/dsk/$AFFECTED_DEVICE \
 		seek=8 bs=$DD_BLOCK count=$(( DD_COUNT - 8 )) conv=notrunc
 
-	log_must zpool scrub $POOL
-
-	while is_pool_scrubbing $POOL; do
-		sleep 2
-	done
+	log_must zpool scrub -w $POOL
 
 	atfile=0
 

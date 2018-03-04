@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 RackTop Systems.
@@ -1209,4 +1209,39 @@ lzc_get_nextboot(const char *pool, nvlist_t **outnvl)
 	int error = lzc_ioctl(ZFS_IOC_GET_NEXTBOOT, pool, args, outnvl);
 	fnvlist_free(args);
 	return (error);
+}
+
+static int
+wait_common(const char *pool, zpool_wait_activity_t activity, boolean_t use_tag,
+    uint64_t tag, boolean_t *waited)
+{
+	nvlist_t *args = fnvlist_alloc();
+	nvlist_t *result = NULL;
+
+	fnvlist_add_int32(args, "activity", activity);
+	if (use_tag)
+		fnvlist_add_uint64(args, "tag", tag);
+
+	int error = lzc_ioctl(ZFS_IOC_WAIT, pool, args, &result);
+
+	if (error == 0 && waited != NULL)
+		*waited = fnvlist_lookup_boolean_value(result, "waited");
+
+	fnvlist_free(args);
+	fnvlist_free(result);
+
+	return (error);
+}
+
+int
+lzc_wait(const char *pool, zpool_wait_activity_t activity, boolean_t *waited)
+{
+	return (wait_common(pool, activity, B_FALSE, 0, waited));
+}
+
+int
+lzc_wait_tag(const char *pool, zpool_wait_activity_t activity, uint64_t tag,
+    boolean_t *waited)
+{
+	return (wait_common(pool, activity, B_TRUE, tag, waited));
 }

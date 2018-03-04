@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_VDEV_H
@@ -84,6 +84,7 @@ extern void vdev_destroy_unlink_zap(vdev_t *vd, uint64_t zapobj,
     dmu_tx_t *tx);
 extern uint64_t vdev_create_link_zap(vdev_t *vd, dmu_tx_t *tx);
 extern void vdev_construct_zaps(vdev_t *vd, dmu_tx_t *tx);
+extern boolean_t vdev_replace_in_progress(vdev_t *vdev);
 
 extern void vdev_hold(vdev_t *);
 extern void vdev_rele(vdev_t *);

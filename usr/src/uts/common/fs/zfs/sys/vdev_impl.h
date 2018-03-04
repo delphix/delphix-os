@@ -246,7 +246,10 @@ struct vdev {
 	boolean_t	vdev_initialize_exit_wanted;
 	vdev_initializing_state_t	vdev_initialize_state;
 	kthread_t	*vdev_initialize_thread;
-	/* Protects vdev_initialize_thread and vdev_initialize_state. */
+	/*
+	 * Protects vdev_initialize_thread, vdev_initialize_state, and
+	 * vdev_initialize_waiters
+	 */
 	kmutex_t	vdev_initialize_lock;
 	kcondvar_t	vdev_initialize_cv;
 	uint64_t	vdev_initialize_offset[TXG_SIZE];

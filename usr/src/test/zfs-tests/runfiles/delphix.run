@@ -207,6 +207,12 @@ find_tests = true
 [/opt/zfs-tests/tests/functional/cli_root/zpool_upgrade]
 find_tests = true
 
+[/opt/zfs-tests/tests/functional/cli_root/zpool_wait]
+find_tests = true
+
+[/opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan]
+find_tests = true
+
 [/opt/zfs-tests/tests/functional/cli_user/misc]
 find_tests = true
 user =

@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -47,11 +47,7 @@ verify_runnable "global"
 
 log_must zpool scrub $TESTPOOL
 log_must zpool detach $TESTPOOL $DISK2
-log_must zpool attach $TESTPOOL $DISK1 $DISK2
-
-while ! is_pool_resilvered $TESTPOOL; do
-	sleep 1
-done
+log_must zpool attach -w $TESTPOOL $DISK1 $DISK2
 
 log_must zpool scrub $TESTPOOL
 log_must zpool detach $TESTPOOL $DISK1

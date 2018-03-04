@@ -21,7 +21,7 @@
 #
 
 #
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -94,10 +94,7 @@ sleep 10
 log_must set_max_blocks ffffffffffffffff
 
 # Wait for everything to be freed.
-while [[ "0" != "$(zpool list -Ho freeing $TESTPOOL)" ]]; do
-	[[ $((SECONDS - t0)) -gt 180 ]] && \
-	    log_fail "Timed out waiting for freeing to drop to zero"
-done
+log_must timeout 160 zpool wait -t free $TESTPOOL
 
 # Check for leaked blocks.
 log_must zdb -b $TESTPOOL

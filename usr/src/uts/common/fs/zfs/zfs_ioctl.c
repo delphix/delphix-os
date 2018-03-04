@@ -26,7 +26,7 @@
  * Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014, 2016 Joyent, Inc. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -3495,6 +3495,51 @@ zfs_ioc_get_nextboot(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
 }
 
 /*
+ * This ioctl waits for activity of a particular type to complete. If there is
+ * no activity of that type in progress, it returns immediately, and the
+ * returned value "waited" is false. If there is activity in progress, and no
+ * tag is passed in, the ioctl blocks until all activity of that type is
+ * complete, and then returns with "waited" set to true.
+ *
+ * If a tag is provided, it identifies a particular instance of an activity to
+ * wait for. Currently, this is only valid for use with 'initialize', because
+ * that is the only activity for which there can be multiple instances running
+ * concurrently. In the case of 'initialize', the tag corresponds to the guid of
+ * the vdev on which to wait.
+ *
+ * If a thread waiting in the ioctl receives a signal, the call will return
+ * immediately, and the return value will be EINTR.
+ *
+ * innvl: {
+ *     "activity" -> int32_t
+ *     (optional) "tag" -> uint64_t
+ * }
+ *
+ * outnvl: "waited" -> boolean_t
+ */
+static int
+zfs_ioc_wait(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	int32_t activity;
+	uint64_t tag;
+	boolean_t waited;
+	int error;
+
+	if (nvlist_lookup_int32(innvl, "activity", &activity) != 0)
+		return (EINVAL);
+
+	if (nvlist_lookup_uint64(innvl, "tag", &tag) == 0)
+		error = spa_wait_tag(name, activity, tag, &waited);
+	else
+		error = spa_wait(name, activity, &waited);
+
+	if (error == 0)
+		fnvlist_add_boolean_value(outnvl, "waited", waited);
+
+	return (error);
+}
+
+/*
  * The dp_config_rwlock must not be held when calling this, because the
  * unmount may need to write out data.
  *
@@ -6209,6 +6254,10 @@ zfs_ioctl_init(void)
 	zfs_ioctl_register("get_nextboot", ZFS_IOC_GET_NEXTBOOT,
 	    zfs_ioc_get_nextboot, zfs_secpolicy_config, POOL_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_TRUE);
+
+	zfs_ioctl_register("wait", ZFS_IOC_WAIT,
+	    zfs_ioc_wait, zfs_secpolicy_none, POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_FALSE);
 
 	/* IOCTLS that use the legacy function signature */
 

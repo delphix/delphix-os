@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2016, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -152,6 +152,9 @@ vdev_initialize_change_state(vdev_t *vd, vdev_initializing_state_t new_state)
 	}
 
 	dmu_tx_commit(tx);
+
+	if (new_state != VDEV_INITIALIZE_ACTIVE)
+		spa_notify_waiters(spa);
 }
 
 static void
@@ -687,7 +690,7 @@ vdev_initialize(vdev_t *vd)
 }
 
 /*
- * Stop initializng a device, with the resultant initialing state being
+ * Stop initializing a device, with the resultant initialing state being
  * tgt_state. Blocks until the initializing thread has exited.
  * Caller must hold vdev_initialize_lock and must not be writing to the spa
  * config, as the initializing thread may try to enter the config as a reader

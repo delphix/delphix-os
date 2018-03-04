@@ -98,7 +98,7 @@ zpool_get_all_props(zpool_handle_t *zhp)
 	return (0);
 }
 
-static int
+int
 zpool_props_refresh(zpool_handle_t *zhp)
 {
 	nvlist_t *old_props;
@@ -1991,9 +1991,9 @@ xlate_init_err(int err)
  * Begin, suspend, or cancel the initialization (initializing of all free
  * blocks) for the given vdevs in the given pool.
  */
-int
-zpool_initialize(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
-    nvlist_t *vds)
+static int
+zpool_initialize_impl(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
+    nvlist_t *vds, boolean_t wait)
 {
 	char msg[1024];
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
@@ -2032,6 +2032,29 @@ zpool_initialize(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
 
 	int err = lzc_initialize(zhp->zpool_name, cmd_type, vdev_guids,
 	    &errlist);
+
+	if (wait && err == 0) {
+
+		for (elem = nvlist_next_nvpair(vdev_guids, NULL); elem != NULL;
+		    elem = nvlist_next_nvpair(vdev_guids, elem)) {
+
+			uint64_t guid = fnvpair_value_uint64(elem);
+
+			err = lzc_wait_tag(zhp->zpool_name,
+			    ZPOOL_WAIT_INITIALIZE, guid, NULL);
+			if (err != 0) {
+				(void) zpool_standard_error_fmt(zhp->zpool_hdl,
+				    err, dgettext(TEXT_DOMAIN, "error waiting "
+				    "for '%s' to initialize"),
+				    nvpair_name(elem));
+
+				fnvlist_free(vdev_guids);
+				fnvlist_free(guids_to_paths);
+				return (err);
+			}
+		}
+	}
+
 	fnvlist_free(vdev_guids);
 
 	if (err == 0) {
@@ -2062,6 +2085,20 @@ zpool_initialize(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
 		return (-1);
 
 	return (zpool_standard_error(hdl, err, msg));
+}
+
+int
+zpool_initialize(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
+    nvlist_t *vds)
+{
+	return (zpool_initialize_impl(zhp, cmd_type, vds, B_FALSE));
+}
+
+int
+zpool_initialize_wait(zpool_handle_t *zhp, pool_initialize_func_t cmd_type,
+    nvlist_t *vds)
+{
+	return (zpool_initialize_impl(zhp, cmd_type, vds, B_TRUE));
 }
 
 /*
@@ -4546,5 +4583,53 @@ zpool_get_nextboot(zpool_handle_t *zhp, char **dataset, nvlist_t **envlist,
 		*numboots = fnvlist_lookup_uint32(nv, "numboots");
 	}
 	nvlist_free(nv);
+	return (error);
+}
+
+/*
+ * Wait while the specified activity is in progress in the pool.
+ */
+int
+zpool_wait(zpool_handle_t *zhp, zpool_wait_activity_t activity)
+{
+	boolean_t missing;
+
+	int error = zpool_wait_status(zhp, activity, &missing, NULL);
+
+	if (missing) {
+		(void) zpool_standard_error_fmt(zhp->zpool_hdl, ENOENT,
+		    dgettext(TEXT_DOMAIN, "error waiting in pool '%s'"),
+		    zhp->zpool_name);
+		return (ENOENT);
+	} else {
+		return (error);
+	}
+}
+
+/*
+ * Wait for the given activity and return the status of the wait (whether or not
+ * any waiting was done) in the 'waited' parameter. Non-existent pools are
+ * reported via the 'missing' parameter, rather than by printing an error
+ * message. This is convenient when this function is called in a loop over a
+ * long period of time (as it is, for example, by zpool's wait cmd). In that
+ * scenario, a pool being exported or destroyed should be considered a normal
+ * event, so we don't want to print an error when we find that the pool doesn't
+ * exist.
+ */
+int
+zpool_wait_status(zpool_handle_t *zhp, zpool_wait_activity_t activity,
+    boolean_t *missing, boolean_t *waited)
+{
+	int error = lzc_wait(zhp->zpool_name, activity, waited);
+	*missing = (error == ENOENT);
+	if (*missing)
+		return (0);
+
+	if (error != 0) {
+		(void) zpool_standard_error_fmt(zhp->zpool_hdl, error,
+		    dgettext(TEXT_DOMAIN, "error waiting in pool '%s'"),
+		    zhp->zpool_name);
+	}
+
 	return (error);
 }

@@ -89,6 +89,8 @@ dir path=opt/zfs-tests/tests/functional/cli_root/zpool_set
 dir path=opt/zfs-tests/tests/functional/cli_root/zpool_status
 dir path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade
 dir path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/blockfiles
+dir path=opt/zfs-tests/tests/functional/cli_root/zpool_wait
+dir path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan
 dir path=opt/zfs-tests/tests/functional/cli_user
 dir path=opt/zfs-tests/tests/functional/cli_user/misc
 dir path=opt/zfs-tests/tests/functional/cli_user/zfs_list
@@ -2011,6 +2013,64 @@ file \
     mode=0555
 file \
     path=opt/zfs-tests/tests/functional/cli_root/zpool_upgrade/zpool_upgrade_009_neg \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/cleanup mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/cleanup \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/setup \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_replace \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_replace_cancel \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_resilver \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_scrub_basic \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_scrub_cancel \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/scan/zpool_wait_scrub_flag \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/setup mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait.kshlib \
+    mode=0444
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_cancel \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_discard \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_export \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_freeing \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_initialize_basic \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_initialize_cancel \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_initialize_flag \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_multiple \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_no_activity \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_remove \
+    mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_remove_cancel \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/cli_root/zpool_wait/zpool_wait_usage \
     mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/cli_user/misc/misc.cfg mode=0444

@@ -102,7 +102,7 @@ log_mustnot zpool reguid $NESTEDPOOL
 # reset memory limit to 16M
 mdb_ctf_set_int zfs_spa_discard_memory_limit 1000000
 
-nested_wait_discard_finish
+log_must zpool wait -t discard $NESTEDPOOL
 
 log_must zdb $NESTEDPOOL
 

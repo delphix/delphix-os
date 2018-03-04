@@ -71,6 +71,10 @@ int zfs_scan_min_time_ms = 1000; /* min millisecs to scrub per txg */
 int zfs_free_min_time_ms = 1000; /* min millisecs to free per txg */
 int zfs_obsolete_min_time_ms = 500; /* min millisecs to obsolete per txg */
 int zfs_resilver_min_time_ms = 3000; /* min millisecs to resilver per txg */
+
+/* max number of blocks to scan in a txg, for debugging */
+uint64_t zfs_scan_max_blks_per_txg = UINT64_MAX;
+
 boolean_t zfs_no_scrub_io = B_FALSE; /* set to disable scrub i/o */
 boolean_t zfs_no_scrub_prefetch = B_FALSE; /* set to disable scrub prefetch */
 enum ddt_class zfs_scrub_ddt_class_max = DDT_CLASS_DUPLICATE;
@@ -301,6 +305,8 @@ dsl_scan_done(dsl_scan_t *scn, boolean_t complete, dmu_tx_t *tx)
 	else
 		scn->scn_phys.scn_state = DSS_CANCELED;
 
+	spa_notify_waiters(spa);
+
 	if (dsl_scan_restarting(scn, tx))
 		spa_history_log_internal(spa, "scan aborted, restarting", tx,
 		    "errors=%llu", spa_get_errlog_size(spa));
@@ -430,6 +436,7 @@ dsl_scrub_pause_resume_sync(void *arg, dmu_tx_t *tx)
 		scn->scn_phys.scn_flags |= DSF_SCRUB_PAUSED;
 		dsl_scan_sync_state(scn, tx);
 		spa_event_notify(spa, NULL, NULL, ESC_ZFS_SCRUB_PAUSED);
+		spa_notify_waiters(spa);
 	} else {
 		ASSERT3U(*cmd, ==, POOL_SCRUB_NORMAL);
 		if (dsl_scan_is_paused_scrub(scn)) {
@@ -538,6 +545,8 @@ dsl_scan_check_suspend(dsl_scan_t *scn, const zbookmark_phys_t *zb)
 	 *    (default 30%), or someone is explicitly waiting for this txg
 	 *    to complete.
 	 *  or
+	 *  - we have exceeded the hard limit of blocks to scan this txg
+	 *  or
 	 *  - the spa is shutting down because this pool is being exported
 	 *    or the machine is rebooting.
 	 */
@@ -549,6 +558,7 @@ dsl_scan_check_suspend(dsl_scan_t *scn, const zbookmark_phys_t *zb)
 	    (NSEC2MSEC(elapsed_nanosecs) > mintime &&
 	    (txg_sync_waiting(scn->scn_dp) ||
 	    dirty_pct >= zfs_vdev_async_write_active_min_dirty_percent)) ||
+	    scn->scn_visited_this_txg >= zfs_scan_max_blks_per_txg ||
 	    spa_shutting_down(scn->scn_dp->dp_spa)) {
 		if (zb) {
 			dprintf("suspending at bookmark %llx/%llx/%llx/%llx\n",
@@ -1715,6 +1725,8 @@ dsl_process_async_destroys(dsl_pool_t *dp, dmu_tx_t *tx)
 		ASSERT0(dsl_dir_phys(dp->dp_free_dir)->dd_compressed_bytes);
 		ASSERT0(dsl_dir_phys(dp->dp_free_dir)->dd_uncompressed_bytes);
 	}
+
+	spa_notify_waiters(spa);
 
 	EQUIV(bpobj_is_open(&dp->dp_obsolete_bpobj),
 	    0 == zap_contains(dp->dp_meta_objset, DMU_POOL_DIRECTORY_OBJECT,

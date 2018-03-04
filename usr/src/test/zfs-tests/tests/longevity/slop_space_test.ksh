@@ -12,11 +12,10 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
-. $STF_SUITE/tests/functional/pool_checkpoint/pool_checkpoint.kshlib
 
 #
 # DESCRIPTION:
@@ -242,9 +241,7 @@ log_mustnot zfs destroy $FS1
 # The only operations that should be allowed
 # is discarding the checkpoint.
 #
-log_must zpool checkpoint -d $NESTEDPOOL
-
-wait_discard_finish $NESTEDPOOL
+log_must zpool checkpoint -dw $NESTEDPOOL
 
 #
 # Now that we have space again, we should be

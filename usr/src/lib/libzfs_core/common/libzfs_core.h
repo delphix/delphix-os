@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 RackTop Systems.
  */
@@ -109,6 +109,9 @@ int lzc_set_nextboot(const char *, const char *, const char *, uint32_t);
 
 int lzc_pool_checkpoint(const char *);
 int lzc_pool_checkpoint_discard(const char *);
+
+int lzc_wait(const char *, zpool_wait_activity_t, boolean_t *);
+int lzc_wait_tag(const char *, zpool_wait_activity_t, uint64_t, boolean_t *);
 
 #ifdef	__cplusplus
 }

@@ -25,7 +25,7 @@
 #
 
 #
-# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2013, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -253,14 +253,7 @@ function replace_missing_devs
 	typeset vdev
 	for vdev in $@; do
 		log_must mkfile $MINVDEVSIZE $vdev
-		log_must zpool replace -f $pool $vdev $vdev
-		while true; do
-			if ! is_pool_resilvered $pool ; then
-				log_must sleep 2
-			else
-				break
-			fi
-		done
+		log_must zpool replace -fw $pool $vdev $vdev
 	done
 }
 

@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/pool_checkpoint/pool_checkpoint.kshlib
@@ -38,15 +38,13 @@ log_onexit cleanup_test_pool
 populate_test_pool
 log_must zpool checkpoint $TESTPOOL
 test_change_state_after_checkpoint
-log_must zpool checkpoint -d $TESTPOOL
-test_wait_discard_finish
+log_must zpool checkpoint -dw $TESTPOOL
 
 log_must mkfile -n 100M $FS2FILE
 log_must randwritecomp $FS2FILE 100
 log_must zpool checkpoint $TESTPOOL
 
 log_must randwritecomp $FS2FILE 100
-log_must zpool checkpoint -d $TESTPOOL
-test_wait_discard_finish
+log_must zpool checkpoint -dw $TESTPOOL
 
 log_pass "Background discarding works as expected."

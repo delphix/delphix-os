@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
@@ -847,7 +847,7 @@ typedef struct vdev_stat {
 	uint64_t	vs_fragmentation;	/* device fragmentation */
 	uint64_t	vs_initialize_bytes_done; /* bytes initialized */
 	uint64_t	vs_initialize_bytes_est; /* total bytes to initialize */
-	uint64_t	vs_initialize_state;	/* vdev_initialzing_state_t */
+	uint64_t	vs_initialize_state;	/* vdev_initializing_state_t */
 	uint64_t	vs_initialize_action_time; /* time_t */
 	uint64_t	vs_checkpoint_space;    /* checkpoint-consumed space */
 } vdev_stat_t;
@@ -981,6 +981,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_GET_NEXTBOOT,
 	ZFS_IOC_POOL_CHECKPOINT,
 	ZFS_IOC_POOL_DISCARD_CHECKPOINT,
+	ZFS_IOC_WAIT,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 
@@ -1012,6 +1013,17 @@ typedef enum {
 	SPA_LOAD_ERROR,		/* load failed		*/
 	SPA_LOAD_CREATE		/* creation in progress */
 } spa_load_state_t;
+
+typedef enum {
+	ZPOOL_WAIT_CKPT_DISCARD,
+	ZPOOL_WAIT_FREE,
+	ZPOOL_WAIT_INITIALIZE,
+	ZPOOL_WAIT_REPLACE,
+	ZPOOL_WAIT_REMOVE,
+	ZPOOL_WAIT_RESILVER,
+	ZPOOL_WAIT_SCRUB,
+	ZPOOL_WAIT_NUM_ACTIVITIES
+} zpool_wait_activity_t;
 
 /*
  * Bookmark name values.

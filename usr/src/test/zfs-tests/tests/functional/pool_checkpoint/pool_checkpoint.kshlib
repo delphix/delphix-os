@@ -318,28 +318,6 @@ function fragment_after_checkpoint_and_verify
 	log_must zdb -kc $NESTEDPOOL
 }
 
-function wait_discard_finish
-{
-	typeset pool="$1"
-
-	typeset status
-	status=$(zpool status $pool | grep "checkpoint:")
-	while [ "" != "$status" ]; do
-		sleep 5
-		status=$(zpool status $pool | grep "checkpoint:")
-	done
-}
-
-function test_wait_discard_finish
-{
-	wait_discard_finish $TESTPOOL
-}
-
-function nested_wait_discard_finish
-{
-	wait_discard_finish $NESTEDPOOL
-}
-
 #
 # Creating the setup for the second group of tests mentioned in
 # block comment of this file can take some time as we are doing

@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -51,8 +51,6 @@ log_must is_pool_resilvering $TESTPOOL
 log_mustnot zpool scrub $TESTPOOL
 
 # Allow the resilver to finish, or it will interfere with the next test.
-while ! is_pool_resilvered $TESTPOOL; do
-	sleep 1
-done
+log_must zpool wait -t resilver $TESTPOOL
 
 log_pass "Resilver prevent scrub from starting until the resilver completes"
