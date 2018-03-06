@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 #
@@ -30,6 +30,13 @@ dir path=kernel/drv group=sys
 dir path=kernel/drv/$(ARCH64) group=sys
 dir path=kernel/misc group=sys
 dir path=kernel/misc/$(ARCH64) group=sys
+driver name=hv_heartbeat
+driver name=hv_kvp perms="* 0600 root sys"
+driver name=hv_netvsc
+driver name=hv_shutdown
+driver name=hv_storvsc class=scsi-self-identifying
+driver name=hv_timesync
+driver name=hv_vmbus
 file path=kernel/drv/$(ARCH64)/hv_heartbeat group=sys
 file path=kernel/drv/$(ARCH64)/hv_kvp group=sys
 file path=kernel/drv/$(ARCH64)/hv_netvsc group=sys
