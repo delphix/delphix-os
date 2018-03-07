@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -120,8 +120,8 @@ static void sbd_do_write_same_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 static void sbd_handle_write_same_xfer_completion(struct scsi_task *task,
     sbd_cmd_t *scmd, struct stmf_data_buf *dbuf, uint8_t dbuf_reusable);
 
-#define SBD_ZCOPY_READ_ENABLED  0x1
-#define SBD_ZCOPY_WRITE_ENABLED 0x2
+#define	SBD_ZCOPY_READ_ENABLED  0x1
+#define	SBD_ZCOPY_WRITE_ENABLED 0x2
 uint32_t sbd_zcopy = SBD_ZCOPY_READ_ENABLED | SBD_ZCOPY_WRITE_ENABLED;
 uint32_t sbd_max_xfer_len = 0;   /* Valid if non-zero */
 uint32_t sbd_1st_xfer_len = 0;   /* Valid if non-zero */
@@ -160,7 +160,7 @@ sbd_get_nbufs_to_take(scsi_task_t *task)
 
 void
 sbd_do_read_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
-					struct stmf_data_buf *dbuf)
+    struct stmf_data_buf *dbuf)
 {
 	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	uint64_t laddr;
@@ -462,7 +462,7 @@ sbd_do_sgl_read_xfer(struct scsi_task *task, sbd_cmd_t *scmd, int first_xfer)
 
 void
 sbd_handle_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
-				struct stmf_data_buf *dbuf)
+    struct stmf_data_buf *dbuf)
 {
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
@@ -514,7 +514,7 @@ sbd_handle_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
  */
 void
 sbd_handle_sgl_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
-				struct stmf_data_buf *dbuf)
+    struct stmf_data_buf *dbuf)
 {
 	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	stmf_status_t xfer_status;
@@ -603,7 +603,7 @@ sbd_handle_sgl_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 
 void
 sbd_handle_sgl_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
-				struct stmf_data_buf *dbuf)
+    struct stmf_data_buf *dbuf)
 {
 	sbd_zvol_io_t *zvio = dbuf->db_lu_private;
 	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
@@ -1646,7 +1646,7 @@ sbd_handle_short_read_transfers(scsi_task_t *task, stmf_data_buf_t *dbuf,
 
 void
 sbd_handle_short_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
-				struct stmf_data_buf *dbuf)
+    struct stmf_data_buf *dbuf)
 {
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
@@ -2194,7 +2194,8 @@ sbd_handle_identifying_info(struct scsi_task *task,
  *       and returns the length of the URL
  */
 uint16_t
-sbd_parse_mgmt_url(char **url_addr) {
+sbd_parse_mgmt_url(char **url_addr)
+{
 	uint16_t url_length = 0;
 	char *url;
 	url = *url_addr;
@@ -3034,12 +3035,14 @@ sbd_new_task(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 			return;
 		}
 		it->sbd_it_session_id = task->task_session->ss_session_id;
+		it->sbd_it_session = task->task_session;
 		bcopy(task->task_lun_no, it->sbd_it_lun, 8);
 		it->sbd_it_next = sl->sl_it_list;
 		sl->sl_it_list = it;
 		mutex_exit(&sl->sl_lock);
 
-		DTRACE_PROBE1(itl__nexus__start, scsi_task *, task);
+		DTRACE_PROBE2(itl__nexus__start, scsi_task *, task,
+		    sbd_it_data_t *, it);
 
 		sbd_pgr_initialize_it(task, it);
 		if (stmf_register_itl_handle(task->task_lu, task->task_lun_no,
@@ -3532,6 +3535,8 @@ sbd_abort(struct stmf_lu *lu, int abort_cmd, void *arg, uint32_t flags)
 	if (abort_cmd == STMF_LU_ITL_HANDLE_REMOVED) {
 		sbd_check_and_clear_scsi2_reservation(sl, (sbd_it_data_t *)arg);
 		sbd_remove_it_handle(sl, (sbd_it_data_t *)arg);
+		DTRACE_PROBE3(itl__nexus__end__abort, sbd_lu_t *, sl,
+		    sbd_it_data_t *, (sbd_it_data_t *)arg, uint32_t, flags);
 		return (STMF_SUCCESS);
 	}
 
