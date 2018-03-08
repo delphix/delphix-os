@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2015, Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
@@ -3566,7 +3566,7 @@ spa_ld_checkpoint_rewind(spa_t *spa)
 		vdev_t *rvd = spa->spa_root_vdev;
 
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
-		vdev_t *svd[SPA_SYNC_MIN_VDEVS];
+		vdev_t *svd[SPA_SYNC_MIN_VDEVS] = { NULL };
 		int svdcount = 0;
 		int children = rvd->vdev_children;
 		int c0 = spa_get_random(children);
@@ -7720,7 +7720,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 		spa_config_enter(spa, SCL_STATE, FTAG, RW_READER);
 
 		if (list_is_empty(&spa->spa_config_dirty_list)) {
-			vdev_t *svd[SPA_SYNC_MIN_VDEVS];
+			vdev_t *svd[SPA_SYNC_MIN_VDEVS] = { NULL };
 			int svdcount = 0;
 			int children = rvd->vdev_children;
 			int c0 = spa_get_random(children);
