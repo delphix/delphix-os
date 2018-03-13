@@ -245,6 +245,13 @@ int zfs_livelist_condense_sync_cancel = 0;
 int zfs_livelist_condense_zthr_cancel = 0;
 
 /*
+ * Variable to track whether or not extra ALLOC blkptrs were added to a
+ * livelist entry while it was being condensed (caused by the way we track
+ * remapped blkptrs in dbuf_remap_impl)
+ */
+int zfs_livelist_condense_new_alloc = 0;
+
+/*
  * ==========================================================================
  * SPA properties routines
  * ==========================================================================
@@ -2342,6 +2349,26 @@ spa_start_livelist_destroy_thread(spa_t *spa)
 	    spa_livelist_delete_cb_check, spa_livelist_delete_cb, spa);
 }
 
+typedef struct livelist_new_arg {
+	bplist_t *allocs;
+	bplist_t *frees;
+} livelist_new_arg_t;
+
+static int
+livelist_track_new_cb(void *arg, const blkptr_t *bp, boolean_t free,
+    dmu_tx_t *tx)
+{
+	ASSERT(tx == NULL);
+	livelist_new_arg_t *lna = arg;
+	if (free) {
+		bplist_append(lna->frees, bp);
+	} else {
+		bplist_append(lna->allocs, bp);
+		zfs_livelist_condense_new_alloc++;
+	}
+	return (0);
+}
+
 typedef struct livelist_condense_arg {
 	spa_t *spa;
 	bplist_t to_keep;
@@ -2371,8 +2398,9 @@ spa_livelist_condense_sync(void *arg, dmu_tx_t *tx)
 	 * It's possible that the livelist was changed while the zthr was
 	 * running. Therefore, we need to check for new blkptrs in the two
 	 * entries being condensed and continue to track them in the livelist.
-	 * Since we never condense the newest livelist entry we know that
-	 * blkptrs added while the zthr was running will be FREEs.
+	 * Because of the way we handle remapped blkptrs (see dbuf_remap_impl),
+	 * it's possible that they newly added blkptrs are FREEs or ALLOCs so
+	 * we need to sort them into two different bplists.
 	 */
 	uint64_t first_obj = first->dle_bpobj.bpo_object;
 	uint64_t next_obj = next->dle_bpobj.bpo_object;
@@ -2380,13 +2408,18 @@ spa_livelist_condense_sync(void *arg, dmu_tx_t *tx)
 	uint64_t cur_next_size = next->dle_bpobj.bpo_phys->bpo_num_blkptrs;
 
 	bplist_create(&new_frees);
+	livelist_new_arg_t new_bps = {
+	    .allocs = &lca->to_keep,
+	    .frees = &new_frees,
+	};
+
 	if (cur_first_size > lca->first_size) {
 		VERIFY0(bpobj_iterate_from_nofree(&first->dle_bpobj,
-		    bplist_append_cb, &new_frees, lca->first_size));
+		    livelist_track_new_cb, &new_bps, lca->first_size));
 	}
 	if (cur_next_size > lca->next_size) {
 		VERIFY0(bpobj_iterate_from_nofree(&next->dle_bpobj,
-		    bplist_append_cb, &new_frees, lca->next_size));
+		    livelist_track_new_cb, &new_bps, lca->next_size));
 	}
 
 	dsl_deadlist_clear_entry(first, ll, tx);
@@ -2420,6 +2453,7 @@ spa_livelist_condense_cb(void *arg, zthr_t *t)
 	while (zfs_livelist_condense_zthr_pause &&
 	    !(zthr_iswaited(t) || zthr_iscancelled(t)))
 		delay(1);
+
 	int err;
 	spa_t *spa = arg;
 	dsl_deadlist_entry_t *first = spa->spa_to_condense.first;

@@ -3971,6 +3971,29 @@ dbuf_remap_impl(dnode_t *dn, blkptr_t *bp, krwlock_t *rw, dmu_tx_t *tx)
 	if (spa_remap_blkptr(spa, &bp_copy, dbuf_remap_impl_callback,
 	    &drica)) {
 		/*
+		 * If the blkptr being remapped is tracked by a livelist,
+		 * then we need to make sure the livelist reflects the update.
+		 * First, cancel out the old blkptr by appending a 'FREE'
+		 * entry. Next, add an 'ALLOC' to track the new version. This
+		 * way we avoid trying to free an inaccurate blkptr at delete.
+		 * Note that embedded blkptrs are not tracked in livelists.
+		 */
+		if (dn->dn_objset != spa_meta_objset(spa)) {
+			dsl_dataset_t *ds = dmu_objset_ds(dn->dn_objset);
+			if (dsl_deadlist_is_open(&ds->ds_dir->dd_livelist) &&
+			    bp->blk_birth > ds->ds_dir->dd_origin_txg) {
+				ASSERT(!BP_IS_EMBEDDED(bp));
+				ASSERT(dsl_dir_is_clone(ds->ds_dir));
+				ASSERT(spa_feature_is_enabled(spa,
+				    SPA_FEATURE_LIVELIST));
+				bplist_append(&ds->ds_dir->dd_pending_frees,
+				    bp);
+				bplist_append(&ds->ds_dir->dd_pending_allocs,
+				    &bp_copy);
+			}
+		}
+
+		/*
 		 * The db_rwlock prevents dbuf_read_impl() from
 		 * dereferencing the BP while we are changing it.  To
 		 * avoid lock contention, only grab it when we are actually

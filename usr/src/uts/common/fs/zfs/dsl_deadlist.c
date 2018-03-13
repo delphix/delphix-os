@@ -53,6 +53,39 @@
  */
 
 /*
+ * Livelist Overview
+ * ================
+ *
+ * Livelists use the same 'deadlist_t' struct as Deadlists and are also used
+ * to track blkptrs over the lifetime of a dataset. Livelists however, belong
+ * to clones and track the blkptrs that are clone-specific (were born after
+ * the clone's creation). The exception is embedded block pointers which are
+ * not included in Livelists because they do not need to be freed.
+ *
+ * When it comes time to delete the clone, the Livelist provides a quick
+ * reference as to what needs to be freed. For this reason, Livelists also track
+ * when clone-specific blkptrs are freed before deletion to prevent double
+ * frees. Each blkptr in a Livelist is marked as a FREE or an ALLOC and the
+ * deletion algorithm iterates backwards over the livelist, matching
+ * FREE/ALLOC pairs and then freeing those ALLOCs which remain. Livelists
+ * are also updated in the case when blkptrs are remapped: the old version
+ * of the blkptr is cancelled out with a FREE and the new version is tracked
+ * with an ALLOC.
+ *
+ * To bound the amount of memory required for deletion, Livelists over a
+ * certain size are spread over multiple entries. Entries are grouped by
+ * birth txg so we can be sure the ALLOC/FREE pair for a given blkptr will
+ * be in the same entry. This allows us to delete Livelists incrementally
+ * over multiple syncs, one entry at a time.
+ *
+ * During the lifetime of the clone, Livelists can get extremely large.
+ * Their size is managed by periodic condensing (preemptively cancelling out
+ * FREE/ALLOC pairs). Livelists are disabled when a clone is promoted or when
+ * the shared space between the clone and its origin is so small that it
+ * doesn't make sense to use Livelists anymore.
+ */
+
+/*
  * The threshold sublist size at which we create a new sub-livelist for the
  * next txg. However, since blkptrs of the same transaction group must be in
  * the same sub-list, the actual sublist size may exceed this. When picking the
