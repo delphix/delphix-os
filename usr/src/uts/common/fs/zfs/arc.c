@@ -336,7 +336,7 @@ static int		arc_min_prefetch_lifespan;
  */
 int arc_lotsfree_percent = 10;
 
-static int arc_dead;
+static boolean_t arc_initialized;
 
 /*
  * The arc has filled available memory and has now warmed up.
@@ -1405,7 +1405,7 @@ hdr_recl(void *unused)
 	 * umem calls the reclaim func when we destroy the buf cache,
 	 * which is after we do arc_fini().
 	 */
-	if (!arc_dead)
+	if (arc_initialized)
 		zthr_wakeup(arc_reap_zthr);
 }
 
@@ -6222,8 +6222,14 @@ arc_init(void)
 		arc_c = arc_c_min;
 
 	arc_state_init();
-	buf_init();
 
+	/*
+	 * The arc must be "uninitialized", so that hdr_recl() (which is
+	 * registered by buf_init()) will not access arc_reap_zthr before
+	 * it is created.
+	 */
+	ASSERT(!arc_initialized);
+	buf_init();
 
 	arc_ksp = kstat_create("zfs", 0, "arcstats", "misc", KSTAT_TYPE_NAMED,
 	    sizeof (arc_stats) / sizeof (kstat_named_t), KSTAT_FLAG_VIRTUAL);
@@ -6239,7 +6245,7 @@ arc_init(void)
 	arc_reap_zthr = zthr_create_timer(arc_reap_cb_check,
 	    arc_reap_cb, NULL, SEC2NSEC(1));
 
-	arc_dead = B_FALSE;
+	arc_initialized = B_TRUE;
 	arc_warm = B_FALSE;
 
 	/*
@@ -6264,7 +6270,7 @@ arc_fini(void)
 	/* Use B_TRUE to ensure *all* buffers are evicted */
 	arc_flush(NULL, B_TRUE);
 
-	arc_dead = B_TRUE;
+	arc_initialized = B_FALSE;
 
 	if (arc_ksp != NULL) {
 		kstat_delete(arc_ksp);
