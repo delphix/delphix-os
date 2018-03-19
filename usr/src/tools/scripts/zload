@@ -109,7 +109,6 @@ proto="$dir/proto/root_i386"
 
 # ZFS
 files="
-	/kernel/drv/zfs
 	/kernel/drv/amd64/zfs
 	/lib/libzfs.so.1
 	/lib/64/libzfs.so.1
@@ -142,9 +141,7 @@ files="
 	/usr/include/libzfs.h
 	/usr/include/libzfs_core.h
 	/usr/include/sys/fs/zfs.h
-	/usr/lib/mdb/kvm/zfs.so
 	/usr/lib/mdb/kvm/amd64/zfs.so
-	/kernel/kmdb/zfs
 	/kernel/kmdb/amd64/zfs
 	/usr/lib/mdb/proc/libzpool.so
 	/usr/lib/mdb/proc/amd64/libzpool.so
@@ -156,34 +153,22 @@ files="
 	/usr/man/man1m/zdb.1m
 	/usr/man/man1m/zstreamdump.1m
 	/usr/man/man5/zpool-features.5
-	/kernel/drv/kmdb
 	/kernel/drv/amd64/kmdb
-	/kernel/misc/kmdbmod
 	/kernel/misc/amd64/kmdbmod
-	/kernel/kmdb/genunix
 	/kernel/kmdb/amd64/genunix
 	/usr/bin/amd64/mdb
 	/usr/bin/i86/mdb
-	/usr/lib/mdb/kvm/genunix.so
 	/usr/lib/mdb/kvm/amd64/genunix.so
 	/usr/lib/amd64/libsaveargs.*
 	/usr/lib/mdb/proc/libc.so
 	/usr/lib/mdb/proc/amd64/libc.so
-	/kernel/fs/dev
 	/kernel/fs/amd64/dev
 	/boot/gptzfsboot
 	/boot/zfsloader
 "
 # Hyper-V drivers
 files+="
-	/kernel/drv/hv_heartbeat
-	/kernel/drv/hv_kvp
-	/kernel/drv/hv_netvsc
 	/kernel/drv/hv_netvsc.conf
-	/kernel/drv/hv_shutdown
-	/kernel/drv/hv_storvsc
-	/kernel/drv/hv_timesync
-	/kernel/drv/hv_vmbus
 	/kernel/drv/hv_vmbus.conf
 	/kernel/drv/amd64/hv_heartbeat
 	/kernel/drv/amd64/hv_kvp
@@ -192,7 +177,6 @@ files+="
 	/kernel/drv/amd64/hv_storvsc
 	/kernel/drv/amd64/hv_timesync
 	/kernel/drv/amd64/hv_vmbus
-	/kernel/misc/hyperv
 	/kernel/misc/amd64/hyperv
 	/lib/svc/manifest/system/hyperv/kvp.xml
 	/usr/lib/hyperv/hv_get_dhcp_info
@@ -201,28 +185,17 @@ files+="
 "
 # Paravirtual device drivers
 files+="
-	/kernel/drv/pvscsi
-	/kernel/drv/pvscsi.conf
-	/kernel/drv/vioblk
-	/kernel/drv/vioif
-	/kernel/drv/vmxnet3s
 	/kernel/drv/vmxnet3s.conf
 	/kernel/drv/amd64/pvscsi
 	/kernel/drv/amd64/vioblk
 	/kernel/drv/amd64/vioif
 	/kernel/drv/amd64/vmxnet3s
-	/kernel/misc/virtio
 	/kernel/misc/amd64/virtio
-	/platform/i86hvm/kernel/drv/xnf
-	/platform/i86hvm/kernel/drv/xdf
 	/platform/i86hvm/kernel/drv/amd64/xnf
 	/platform/i86hvm/kernel/drv/amd64/xdf
 "
 # Networking
 files+="
-	/kernel/drv/ip
-	/kernel/drv/ip6
-	/kernel/drv/ipd
 	/kernel/drv/amd64/ip
 	/kernel/drv/amd64/ip6
 	/kernel/drv/amd64/ipd
@@ -251,8 +224,6 @@ files+="
 "
 # NFS server components
 files+="
-	/kernel/misc/nfssrv
-	/kernel/misc/klmmod
 	/kernel/misc/amd64/nfssrv
 	/kernel/misc/amd64/klmmod
 	/usr/lib/nfs/lockd
@@ -260,8 +231,6 @@ files+="
 
 # comstar drivers
 files+="
-	/kernel/drv/stmf
-	/kernel/drv/stmf_sbd
 	/kernel/drv/amd64/stmf
 	/kernel/drv/amd64/stmf_sbd
 "
