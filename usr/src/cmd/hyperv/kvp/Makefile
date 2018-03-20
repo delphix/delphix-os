@@ -32,7 +32,7 @@ HYPERV_LIB= ../../../uts/intel/io/hyperv
 
 INCS += -I$(HYPERV_LIB) -I$(HYPERV_LIB)/utilities
 
-C99MODE=    -xc99=%all
+CSTD=	$(CSTD_GNU99)
 C99LMODE=   -Xc99=%all
 
 CPPFLAGS += $(CCVERBOSE) $(INCS)

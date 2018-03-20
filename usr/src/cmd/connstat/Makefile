@@ -24,7 +24,7 @@ POFILE=	connstat.po
 
 include ../Makefile.cmd
 
-C99MODE	=	$(C99_ENABLE)
+CSTD=	$(CSTD_GNU99)
 LDLIBS += -lsocket -lnsl -linetutil -lumem
 XGETFLAGS += -a -x $(PROG).xcl
 

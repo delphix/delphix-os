@@ -32,8 +32,8 @@ INC_PATH +=	-I$(UTSBASE)/i86pc
 CPPFLAGS +=	-D_MACHDEP
 LDFLAGS	+=	-dy -N misc/hyperv
 
-C99MODE=	-xc99=%all
-C99LMODE=	-Xc99=%all
+CSTD=		$(CSTD_GNU99)
+C99LMODE=       -Xc99=%all
 
 LINTTAGS +=	-erroff=E_BAD_PTR_CAST_ALIGN
 LINTTAGS +=	-erroff=E_CONSTANT_CONDITION

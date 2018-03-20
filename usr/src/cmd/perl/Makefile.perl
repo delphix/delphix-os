@@ -48,4 +48,4 @@ XSUBPP = $(PERLDIR)/bin/$(MACH)/perl $(PERLDIR)/lib/ExtUtils/xsubpp \
 XSUBPP64 = $(PERLDIR)/bin/$(MACH64)/perl $(PERLDIR)/lib/ExtUtils/xsubpp \
 	-typemap $(PERLDIR)/lib/ExtUtils/typemap
 
-C99MODE = $(C99_ENABLE)
+CSTD = $(CSTD_GNU99)
