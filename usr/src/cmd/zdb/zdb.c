@@ -24,6 +24,7 @@
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2017 RackTop Systems.
  */
 
 #include <stdio.h>
@@ -90,16 +91,16 @@
 #ifndef lint
 extern int reference_tracking_enable;
 extern boolean_t zfs_recover;
-extern int aok;
 extern uint64_t zfs_arc_max, zfs_arc_meta_limit;
 extern int zfs_vdev_async_read_max_active;
+extern int aok;
 extern boolean_t spa_load_verify_dryrun;
 #else
 int reference_tracking_enable;
 boolean_t zfs_recover;
-int aok;
 uint64_t zfs_arc_max, zfs_arc_meta_limit;
 int zfs_vdev_async_read_max_active;
+int aok;
 boolean_t spa_load_verify_dryrun;
 #endif
 

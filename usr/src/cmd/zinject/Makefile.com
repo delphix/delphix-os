@@ -23,6 +23,7 @@
 # Use is subject to license terms.
 #
 # Copyright (c) 2016, 2017 by Delphix. All rights reserved.
+# Copyright 2017 RackTop Systems.
 #
 
 PROG:sh=	cd ..; basename `pwd`
@@ -42,6 +43,7 @@ LDLIBS += $(NOTLAZYLIBS) -lzfs -lnvpair
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all
 
+CPPFLAGS.first = -I$(SRC)/lib/libfakekernel/common -D_FAKE_KERNEL
 CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -D_REENTRANT $(INCS)
 
 CERRWARN += -_gcc=-Wno-uninitialized

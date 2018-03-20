@@ -50,6 +50,7 @@ directories=(
 	$SRC/lib/libdladm
 	$SRC/lib/libdlpi
 	$SRC/lib/libdiskmgt
+	$SRC/lib/libfakekernel
 	$SRC/lib/libumem
 	$SRC/lib/libdisasm
 	$SRC/lib/libidmap
