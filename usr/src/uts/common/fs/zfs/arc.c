@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
@@ -283,9 +283,19 @@
 boolean_t arc_watch = B_FALSE;
 int arc_procfd;
 #endif
-
+/*
+ * This thread's job is to keep enough free memory in the system, by
+ * calling arc_kmem_reap_now() plus arc_shrink(), which improves
+ * arc_available_memory().
+ */
 static zthr_t		*arc_reap_zthr;
+
+/*
+ * This thread's job is to keep arc_size under arc_c, by calling
+ * arc_adjust(), which improves arc_is_overflowing().
+ */
 static zthr_t		*arc_adjust_zthr;
+
 static kmutex_t		arc_adjust_lock;
 static kcondvar_t	arc_adjust_waiters_cv;
 static boolean_t	arc_adjust_needed = B_FALSE;
@@ -302,16 +312,23 @@ uint_t arc_reduce_dnlc_percent = 3;
 int zfs_arc_evict_batch_limit = 10;
 
 /* number of seconds before growing cache again */
-static int		arc_grow_retry = 60;
+int arc_grow_retry = 60;
+
+/*
+ * Minimum time between calls to arc_kmem_reap_soon().  Note that this will
+ * be converted to ticks, so with the default hz=100, a setting of 15 ms
+ * will actually wait 2 ticks, or 20ms.
+ */
+int arc_kmem_cache_reap_retry_ms = 1000;
 
 /* shift of arc_c for calculating overflow limit in arc_get_data_impl */
 int		zfs_arc_overflow_shift = 8;
 
 /* shift of arc_c for calculating both min and max arc_p */
-static int		arc_p_min_shift = 4;
+int arc_p_min_shift = 4;
 
 /* log2(fraction of arc to reclaim) */
-static int		arc_shrink_shift = 7;
+int arc_shrink_shift = 7;
 
 /*
  * log2(fraction of ARC which must be free to allow growing).
@@ -4077,7 +4094,7 @@ arc_reclaim_needed(void)
 }
 
 static void
-arc_kmem_reap_now(void)
+arc_kmem_reap_soon(void)
 {
 	size_t			i;
 	kmem_cache_t		*prev_cache = NULL;
@@ -4106,18 +4123,18 @@ arc_kmem_reap_now(void)
 	for (i = 0; i < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; i++) {
 		if (zio_buf_cache[i] != prev_cache) {
 			prev_cache = zio_buf_cache[i];
-			kmem_cache_reap_now(zio_buf_cache[i]);
+			kmem_cache_reap_soon(zio_buf_cache[i]);
 		}
 		if (zio_data_buf_cache[i] != prev_data_cache) {
 			prev_data_cache = zio_data_buf_cache[i];
-			kmem_cache_reap_now(zio_data_buf_cache[i]);
+			kmem_cache_reap_soon(zio_data_buf_cache[i]);
 		}
 	}
-	kmem_cache_reap_now(abd_chunk_cache);
-	kmem_cache_reap_now(buf_cache);
-	kmem_cache_reap_now(hdr_full_cache);
-	kmem_cache_reap_now(hdr_l2only_cache);
-	kmem_cache_reap_now(range_seg_cache);
+	kmem_cache_reap_soon(abd_chunk_cache);
+	kmem_cache_reap_soon(buf_cache);
+	kmem_cache_reap_soon(hdr_full_cache);
+	kmem_cache_reap_soon(hdr_l2only_cache);
+	kmem_cache_reap_soon(range_seg_cache);
 
 	if (zio_arena != NULL) {
 		/*
@@ -4210,7 +4227,14 @@ arc_reap_cb_check(void *arg, zthr_t *zthr)
 {
 	int64_t free_memory = arc_available_memory();
 
-	if (free_memory < 0) {
+	/*
+	 * If a kmem reap is already active, don't schedule more.  We must
+	 * check for this because kmem_cache_reap_soon() won't actually
+	 * block on the cache being reaped (this is to prevent callers from
+	 * becoming implicitly blocked by a system-wide kmem reap -- which,
+	 * on a system with many, many full magazines, can take minutes).
+	 */
+	if (!kmem_cache_reap_active() && free_memory < 0) {
 		arc_no_grow = B_TRUE;
 		arc_warm = B_TRUE;
 		/*
@@ -4240,17 +4264,29 @@ arc_reap_cb(void *arg, zthr_t *zthr)
 {
 	int64_t free_memory;
 
-	arc_kmem_reap_now();
+	/*
+	 * Kick off asynchronous kmem_reap()'s of all our caches.
+	 */
+	arc_kmem_reap_soon();
 
 	/*
-	 * Reduce the target size as needed to maintain the
-	 * amount of free memory in the system at a fraction,
-	 * 1/128th by default, of the arc_size.  If
-	 * oversubscribed(free_memory < 0) then reduce the
-	 * target arc_size by the deficit amount plus the
-	 * fractional amount.  If free memory is positive
-	 * but less then the fractional amount, reduce by
-	 * what is needed to hit the fractional amount.
+	 * Wait at least arc_kmem_cache_reap_retry_ms between
+	 * arc_kmem_reap_soon() calls. Without this check it is possible to
+	 * end up in a situation where we spend lots of time reaping
+	 * caches, while we're near arc_c_min.  Waiting here also gives the
+	 * subsequent free memory check a chance of finding that the
+	 * asynchronous reap has already freed enough memory, and we don't
+	 * need to call arc_reduce_target_size().
+	 */
+	delay((hz * arc_kmem_cache_reap_retry_ms + 999) / 1000);
+
+	/*
+	 * Reduce the target size as needed to maintain the amount of free
+	 * memory in the system at a fraction of the arc_size (1/128th by
+	 * default).  If oversubscribed (free_memory < 0) then reduce the
+	 * target arc_size by the deficit amount plus the fractional
+	 * amount.  If free memory is positive but less then the fractional
+	 * amount, reduce by what is needed to hit the fractional amount.
 	 */
 	free_memory = arc_available_memory();
 
