@@ -18,10 +18,9 @@
  *
  * CDDL HEADER END
  */
-
 /*
  * Copyright 2016 Toomas Soome <tsoome@me.com>
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -392,7 +391,7 @@ disk_callback_sas(di_minor_t minor, di_node_t node)
 /*
  * xVM virtual block device
  *
- * Xen passes device number in the following format:
+ * Xen passes device number in next format:
  *
  *    1 << 28 | disk << 8 | partition      xvd, disks or partitions 16 onwards
  *  202 <<  8 | disk << 4 | partition      xvd, disks and partitions up to 15
@@ -402,14 +401,14 @@ disk_callback_sas(di_minor_t minor, di_node_t node)
  *    2 << 28 onwards                      reserved for future use
  *   other values less than 1 << 28        deprecated / reserved
  *
- * The corresponding /dev/dsk name can be:
+ * The corresponding Solaris /dev/dsk name can be:
  *
- *          c0tYdX
+ *          c0tYdXsN
  *
  * where Y,X >= 0.
  *
  * For PV guests using the legacy naming (0, 1, 2, ...)
- * the disk names created will be c0d[0..767].
+ * the Solaris disk names created will be c0d[0..767]sN
  */
 
 #define	HD_BASE		(3 << 8)
@@ -451,11 +450,11 @@ decode_xen_device(uint_t device, uint_t *disk, uint_t *plun)
 		lun = device & 0xf;
 		break;
 	case 3:					/* hd, disk 0..1 */
-		dsk = (device >> 6) & 0x1;
+		dsk = device & (~0x3f);
 		lun = device & 0x3f;
 		break;
 	case 22:				/* hd, disk 2..3 */
-		dsk = ((device >> 6) & 0x1) + 2;
+		dsk = device & (~0x3f);
 		lun = device & 0x3f;
 		break;
 	default:
@@ -494,6 +493,7 @@ disk_callback_xvmd(di_minor_t minor, di_node_t node)
 	}
 	disk_common(minor, node, disk, 0);
 	return (DEVFSADM_CONTINUE);
+
 }
 
 /*
