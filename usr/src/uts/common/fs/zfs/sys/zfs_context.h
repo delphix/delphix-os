@@ -25,7 +25,7 @@
 
 /*
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_ZFS_CONTEXT_H
@@ -47,7 +47,6 @@ extern "C" {
 #include <sys/taskq_impl.h>
 #include <sys/buf.h>
 #include <sys/param.h>
-#include <sys/systm.h>
 #include <sys/cpuvar.h>
 #include <sys/kobj.h>
 #include <sys/conf.h>

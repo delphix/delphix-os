@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2014, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -567,7 +567,6 @@ spa_condense_indirect_cb(void *arg, zthr_t *zthr)
 
 	VERIFY0(space_map_open(&prev_obsolete_sm, spa->spa_meta_objset,
 	    scip->scip_prev_obsolete_sm_object, 0, vd->vdev_asize, 0));
-	space_map_update(prev_obsolete_sm);
 	counts = vdev_indirect_mapping_load_obsolete_counts(old_mapping);
 	if (prev_obsolete_sm != NULL) {
 		vdev_indirect_mapping_load_obsolete_spacemap(old_mapping,
@@ -708,7 +707,7 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 	if (vdev_obsolete_sm_object(vd) == 0) {
 		uint64_t obsolete_sm_object =
 		    space_map_alloc(spa->spa_meta_objset,
-		    vdev_standard_sm_blksz, tx);
+		    zfs_vdev_standard_sm_blksz, tx);
 
 		ASSERT(vd->vdev_top_zap != 0);
 		VERIFY0(zap_add(vd->vdev_spa->spa_meta_objset, vd->vdev_top_zap,
@@ -720,7 +719,6 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 		VERIFY0(space_map_open(&vd->vdev_obsolete_sm,
 		    spa->spa_meta_objset, obsolete_sm_object,
 		    0, vd->vdev_asize, 0));
-		space_map_update(vd->vdev_obsolete_sm);
 	}
 
 	ASSERT(vd->vdev_obsolete_sm != NULL);
@@ -729,7 +727,6 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 
 	space_map_write(vd->vdev_obsolete_sm,
 	    vd->vdev_obsolete_segments, SM_ALLOC, SM_NO_VDEVID, tx);
-	space_map_update(vd->vdev_obsolete_sm);
 	range_tree_vacate(vd->vdev_obsolete_segments, NULL, NULL);
 }
 

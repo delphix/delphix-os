@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -34,7 +34,6 @@
 #include <sys/dsl_bookmark.h>
 #include <sys/spa.h>
 #include <sys/objlist.h>
-#include <sys/dsl_bookmark.h>
 #include <sys/dmu_redact.h>
 
 #define	BEGINNV_REDACT_SNAPS		"redact_snaps"

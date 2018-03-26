@@ -40,6 +40,7 @@
 #include <sys/types.h>
 #include <sys/fs/zfs.h>
 #include <sys/dmu.h>
+#include <sys/space_map.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -844,6 +845,7 @@ extern boolean_t spa_suspended(spa_t *spa);
 extern uint64_t spa_bootfs(spa_t *spa);
 extern uint64_t spa_delegation(spa_t *spa);
 extern objset_t *spa_meta_objset(spa_t *spa);
+extern space_map_t *spa_syncing_log_sm(spa_t *spa);
 extern uint64_t spa_deadman_synctime(spa_t *spa);
 extern uint64_t spa_dirty_data(spa_t *spa);
 
@@ -892,6 +894,8 @@ extern boolean_t spa_trust_config(spa_t *spa);
 extern uint64_t spa_missing_tvds_allowed(spa_t *spa);
 extern void spa_set_missing_tvds(spa_t *spa, uint64_t missing);
 extern boolean_t spa_top_vdevs_spacemap_addressable(spa_t *spa);
+extern uint64_t spa_total_metaslabs(spa_t *spa);
+
 extern boolean_t spa_livelist_delete_check(spa_t *spa);
 
 extern int spa_mode(spa_t *spa);

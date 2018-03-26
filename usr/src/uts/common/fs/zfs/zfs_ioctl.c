@@ -6837,6 +6837,11 @@ _init(void)
 	return (0);
 }
 
+/*
+ * WARNING: Many illumos-based variants today run with ZFS root, which
+ * means that the code in this function hasn't been thoroughly tested
+ * in a long time.
+ */
 int
 _fini(void)
 {

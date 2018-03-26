@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 RackTop Systems.
@@ -362,6 +362,14 @@ dnode_setbonuslen(dnode_t *dn, int newsize, dmu_tx_t *tx)
 	rw_enter(&dn->dn_struct_rwlock, RW_WRITER);
 	ASSERT3U(newsize, <=, DN_MAX_BONUSLEN -
 	    (dn->dn_nblkptr-1) * sizeof (blkptr_t));
+
+	if (newsize < dn->dn_bonuslen) {
+		/* clear any data after the end of the new size */
+		size_t diff = dn->dn_bonuslen - newsize;
+		char *data_end = ((char *)dn->dn_bonus->db.db_data) + newsize;
+		bzero(data_end, diff);
+	}
+
 	dn->dn_bonuslen = newsize;
 	if (newsize == 0)
 		dn->dn_next_bonuslen[tx->tx_txg & TXG_MASK] = DN_ZERO_BONUSLEN;

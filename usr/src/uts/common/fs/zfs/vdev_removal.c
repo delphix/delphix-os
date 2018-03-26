@@ -270,15 +270,8 @@ vdev_remove_initiate_sync(void *arg, dmu_tx_t *tx)
 		if (ms->ms_sm == NULL)
 			continue;
 
-		/*
-		 * Sync tasks happen before metaslab_sync(), therefore
-		 * smp_alloc and sm_alloc must be the same.
-		 */
-		ASSERT3U(space_map_allocated(ms->ms_sm), ==,
-		    ms->ms_sm->sm_phys->smp_alloc);
-
 		spa->spa_removing_phys.sr_to_copy +=
-		    space_map_allocated(ms->ms_sm);
+		    metaslab_allocated_space(ms);
 
 		/*
 		 * Space which we are freeing this txg does not need to
@@ -1044,6 +1037,8 @@ vdev_remove_complete(vdev_t *vd)
 		vdev_metaslab_fini(vd);
 		metaslab_group_destroy(vd->vdev_mg);
 		vd->vdev_mg = NULL;
+
+		spa_log_sm_set_blocklimit(spa);
 	}
 	ASSERT0(vd->vdev_stat.vs_space);
 	ASSERT0(vd->vdev_stat.vs_dspace);
@@ -1237,23 +1232,13 @@ spa_vdev_remove_thread(void *arg)
 		 * appropriate action (see free_from_removing_vdev()).
 		 */
 		if (msp->ms_sm != NULL) {
-			space_map_t *sm = NULL;
+			VERIFY0(space_map_load(msp->ms_sm,
+			    svr->svr_allocd_segs, SM_ALLOC));
 
-			/*
-			 * We have to open a new space map here, because
-			 * ms_sm's sm_length and sm_alloc may not reflect
-			 * what's in the object contents, if we are in between
-			 * metaslab_sync() and metaslab_sync_done().
-			 */
-			VERIFY0(space_map_open(&sm,
-			    spa->spa_dsl_pool->dp_meta_objset,
-			    msp->ms_sm->sm_object, msp->ms_sm->sm_start,
-			    msp->ms_sm->sm_size, msp->ms_sm->sm_shift));
-			space_map_update(sm);
-			VERIFY0(space_map_load(sm, svr->svr_allocd_segs,
-			    SM_ALLOC));
-			space_map_close(sm);
-
+			range_tree_walk(msp->ms_unflushed_allocs,
+			    range_tree_add, svr->svr_allocd_segs);
+			range_tree_walk(msp->ms_unflushed_frees,
+			    range_tree_remove, svr->svr_allocd_segs);
 			range_tree_walk(msp->ms_freeing,
 			    range_tree_remove, svr->svr_allocd_segs);
 
@@ -1425,16 +1410,6 @@ spa_vdev_remove_cancel_sync(void *arg, dmu_tx_t *tx)
 		ASSERT0(range_tree_space(msp->ms_freed));
 
 		if (msp->ms_sm != NULL) {
-			/*
-			 * Assert that the in-core spacemap has the same
-			 * length as the on-disk one, so we can use the
-			 * existing in-core spacemap to load it from disk.
-			 */
-			ASSERT3U(msp->ms_sm->sm_alloc, ==,
-			    msp->ms_sm->sm_phys->smp_alloc);
-			ASSERT3U(msp->ms_sm->sm_length, ==,
-			    msp->ms_sm->sm_phys->smp_objsize);
-
 			mutex_enter(&svr->svr_lock);
 			VERIFY0(space_map_load(msp->ms_sm,
 			    svr->svr_allocd_segs, SM_ALLOC));
@@ -1524,14 +1499,14 @@ spa_vdev_remove_cancel(spa_t *spa)
 	return (error);
 }
 
-/*
- * Called every sync pass of every txg if there's a svr.
- */
 void
 svr_sync(spa_t *spa, dmu_tx_t *tx)
 {
 	spa_vdev_removal_t *svr = spa->spa_vdev_removal;
 	int txgoff = dmu_tx_get_txg(tx) & TXG_MASK;
+
+	if (svr == NULL)
+		return;
 
 	/*
 	 * This check is necessary so that we do not dirty the
@@ -1557,19 +1532,13 @@ vdev_remove_make_hole_and_free(vdev_t *vd)
 	uint64_t id = vd->vdev_id;
 	spa_t *spa = vd->vdev_spa;
 	vdev_t *rvd = spa->spa_root_vdev;
-	boolean_t last_vdev = (id == (rvd->vdev_children - 1));
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 	ASSERT(spa_config_held(spa, SCL_ALL, RW_WRITER) == SCL_ALL);
 
 	vdev_free(vd);
-
-	if (last_vdev) {
-		vdev_compact_children(rvd);
-	} else {
-		vd = vdev_alloc_common(spa, id, 0, &vdev_hole_ops);
-		vdev_add_child(rvd, vd);
-	}
+	vd = vdev_alloc_common(spa, id, 0, &vdev_hole_ops);
+	vdev_add_child(rvd, vd);
 	vdev_config_dirty(rvd);
 
 	/*
@@ -1590,6 +1559,7 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 
 	ASSERT(vd->vdev_islog);
 	ASSERT(vd == vd->vdev_top);
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	/*
 	 * Stop allocating from this vdev.
@@ -1604,15 +1574,14 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	    *txg + TXG_CONCURRENT_STATES + TXG_DEFER_SIZE, 0, FTAG);
 
 	/*
-	 * Evacuate the device.  We don't hold the config lock as writer
-	 * since we need to do I/O but we do keep the
-	 * spa_namespace_lock held.  Once this completes the device
+	 * Evacuate the device. We don't hold the config lock as
+	 * writer since we need to do I/O, but we do keep the
+	 * spa_namespace_lock held. Once this completes the device
 	 * should no longer have any blocks allocated on it.
 	 */
-	if (vd->vdev_islog) {
-		if (vd->vdev_stat.vs_alloc != 0)
-			error = spa_reset_logs(spa);
-	}
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	if (vd->vdev_stat.vs_alloc != 0)
+		error = spa_reset_logs(spa);
 
 	*txg = spa_vdev_config_enter(spa);
 
@@ -1623,7 +1592,7 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	ASSERT0(vd->vdev_stat.vs_alloc);
 
 	/*
-	 * The evacuation succeeded.  Remove any remaining MOS metadata
+	 * The evacuation succeeded. Remove any remaining MOS metadata
 	 * associated with this vdev, and wait for these changes to sync.
 	 */
 	vd->vdev_removing = B_TRUE;
@@ -1635,7 +1604,29 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	    "%s vdev %llu (log) %s", spa_name(spa), vd->vdev_id,
 	    (vd->vdev_path != NULL) ? vd->vdev_path : "-");
 
-	/* Make sure these changes are sync'ed */
+	/*
+	 * When the log space map feature is enabled we look at
+	 * the vdev's top_zap to find the on-disk flush data of
+	 * the metaslab we just flushed. Thus, while removing a
+	 * log vdev we make sure to call vdev_metaslab_fini()
+	 * first, which removes all metaslabs of this vdev from
+	 * spa_metaslabs_by_flushed before vdev_remove_empty()
+	 * destroys the top_zap of this log vdev.
+	 *
+	 * This avoids the scenario where we flush a metaslab
+	 * from the log vdev being removed that doesn't have a
+	 * top_zap and end up failing to lookup its on-disk flush
+	 * data.
+	 *
+	 * We don't call metaslab_group_destroy() right away
+	 * though (it will be called in vdev_free() later) as
+	 * during metaslab_sync() of metaslabs from other vdevs
+	 * we may touch the metaslab group of this vdev through
+	 * metaslab_class_histogram_verify()
+	 */
+	vdev_metaslab_fini(vd);
+	spa_log_sm_set_blocklimit(spa);
+
 	spa_vdev_config_exit(spa, NULL, *txg, 0, FTAG);
 
 	/* Stop initializing */
@@ -1659,6 +1650,8 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 		vdev_state_clean(vd);
 	if (list_link_active(&vd->vdev_config_dirty_node))
 		vdev_config_clean(vd);
+
+	ASSERT0(vd->vdev_stat.vs_alloc);
 
 	/*
 	 * Clean up the vdev namespace.

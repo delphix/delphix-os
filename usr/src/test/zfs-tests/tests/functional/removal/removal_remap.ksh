@@ -15,7 +15,7 @@
 #
 
 #
-# Copyright (c) 2015, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -91,13 +91,13 @@ mapping_size_after=$(indirect_vdev_mapping_size $TESTPOOL)
 
 #
 # After the remap, there should not be very many blocks referenced. The reason
-# why our threshold is as high as 512 is because our ratio of metadata to
+# why our threshold is as high as 2048 is because our ratio of metadata to
 # user data is relatively high, with only 64M of user data on the file system.
 #
 (( mapping_size_after < mapping_size_before )) || \
     log_fail "Mapping size did not decrease after remap: " \
     "$mapping_size_before before to $mapping_size_after after."
-(( mapping_size_after < 512 )) || \
+(( mapping_size_after < 2048 )) || \
     log_fail "Mapping size not small enough after remap: " \
     "$mapping_size_before before to $mapping_size_after after."
 

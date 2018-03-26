@@ -744,7 +744,7 @@ vdev_queue_io(zio_t *zio)
 		return (zio);
 
 	/*
-	 * Children i/os inherent their parent's priority, which might
+	 * Children i/os inherit their parent's priority, which might
 	 * not match the child's i/o type.  Fix it up here.
 	 */
 	if (zio->io_type == ZIO_TYPE_READ) {

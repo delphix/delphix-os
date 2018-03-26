@@ -102,7 +102,7 @@
  *     zthr_resume(zthr_pointer);
  *
  * A zthr will implicitly check if it has received a cancellation
- * signal every time func returns and everytime it wakes up [see ZTHR
+ * signal every time func returns and every time it wakes up [see ZTHR
  * state transitions below].
  *
  * At times, waiting for the zthr's func to finish its job may take
@@ -132,7 +132,7 @@
  *
  * == ZTHR cleanup
  *
- * Cancelling a zthr doesn't clean up its metadata (internal locks,
+ * Canceling a zthr doesn't clean up its metadata (internal locks,
  * function pointers to func and checkfunc, etc..). This is because
  * we want to keep them around in case we want to resume the execution
  * of the zthr later. Similarly for zthrs that exit themselves.

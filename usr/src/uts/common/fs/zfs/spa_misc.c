@@ -59,7 +59,7 @@
 /*
  * SPA locking
  *
- * There are four basic locks for managing spa_t structures:
+ * There are three basic locks for managing spa_t structures:
  *
  * spa_namespace_lock (global mutex)
  *
@@ -585,6 +585,23 @@ spa_deadman(void *arg)
 		vdev_deadman(spa->spa_root_vdev);
 }
 
+int
+spa_log_sm_sort_by_txg(const void *va, const void *vb)
+{
+	const spa_log_sm_t *a = va;
+	const spa_log_sm_t *b = vb;
+
+	uint64_t aw = a->sls_txg;
+	uint64_t bw = b->sls_txg;
+
+	if (aw > bw)
+		return (1);
+	else if (aw < bw)
+		return (-1);
+	return (0);
+}
+
+
 /*
  * Create an uninitialized spa_t with the given name.  Requires
  * spa_namespace_lock.  The caller must ensure that the spa_t doesn't already
@@ -615,6 +632,7 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_vdev_top_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_iokstat_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_activities_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_flushed_ms_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	cv_init(&spa->spa_async_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_evicting_os_cv, NULL, CV_DEFAULT, NULL);
@@ -677,6 +695,12 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 		avl_create(&spa->spa_alloc_trees[i], zio_bookmark_compare,
 		    sizeof (zio_t), offsetof(zio_t, io_alloc_node));
 	}
+	avl_create(&spa->spa_metaslabs_by_flushed, metaslab_sort_by_flushed,
+	    sizeof (metaslab_t), offsetof(metaslab_t, ms_spa_txg_node));
+	avl_create(&spa->spa_sm_logs_by_txg, spa_log_sm_sort_by_txg,
+	    sizeof (spa_log_sm_t), offsetof(spa_log_sm_t, sls_node));
+	list_create(&spa->spa_log_summary, sizeof (log_summary_entry_t),
+	    offsetof(log_summary_entry_t, lse_node));
 
 	/*
 	 * Every pool starts with the default cachefile
@@ -741,7 +765,7 @@ spa_remove(spa_t *spa)
 	spa_config_dirent_t *dp;
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-	ASSERT(spa->spa_state == POOL_STATE_UNINITIALIZED);
+	ASSERT3U(spa_state(spa), ==, POOL_STATE_UNINITIALIZED);
 	ASSERT3U(refcount_count(&spa->spa_refcount), ==, 0);
 	ASSERT0(spa->spa_waiters);
 
@@ -770,7 +794,9 @@ spa_remove(spa_t *spa)
 	    sizeof (kmutex_t));
 	kmem_free(spa->spa_alloc_trees, spa->spa_alloc_count *
 	    sizeof (avl_tree_t));
-
+	avl_destroy(&spa->spa_metaslabs_by_flushed);
+	avl_destroy(&spa->spa_sm_logs_by_txg);
+	list_destroy(&spa->spa_log_summary);
 	list_destroy(&spa->spa_config_list);
 
 	nvlist_free(spa->spa_label_features);
@@ -803,6 +829,7 @@ spa_remove(spa_t *spa)
 	cv_destroy(&spa->spa_activities_cv);
 	cv_destroy(&spa->spa_waiters_cv);
 
+	mutex_destroy(&spa->spa_flushed_ms_lock);
 	mutex_destroy(&spa->spa_async_lock);
 	mutex_destroy(&spa->spa_errlist_lock);
 	mutex_destroy(&spa->spa_errlog_lock);
@@ -1408,7 +1435,7 @@ spa_by_guid(uint64_t pool_guid, uint64_t device_guid)
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	for (spa = avl_first(t); spa != NULL; spa = AVL_NEXT(t, spa)) {
-		if (spa->spa_state == POOL_STATE_UNINITIALIZED)
+		if (spa_state(spa) == POOL_STATE_UNINITIALIZED)
 			continue;
 		if (spa->spa_root_vdev == NULL)
 			continue;
@@ -2224,6 +2251,12 @@ void
 spa_set_missing_tvds(spa_t *spa, uint64_t missing)
 {
 	spa->spa_missing_tvds = missing;
+}
+
+space_map_t *
+spa_syncing_log_sm(spa_t *spa)
+{
+	return (spa->spa_syncing_log_sm);
 }
 
 boolean_t

@@ -672,7 +672,7 @@ zil_create(zilog_t *zilog)
 
 	/*
 	 * If we just allocated the first log block, commit our transaction
-	 * and wait for zil_sync() to stuff the block poiner into zh_log.
+	 * and wait for zil_sync() to stuff the block pointer into zh_log.
 	 * (zh is part of the MOS, so we cannot modify it in open context.)
 	 */
 	if (tx != NULL) {

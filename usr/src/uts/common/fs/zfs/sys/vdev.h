@@ -92,6 +92,8 @@ extern void vdev_rele(vdev_t *);
 extern int vdev_metaslab_init(vdev_t *vd, uint64_t txg);
 extern void vdev_metaslab_fini(vdev_t *vd);
 extern void vdev_metaslab_set_size(vdev_t *);
+extern void vdev_cleanup_old_sm_logs(vdev_t *, dmu_tx_t *);
+extern void metaslab_load_vdev_spacemap(metaslab_t *);
 extern void vdev_expand(vdev_t *vd, uint64_t txg);
 extern void vdev_split(vdev_t *vd);
 extern void vdev_deadman(vdev_t *vd);
@@ -176,6 +178,7 @@ typedef enum {
 } vdev_labeltype_t;
 
 extern int vdev_label_init(vdev_t *vd, uint64_t txg, vdev_labeltype_t reason);
+extern space_map_t *vdev_get_syncing_log_sm(vdev_t *vd, dmu_tx_t *tx);
 
 #ifdef	__cplusplus
 }

@@ -4351,7 +4351,6 @@ arc_adapt(int bytes, arc_state_t *state)
 		return;
 	}
 
-
 	if (arc_no_grow)
 		return;
 

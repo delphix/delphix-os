@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_RANGE_TREE_H
@@ -80,9 +80,11 @@ void range_tree_fini(void);
 range_tree_t *range_tree_create(range_tree_ops_t *ops, void *arg);
 void range_tree_destroy(range_tree_t *rt);
 boolean_t range_tree_contains(range_tree_t *rt, uint64_t start, uint64_t size);
+void range_tree_verify_not_present(range_tree_t *rt,
+    uint64_t start, uint64_t size);
 uint64_t range_tree_space(range_tree_t *rt);
+uint64_t range_tree_numsegs(range_tree_t *rt);
 boolean_t range_tree_is_empty(range_tree_t *rt);
-void range_tree_verify(range_tree_t *rt, uint64_t start, uint64_t size);
 void range_tree_swap(range_tree_t **rtsrc, range_tree_t **rtdst);
 void range_tree_stat_verify(range_tree_t *rt);
 
@@ -92,6 +94,11 @@ void range_tree_clear(range_tree_t *rt, uint64_t start, uint64_t size);
 
 void range_tree_vacate(range_tree_t *rt, range_tree_func_t *func, void *arg);
 void range_tree_walk(range_tree_t *rt, range_tree_func_t *func, void *arg);
+
+void range_tree_remove_xor_add_segment(uint64_t start, uint64_t end,
+    range_tree_t *removefrom, range_tree_t *addto);
+void range_tree_remove_xor_add(range_tree_t *rt, range_tree_t *removefrom,
+    range_tree_t *addto);
 
 #ifdef	__cplusplus
 }

@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/cli_root/zpool_import/zpool_import.kshlib
@@ -64,6 +64,8 @@ function custom_cleanup
 	    log_must set_zfs_txg_timeout $ZFS_TXG_TIMEOUT
 	log_must rm -rf $BACKUP_DEVICE_DIR
 	cleanup
+	log_must mdb_ctf_set_int zfs_vdev_min_ms_count 0t16
+	log_must mdb_ctf_set_int spa_allocators 0t4
 }
 
 log_onexit custom_cleanup
@@ -156,6 +158,14 @@ function test_replace_vdev
 log_must mkdir $BACKUP_DEVICE_DIR
 # Make the devices bigger to reduce chances of overwriting MOS metadata.
 increase_device_sizes $(( FILE_SIZE * 4 ))
+
+# Increase the number of metaslabs for small pools temporarily to
+# reduce the chance of reusing a metaslab that holds old MOS metadata.
+log_must mdb_ctf_set_int zfs_vdev_min_ms_count 0t150
+
+# Decrease the number of allocators for pools created during this test,
+# to increase the odds that metadata survives from old txgs.
+log_must mdb_ctf_set_int spa_allocators 0t1
 
 # We set zfs_txg_timeout to 1 to reduce resilvering time at each sync.
 ZFS_TXG_TIMEOUT=$(get_zfs_txg_timeout)

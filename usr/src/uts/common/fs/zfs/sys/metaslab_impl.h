@@ -198,7 +198,7 @@ struct metaslab_class {
 
 /*
  * Metaslab groups encapsulate all the allocatable regions (i.e. metaslabs)
- * of a top-level vdev. They are linked togther to form a circular linked
+ * of a top-level vdev. They are linked together to form a circular linked
  * list and can belong to only one metaslab class. Metaslab group may become
  * ineligible for allocations for a number of reasons such as limited free
  * space, fragmentation, or going offline. When this happens the allocator will
@@ -210,6 +210,7 @@ struct metaslab_group {
 	metaslab_t		**mg_primaries;
 	metaslab_t		**mg_secondaries;
 	avl_tree_t		mg_metaslab_tree;
+
 	uint64_t		mg_aliquot;
 	boolean_t		mg_allocatable;		/* can we allocate? */
 	uint64_t		mg_ms_ready;
@@ -340,7 +341,32 @@ struct metaslab_group {
  * being written.
  */
 struct metaslab {
+	/*
+	 * This is the main lock of the metaslab and and its purpose is to
+	 * coordinate our allocations and frees [e.g metaslab_block_alloc(),
+	 * metaslab_free_concrete(), ..etc] with our various syncing
+	 * procedures [e.g. metaslab_sync(), metaslab_sync_done(), ..etc].
+	 *
+	 * The lock is also used during some miscellaneous operations like
+	 * using the metaslab's histogram for the metaslab group's histogram
+	 * aggregation, or marking the metaslab for initialization.
+	 */
 	kmutex_t	ms_lock;
+
+	/*
+	 * Acquired together with the ms_lock whenever we expect to
+	 * write to metaslab data on-disk (i.e flushing entries to
+	 * the metaslab's space map). It helps coordinate readers of
+	 * the metaslab's space map [see spa_vdev_remove_thread()]
+	 * with writers [see metaslab_sync() or metaslab_flush()].
+	 *
+	 * Note that metaslab_load(), even though a reader, uses
+	 * a completely different mechanism to deal with the reading
+	 * of the metaslab's space map base on ms_synced_length. That
+	 * said, the function still uses the ms_sync_lock after it
+	 * has read the ms_sm [see relevant comment in metaslab_load()
+	 * as to why].
+	 */
 	kmutex_t	ms_sync_lock;
 	kcondvar_t	ms_load_cv;
 	space_map_t	*ms_sm;
@@ -350,6 +376,7 @@ struct metaslab {
 	uint64_t	ms_fragmentation;
 
 	range_tree_t	*ms_allocating[TXG_SIZE];
+	uint64_t	ms_allocated_this_txg;
 	range_tree_t	*ms_allocatable;
 
 	/*
@@ -364,7 +391,6 @@ struct metaslab {
 
 	boolean_t	ms_condensing;	/* condensing? */
 	boolean_t	ms_condense_wanted;
-	uint64_t	ms_condense_checked_txg;
 
 	uint64_t	ms_initializing; /* leaves initializing this ms */
 
@@ -375,7 +401,27 @@ struct metaslab {
 	boolean_t	ms_loaded;
 	boolean_t	ms_loading;
 
+	kcondvar_t	ms_flush_cv;
+	boolean_t	ms_flushing;
+
+	/*
+	 * The point of the following histograms is to maintain copies of
+	 * segments that have made it to the metaslab's space map histogram
+	 * (and are in the spacemap or the log and unflushed trees) but have
+	 * not reached the ms_allocatable yet (or won't be in the
+	 * ms_allocatable if it's loaded). We use them to make more accurate
+	 * calculations of the ms_weight when the metaslab is unloaded. That
+	 * said, there may still be some inaccuracies due to adjacent segments
+	 * not being consolidated in the metaslab's space map histogram. That
+	 * can cause us to have a worse view of an unloaded metaslab's weight
+	 * than the metaslab has when it is loaded.
+	 */
+	uint64_t	ms_synchist[SPACE_MAP_HISTOGRAM_SIZE];
+	uint64_t	ms_deferhist[TXG_DEFER_SIZE][SPACE_MAP_HISTOGRAM_SIZE];
+
+	uint64_t	ms_allocated_space;	/* amout of space allocated */
 	int64_t		ms_deferspace;	/* sum of ms_defermap[] space	*/
+
 	uint64_t	ms_weight;	/* weight vs. others in group	*/
 	uint64_t	ms_activation_weight;	/* activation weight	*/
 
@@ -410,9 +456,33 @@ struct metaslab {
 	metaslab_group_t *ms_group;	/* metaslab group		*/
 	avl_node_t	ms_group_node;	/* node in metaslab group tree	*/
 	txg_node_t	ms_txg_node;	/* per-txg dirty metaslab links	*/
+	avl_node_t	ms_spa_txg_node; /* node in spa_metaslabs_by_txg */
+
+	/*
+	 * Allocs and frees that are committed to the vdev log spacemap but
+	 * not yet to this metaslab's spacemap.
+	 */
+	range_tree_t	*ms_unflushed_allocs;
+	range_tree_t	*ms_unflushed_frees;
+
+	/*
+	 * We have flushed entries up to but not including this TXG. In
+	 * other words, all changes from this TXG and onward should not
+	 * be in this metaslab's space map and must be read from the
+	 * log space maps.
+	 */
+	uint64_t	ms_unflushed_txg;
+
+	/* The spacemap's length in bytes up to and including ms_synced_txg. */
+	uint64_t	ms_synced_length;
 
 	boolean_t	ms_new;
 };
+
+typedef struct metaslab_unflushed_phys {
+	/* on-disk counterpart of ms_unflushed_txg */
+	uint64_t	msp_unflushed_txg;
+} metaslab_unflushed_phys_t;
 
 #ifdef	__cplusplus
 }

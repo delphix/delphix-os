@@ -626,6 +626,8 @@ typedef struct zpool_load_policy {
 	"com.delphix:obsolete_counts_are_precise"
 #define	VDEV_TOP_ZAP_POOL_CHECKPOINT_SM \
 	"com.delphix:pool_checkpoint_sm"
+#define	VDEV_TOP_ZAP_MS_UNFLUSHED_PHYS_TXGS \
+	"com.delphix:ms_unflushed_phys_txgs"
 
 #define	VDEV_LEAF_ZAP_INITIALIZE_LAST_OFFSET	\
 	"com.delphix:next_offset_to_initialize"

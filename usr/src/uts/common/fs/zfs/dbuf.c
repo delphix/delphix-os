@@ -3448,6 +3448,33 @@ dbuf_sync_indirect(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 	zio_nowait(zio);
 }
 
+/*
+ * Verify that the size of the data in our bonus buffer does not exceed
+ * its recorded size.
+ *
+ * The purpose of this verification is to catch any cases in development
+ * where the size of a phys structure (i.e space_map_phys_t) grows and,
+ * due to incorrect feature management, older pools expect to read more
+ * data even though they didn't actually write it to begin with.
+ *
+ * For a example, this would catch an error in the feature logic where we
+ * open an older pool and we expect to write the space map histogram of
+ * a space map with size SPACE_MAP_SIZE_V0.
+ */
+static void
+dbuf_sync_leaf_verify_bonus_dnode(dbuf_dirty_record_t *dr)
+{
+	arc_buf_t *datap = dr->dt.dl.dr_data;
+	uint16_t bonuslen = DB_DNODE(dr->dr_dbuf)->dn_phys->dn_bonuslen;
+
+	ASSERT3U(DN_MAX_BONUSLEN, >=, bonuslen);
+	char *datap_end = ((char *)datap) + bonuslen;
+	char *datap_max = ((char *)datap) + DN_MAX_BONUSLEN;
+
+	for (; datap_end < datap_max; datap_end++)
+		ASSERT(*datap_end == 0);
+}
+
 static void
 dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 {
@@ -3498,8 +3525,13 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 		ASSERT(*datap != NULL);
 		ASSERT0(db->db_level);
 		ASSERT3U(dn->dn_phys->dn_bonuslen, <=, DN_MAX_BONUSLEN);
+
 		bcopy(*datap, DN_BONUS(dn->dn_phys), dn->dn_phys->dn_bonuslen);
 		DB_DNODE_EXIT(db);
+
+#ifdef DEBUG
+		dbuf_sync_leaf_verify_bonus_dnode(dr);
+#endif
 
 		if (*datap != db->db.db_data) {
 			zio_buf_free(*datap, DN_MAX_BONUSLEN);

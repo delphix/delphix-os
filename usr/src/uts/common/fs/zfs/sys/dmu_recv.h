@@ -21,19 +21,18 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  */
 
-#ifndef _DMU_RECV_H
+#ifndef	_DMU_RECV_H
 #define	_DMU_RECV_H
 
 #include <sys/inttypes.h>
 #include <sys/dsl_bookmark.h>
 #include <sys/spa.h>
 #include <sys/objlist.h>
-#include <sys/dsl_bookmark.h>
 
 extern const char *recv_clone_name;
 

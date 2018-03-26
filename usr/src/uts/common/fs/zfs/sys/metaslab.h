@@ -48,9 +48,19 @@ int metaslab_init(metaslab_group_t *, uint64_t, uint64_t, uint64_t,
     metaslab_t **);
 void metaslab_fini(metaslab_t *);
 
+void metaslab_set_unflushed_txg(metaslab_t *, uint64_t, dmu_tx_t *);
+void metaslab_set_estimated_condensed_size(metaslab_t *, uint64_t, dmu_tx_t *);
+uint64_t metaslab_unflushed_txg(metaslab_t *);
+uint64_t metaslab_estimated_condensed_size(metaslab_t *);
+int metaslab_sort_by_flushed(const void *, const void *);
+uint64_t metaslab_unflushed_changes_memused(metaslab_t *);
+
 void metaslab_load_wait(metaslab_t *);
 int metaslab_load(metaslab_t *);
 void metaslab_unload(metaslab_t *);
+boolean_t metaslab_flush(metaslab_t *, dmu_tx_t *);
+
+uint64_t metaslab_allocated_space(metaslab_t *);
 
 void metaslab_sync(metaslab_t *, uint64_t);
 void metaslab_sync_done(metaslab_t *, uint64_t);
@@ -112,6 +122,7 @@ void metaslab_group_histogram_remove(metaslab_group_t *, metaslab_t *);
 void metaslab_group_alloc_decrement(spa_t *, uint64_t, void *, int, int,
     boolean_t);
 void metaslab_group_alloc_verify(spa_t *, const blkptr_t *, void *, int);
+void metaslab_recalculate_weight_and_sort(metaslab_t *);
 
 #ifdef	__cplusplus
 }

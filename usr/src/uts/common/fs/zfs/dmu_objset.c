@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -1296,7 +1296,7 @@ dmu_objset_sync_dnodes(multilist_sublist_t *list, dmu_tx_t *tx)
 		ASSERT(dn->dn_dbuf->db_data_pending);
 		/*
 		 * Initialize dn_zio outside dnode_sync() because the
-		 * meta-dnode needs to set it ouside dnode_sync().
+		 * meta-dnode needs to set it outside dnode_sync().
 		 */
 		dn->dn_zio = dn->dn_dbuf->db_data_pending->dr_zio;
 		ASSERT(dn->dn_zio);

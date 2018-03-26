@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+# Copyright (c) 2011, 2018 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
@@ -1439,6 +1439,7 @@ ZFS_COMMON_OBJS +=		\
 	spa_config.o		\
 	spa_errlog.o		\
 	spa_history.o		\
+	spa_log_spacemap.o	\
 	spa_misc.o		\
 	space_map.o		\
 	space_reftree.o		\

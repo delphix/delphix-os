@@ -27,6 +27,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2018 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_SYSMACROS_H
@@ -319,6 +320,14 @@ extern unsigned char bcd_to_byte[256];
 	(((type)(x) ^ (type)(y)) > (type)(align) - 1)
 #define	P2SAMEHIGHBIT_TYPED(x, y, type) \
 	(((type)(x) ^ (type)(y)) < ((type)(x) & (type)(y)))
+
+/*
+ * return the ceiling of the division of n by d.
+ * eg, DIV_ROUNDUP(1, 2) == 1
+ * eg, DIV_ROUNDUP(333, 120) == 3
+ */
+#define	DIV_ROUNDUP(n, d)	(((n) + (d) - 1) / (d))
+
 
 /*
  * Macros to atomically increment/decrement a variable.  mutex and var

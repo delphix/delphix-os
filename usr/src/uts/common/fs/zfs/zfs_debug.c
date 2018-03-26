@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -61,6 +61,15 @@ zfs_dbgmsg_fini(void)
  *
  * When used with libzpool, monitor with:
  * dtrace -qn 'zfs$pid::zfs_dbgmsg:probe1{printf("%s\n", copyinstr(arg1))}'
+ *
+ * Some general principles for using zfs_dbgmsg():
+ * 1. We don't want to pollute the log with typically-irrelevant messages, so
+ *    don't print too many messages in the "normal" code path - O(1) per txg.
+ * 2. We want to know for sure what happened, so make the message specific
+ *    (e.g. *which* thing am I operating on).
+ * 3. Do print a message when something unusual or unexpected happens
+ *    (e.g. error cases).
+ * 4. Print a message when making user-initiated on-disk changes.
  */
 void
 zfs_dbgmsg(const char *fmt, ...)
