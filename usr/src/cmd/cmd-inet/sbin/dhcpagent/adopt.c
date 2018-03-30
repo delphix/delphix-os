@@ -252,8 +252,7 @@ get_dhcp_kcache(void)
  *  output: boolean_t: Returns B_TRUE if successful (no problems),
  *                     otherwise B_FALSE.
  *    note: The memory allocated by this function must be freed by
- *          the caller. This code is derived from
- *          usr/src/lib/libwanboot/common/bootinfo_aux.c.
+ *          the caller.
  */
 
 static boolean_t
