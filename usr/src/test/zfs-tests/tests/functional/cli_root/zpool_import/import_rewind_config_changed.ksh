@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/cli_root/zpool_import/zpool_import.kshlib

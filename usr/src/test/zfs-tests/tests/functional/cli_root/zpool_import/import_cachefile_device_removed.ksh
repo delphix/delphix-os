@@ -116,7 +116,7 @@ function test_remove_log_then_add_vdev
 	log_must zpool remove $TESTPOOL1 $VDEV1
 	log_must wait_for_pool_config $TESTPOOL1 "$VDEV0 $VDEV2 log $VDEV3"
 	log_must zpool remove $TESTPOOL1 $VDEV3
-    log_must check_pool_config $TESTPOOL1 "$VDEV0 $VDEV2"
+	log_must check_pool_config $TESTPOOL1 "$VDEV0 $VDEV2"
 	log_must rm $VDEV1 $VDEV3
 	log_must zpool add $TESTPOOL1 $VDEV4
 
