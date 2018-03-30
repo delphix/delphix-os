@@ -1635,7 +1635,7 @@ estimate_size(zfs_handle_t *zhp, const char *from, int fd, sendflags_t *flags,
     const char *redactbook, char *errbuf)
 {
 	uint64_t size;
-	FILE *fout = flags->dryrun ? stdout : stderr;
+	FILE *fout = flags->verbosity > 0 && flags->dryrun ? stdout : stderr;
 	progress_arg_t pa = { 0 };
 	int err = 0;
 	pthread_t ptid;
@@ -1804,6 +1804,7 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 	int error = 0;
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	enum lzc_send_flags lzc_flags = 0;
+	FILE *fout = (flags->verbosity > 0 && flags->dryrun) ? stdout : stderr;
 	uint64_t *redact_snap_guids = NULL;
 	int num_redact_snaps = 0;
 	char *redact_book = NULL;
@@ -1821,9 +1822,9 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 		return (zfs_error(hdl, EZFS_FAULT, errbuf));
 	}
 	if (flags->verbosity != 0) {
-		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+		(void) fprintf(fout, dgettext(TEXT_DOMAIN,
 		    "resume token contents:\n"));
-		nvlist_print(stderr, resume_nvl);
+		nvlist_print(fout, resume_nvl);
 	}
 
 	if (nvlist_lookup_string(resume_nvl, "toname", &toname) != 0 ||

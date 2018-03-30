@@ -31,6 +31,8 @@
 # 5. ZFS receieve and verify the receive completes successfully
 # 6. Repeat steps on an incremental ZFS send
 # 7. Repeat the entire procedure for a dataset at the pool root
+# 8. Repeat the entire procedure for a dataset at the pool root in the same
+#    pool as the recvfs.
 #
 
 verify_runnable "both"
@@ -41,8 +43,8 @@ streamfs=$POOL/stream
 
 log_onexit resume_cleanup $sendfs $streamfs
 
-for sendfs in $POOL/sendfs $POOL; do
-	test_fs_setup $sendfs $recvfs
+for sendfs in $POOL/sendfs $POOL $POOL2; do
+	test_fs_setup $sendfs $recvfs $streamfs
 	resume_test "zfs send -v $sendfs@a" $streamfs $recvfs
 	resume_test "zfs send -v -i @a $sendfs@b" $streamfs $recvfs
 	file_check $sendfs $recvfs
