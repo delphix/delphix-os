@@ -4209,6 +4209,13 @@ scrub_callback(zpool_handle_t *zhp, void *data)
 		    zpool_get_name(zhp));
 	}
 
+	if (err == 0 && zpool_has_checkpoint(zhp) &&
+	    cb->cb_type == POOL_SCAN_SCRUB) {
+		(void) printf(gettext("warning: will not scrub state that "
+		    "belongs to the checkpoint of pool '%s'\n"),
+		    zpool_get_name(zhp));
+	}
+
 	return (err != 0);
 }
 
