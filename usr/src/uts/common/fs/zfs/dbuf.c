@@ -47,8 +47,8 @@
 #include <sys/blkptr.h>
 #include <sys/range_tree.h>
 #include <sys/callb.h>
-#include <sys/vdev.h>
 #include <sys/abd.h>
+#include <sys/vdev.h>
 #include <sys/cityhash.h>
 #include <sys/spa_impl.h>
 

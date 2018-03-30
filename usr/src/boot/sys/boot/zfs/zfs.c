@@ -54,7 +54,6 @@
 #define		ZFS_BE_LAST	8
 
 static int	zfs_open(const char *path, struct open_file *f);
-static int	zfs_write(struct open_file *f, void *buf, size_t size, size_t *resid);
 static int	zfs_close(struct open_file *f);
 static int	zfs_read(struct open_file *f, void *buf, size_t size, size_t *resid);
 static off_t	zfs_seek(struct open_file *f, off_t offset, int where);
@@ -68,7 +67,7 @@ struct fs_ops zfs_fsops = {
 	zfs_open,
 	zfs_close,
 	zfs_read,
-	zfs_write,
+	null_write,
 	zfs_seek,
 	zfs_stat,
 	zfs_readdir
@@ -172,16 +171,6 @@ zfs_read(struct open_file *f, void *start, size_t size, size_t *resid	/* out */)
 		*resid = size - n;
 
 	return (0);
-}
-
-/*
- * Don't be silly - the bootstrap has no business writing anything.
- */
-static int
-zfs_write(struct open_file *f, void *start, size_t size, size_t *resid	/* out */)
-{
-
-	return (EROFS);
 }
 
 static off_t
@@ -589,7 +578,7 @@ zfs_probe_partition(void *arg, const char *partname,
 	case PART_VTOC_SWAP:
 		return (ret);
 	default:
-		break;;
+		break;
 	}
 	ppa = (struct zfs_probe_args *)arg;
 	strncpy(devname, ppa->devname, strlen(ppa->devname) - 1);
@@ -608,7 +597,10 @@ zfs_probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, zfs_diskread);
 		if (table != NULL) {
-			ptable_iterate(table, &pa, zfs_probe_partition);
+			enum ptable_type pt = ptable_gettype(table);
+
+			if (pt == PTABLE_VTOC8 || pt == PTABLE_VTOC)
+				ptable_iterate(table, &pa, zfs_probe_partition);
 			ptable_close(table);
 		}
 	}

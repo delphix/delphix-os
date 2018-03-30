@@ -14,7 +14,7 @@
 # Copyright 2016 Joyent, Inc.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright (c) 2013, 2017 by Delphix. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright (c) 2017, Chris Fraire <cfraire@me.com>.
 #
 
@@ -342,6 +342,7 @@ _MANFILES=	6to4relay.1m		\
 		nwamd.1m		\
 		passmgmt.1m		\
 		pbind.1m		\
+		pcitool.1m		\
 		picld.1m		\
 		ping.1m			\
 		pkgadd.1m		\

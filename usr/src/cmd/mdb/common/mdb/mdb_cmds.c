@@ -207,13 +207,7 @@ static mdb_tgt_addr_t
 write_var_uint(mdb_tgt_as_t as, mdb_tgt_addr_t addr, uint64_t val, size_t size,
     uint_t rdback)
 {
-	if (size > sizeof (uintptr_t)) {
-		mdb_warn("size of write cannot be bigger than the "
-		    "size of the biggest data pointer\n");
-		return (addr);
-	}
-
-	if (size < sizeof (uintptr_t)) {
+	if (size < sizeof (uint64_t)) {
 		uint64_t max_num = 1ULL << (size * NBBY);
 
 		if (val >= max_num) {

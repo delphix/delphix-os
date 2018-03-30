@@ -3706,6 +3706,7 @@ print_phys_default(show_state_t *state, datalink_id_t linkid,
 	if (status != DLADM_STATUS_OK)
 		goto done;
 
+	bzero(&pattr, sizeof (pattr));
 	(void) snprintf(pattr.link_phys_device,
 	    sizeof (pattr.link_phys_device), "%s", dpa.dp_dev);
 	(void) dladm_media2str(media, pattr.link_phys_media);
@@ -3973,6 +3974,8 @@ iptun_process_addrarg(char *addrarg, iptun_params_t *params)
 	while (*addrarg != '\0') {
 		switch (getsubopt(&addrarg, iptun_addropts, &addrval)) {
 		case IPTUN_LOCAL:
+			if (addrval == NULL)
+				die("tunnel source address value is missing");
 			params->iptun_param_flags |= IPTUN_PARAM_LADDR;
 			if (strlcpy(params->iptun_param_laddr, addrval,
 			    sizeof (params->iptun_param_laddr)) >=
@@ -3980,6 +3983,9 @@ iptun_process_addrarg(char *addrarg, iptun_params_t *params)
 				die("tunnel source address is too long");
 			break;
 		case IPTUN_REMOTE:
+			if (addrval == NULL)
+				die("tunnel destination address value "
+				    "is missing");
 			params->iptun_param_flags |= IPTUN_PARAM_RADDR;
 			if (strlcpy(params->iptun_param_raddr, addrval,
 			    sizeof (params->iptun_param_raddr)) >=
