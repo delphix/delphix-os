@@ -3965,11 +3965,11 @@ spa_ld_mos_init(spa_t *spa, spa_import_type_t type)
 	}
 
 	/*
-	 * Read vdev labels to find the best uberblock (i.e. latest, unless
-	 * spa_load_max_txg is set) and store it in spa_uberblock. We get the
-	 * list of features required to read blkptrs in the MOS from the vdev
-	 * label with the best uberblock and verify that our version of zfs
-	 * supports them all.
+	 * Read all vdev labels to find the best uberblock (i.e. latest,
+	 * unless spa_load_max_txg is set) and store it in spa_uberblock. We
+	 * get the list of features required to read blkptrs in the MOS from
+	 * the vdev label with the best uberblock and verify that our version
+	 * of zfs supports them all.
 	 */
 	error = spa_ld_select_uberblock(spa, type);
 	if (error != 0)

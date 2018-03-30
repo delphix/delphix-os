@@ -440,6 +440,7 @@ static spa_t *ztest_spa = NULL;
 static ztest_ds_t *ztest_ds;
 
 static kmutex_t ztest_vdev_lock;
+static kmutex_t ztest_checkpoint_lock;
 
 /*
  * The ztest_name_lock protects the pool and dataset namespace used by
@@ -460,8 +461,6 @@ enum ztest_object {
 	ZTEST_DIROBJ,
 	ZTEST_OBJECTS
 };
-
-static kmutex_t ztest_checkpoint_lock;
 
 /*
  * Name of entry in ZTEST_DIROBJ that maps the origin objects referenced.
