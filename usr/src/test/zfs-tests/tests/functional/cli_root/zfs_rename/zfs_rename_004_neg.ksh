@@ -77,8 +77,7 @@ set -A bad_dataset $TESTPOOL/$TESTFS1 $TESTPOOL/$TESTCTR1 \
 	$TESTPOOL/$TESTFS1 $TESTPOOL/${TESTFS1}%x \
 	$TESTPOOL/$TESTFS1 $TESTPOOL/${TESTFS1}%p \
 	$TESTPOOL/$TESTFS1 $TESTPOOL/${TESTFS1}%s \
-	$TESTPOOL/$TESTFS@snapshot \
-	$TESTPOOL/$TESTFS@snapshot/fs
+	$TESTPOOL/$TESTFS@snapshot $TESTPOOL/$TESTFS@snapshot/fs
 
 #
 # cleanup defined in zfs_rename.kshlib

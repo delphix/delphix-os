@@ -403,6 +403,7 @@ host_part:
 				} else
 					*tmp = ']';
 			}
+			/* FALLTHROUGH */
 		default:
 			continue;
 		}

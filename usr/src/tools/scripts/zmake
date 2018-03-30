@@ -61,6 +61,7 @@ directories=(
 	$SRC/lib/pyzfs
 	$SRC/lib/libzfs_jni
 	$SRC/lib/libsaveargs
+	$SRC/lib/libipsecutil
 	$SRC/cmd/isaexec
 	$SRC/cmd/platexec
 	$SRC/cmd/devfsadm

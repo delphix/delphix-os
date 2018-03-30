@@ -25,7 +25,8 @@ TMPDIR=${TMPDIR:-/tmp}
 log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk1
 log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk2
 log_must mkfile $(($MINVDEVSIZE * 2)) $TMPDIR/dsk3
-DISKS="$TMPDIR/dsk1 mirror $TMPDIR/dsk2 $TMPDIR/dsk3"
+DISKS="$TMPDIR/dsk1 $TMPDIR/dsk2 $TMPDIR/dsk3"
+VDEVS="$TMPDIR/dsk1 mirror $TMPDIR/dsk2 $TMPDIR/dsk3"
 
 function cleanup
 {
@@ -33,11 +34,12 @@ function cleanup
 	log_must rm -f $DISKS
 }
 
-log_must default_setup_noexit "$DISKS"
+log_must default_setup_noexit "$VDEVS"
 log_onexit cleanup
 
 # Attempt to remove the non mirrored disk.
 log_must zpool remove $TESTPOOL $TMPDIR/dsk1
+log_must wait_for_removal $TESTPOOL
 
 # Attempt to remove one of the disks in the mirror.
 log_mustnot zpool remove $TESTPOOL $TMPDIR/dsk2
