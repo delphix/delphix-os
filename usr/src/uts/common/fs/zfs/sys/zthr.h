@@ -29,14 +29,13 @@ struct zthr {
 	kmutex_t	zthr_lock;
 	kcondvar_t	zthr_cv;
 	boolean_t	zthr_cancel;
+	hrtime_t	zthr_wait_time;
 
 	kcondvar_t	zthr_wait_cv;
 	boolean_t	zthr_wait;
 
 	kcondvar_t	zthr_init_cv;
 	boolean_t	zthr_init;
-
-	hrtime_t	zthr_wait_time;
 
 	zthr_checkfunc_t	*zthr_checkfunc;
 	zthr_func_t	*zthr_func;

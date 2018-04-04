@@ -274,6 +274,7 @@
 #endif
 #include <sys/callb.h>
 #include <sys/kstat.h>
+#include <sys/zthr.h>
 #include <zfs_fletcher.h>
 #include <sys/aggsum.h>
 #include <sys/cityhash.h>
@@ -283,6 +284,7 @@
 boolean_t arc_watch = B_FALSE;
 int arc_procfd;
 #endif
+
 /*
  * This thread's job is to keep enough free memory in the system, by
  * calling arc_kmem_reap_now() plus arc_shrink(), which improves
@@ -322,7 +324,7 @@ int arc_grow_retry = 60;
 int arc_kmem_cache_reap_retry_ms = 1000;
 
 /* shift of arc_c for calculating overflow limit in arc_get_data_impl */
-int		zfs_arc_overflow_shift = 8;
+int zfs_arc_overflow_shift = 8;
 
 /* shift of arc_c for calculating both min and max arc_p */
 int arc_p_min_shift = 4;
@@ -2580,7 +2582,7 @@ arc_loan_buf(spa_t *spa, boolean_t is_metadata, int size)
 	arc_buf_t *buf = arc_alloc_buf(spa, arc_onloan_tag,
 	    is_metadata ? ARC_BUFC_METADATA : ARC_BUFC_DATA, size);
 
-	arc_loaned_bytes_update(size);
+	arc_loaned_bytes_update(arc_buf_size(buf));
 
 	return (buf);
 }
@@ -2592,7 +2594,7 @@ arc_loan_compressed_buf(spa_t *spa, uint64_t psize, uint64_t lsize,
 	arc_buf_t *buf = arc_alloc_compressed_buf(spa, arc_onloan_tag,
 	    psize, lsize, compression_type);
 
-	arc_loaned_bytes_update(psize);
+	arc_loaned_bytes_update(arc_buf_size(buf));
 
 	return (buf);
 }
