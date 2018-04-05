@@ -3032,7 +3032,6 @@ metaslab_group_preload(metaslab_group_t *mg)
  *
  * 3. Do not condense if the on-disk size of the space map does not actually
  *    decrease.
- *
  * Unfortunately, we cannot compute the on-disk size of the space map in this
  * context because we cannot accurately compute the effects of compression, etc.
  * Instead, we apply the heuristic described in the block comment for
