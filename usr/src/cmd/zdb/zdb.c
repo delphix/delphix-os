@@ -3517,10 +3517,10 @@ load_unflushed_svr_segs_cb(spa_t *spa, space_map_entry_t *sme, uint64_t txg,
 	uint64_t size = sme->sme_run;
 
 	/* skip vdevs we don't care about */
-	vdev_t *vd = svr->svr_vdev;
-	if (sme->sme_vdev != vd->vdev_id)
+	if (sme->sme_vdev != svr->svr_vdev_id)
 		return (0);
 
+	vdev_t *vd = vdev_lookup_top(spa, sme->sme_vdev);
 	metaslab_t *ms = vd->vdev_ms[offset >> vd->vdev_ms_shift];
 	ASSERT(sme->sme_type == SM_ALLOC || sme->sme_type == SM_FREE);
 
@@ -3559,7 +3559,7 @@ zdb_claim_removing(spa_t *spa, zdb_cb_t *zcb)
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 	spa_vdev_removal_t *svr = spa->spa_vdev_removal;
-	vdev_t *vd = svr->svr_vdev;
+	vdev_t *vd = vdev_lookup_top(spa, svr->svr_vdev_id);
 	vdev_indirect_mapping_t *vim = vd->vdev_indirect_mapping;
 
 	ASSERT0(range_tree_space(svr->svr_allocd_segs));
