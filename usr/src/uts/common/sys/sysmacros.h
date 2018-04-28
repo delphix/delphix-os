@@ -28,6 +28,7 @@
  *
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2018 by Delphix. All rights reserved.
+ * Copyright 2018 Joyent Inc.
  */
 
 #ifndef _SYS_SYSMACROS_H
@@ -376,12 +377,9 @@ extern unsigned char bcd_to_byte[256];
 #error	One of _BIT_FIELDS_LTOH or _BIT_FIELDS_HTOL must be defined
 #endif  /* _BIT_FIELDS_LTOH */
 
-/* avoid any possibility of clashing with <stddef.h> version */
-#if (defined(_KERNEL) || defined(_FAKE_KERNEL)) && !defined(_KMEMUSER)
-
+#if !defined(ARRAY_SIZE)
 #define	ARRAY_SIZE(x)	(sizeof (x) / sizeof (x[0]))
-
-#endif /* _KERNEL, !_KMEMUSER */
+#endif
 
 #ifdef	__cplusplus
 }

@@ -27,7 +27,7 @@
  * All rights reserved.
  */
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  * Copyright 2012 Jens Elkner <jel+illumos@cs.uni-magdeburg.de>
  * Copyright 2012 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
  * Copyright 2014 Josef 'Jeff' Sipek <jeffpc@josefsipek.net>
@@ -91,7 +91,7 @@ extern "C" {
 
 #define	CPUID_INTC_ECX_SSE3	0x00000001	/* Yet more SSE extensions */
 #define	CPUID_INTC_ECX_PCLMULQDQ 0x00000002 	/* PCLMULQDQ insn */
-						/* 0x00000004 - reserved */
+#define	CPUID_INTC_ECX_DTES64	0x00000004	/* 64-bit DS area */
 #define	CPUID_INTC_ECX_MON	0x00000008	/* MONITOR/MWAIT */
 #define	CPUID_INTC_ECX_DSCPL	0x00000010	/* CPL-qualified debug store */
 #define	CPUID_INTC_ECX_VMX	0x00000020	/* Hardware VM extensions */
@@ -104,15 +104,16 @@ extern "C" {
 #define	CPUID_INTC_ECX_FMA	0x00001000	/* Fused Multiply Add */
 #define	CPUID_INTC_ECX_CX16	0x00002000	/* cmpxchg16 */
 #define	CPUID_INTC_ECX_ETPRD	0x00004000	/* extended task pri messages */
-						/* 0x00008000 - reserved */
+#define	CPUID_INTC_ECX_PDCM	0x00008000	/* Perf/Debug Capability MSR */
 						/* 0x00010000 - reserved */
-						/* 0x00020000 - reserved */
+#define	CPUID_INTC_ECX_PCID	0x00020000	/* process-context ids */
 #define	CPUID_INTC_ECX_DCA	0x00040000	/* direct cache access */
 #define	CPUID_INTC_ECX_SSE4_1	0x00080000	/* SSE4.1 insns */
 #define	CPUID_INTC_ECX_SSE4_2	0x00100000	/* SSE4.2 insns */
 #define	CPUID_INTC_ECX_X2APIC	0x00200000	/* x2APIC */
 #define	CPUID_INTC_ECX_MOVBE	0x00400000	/* MOVBE insn */
 #define	CPUID_INTC_ECX_POPCNT	0x00800000	/* POPCNT insn */
+#define	CPUID_INTC_ECX_TSCDL	0x01000000	/* Deadline TSC */
 #define	CPUID_INTC_ECX_AES	0x02000000	/* AES insns */
 #define	CPUID_INTC_ECX_XSAVE	0x04000000	/* XSAVE/XRESTOR insns */
 #define	CPUID_INTC_ECX_OSXSAVE	0x08000000	/* OS supports XSAVE insns */
@@ -170,9 +171,17 @@ extern "C" {
 #define	CPUID_AMD_ECX_3DNP	0x00000100	/* AMD: 3DNowPrefectch */
 #define	CPUID_AMD_ECX_OSVW	0x00000200	/* AMD: OSVW */
 #define	CPUID_AMD_ECX_IBS	0x00000400	/* AMD: IBS */
-#define	CPUID_AMD_ECX_SSE5	0x00000800	/* AMD: SSE5 */
+#define	CPUID_AMD_ECX_SSE5	0x00000800	/* AMD: Extended AVX */
 #define	CPUID_AMD_ECX_SKINIT	0x00001000	/* AMD: SKINIT */
 #define	CPUID_AMD_ECX_WDT	0x00002000	/* AMD: WDT */
+				/* 0x00004000 - reserved */
+#define	CPUID_AMD_ECX_LWP	0x00008000	/* AMD: Lightweight profiling */
+#define	CPUID_AMD_ECX_FMA4	0x00010000	/* AMD: 4-operand FMA support */
+				/* 0x00020000 - reserved */
+				/* 0x00040000 - reserved */
+#define	CPUID_AMD_ECX_NIDMSR	0x00080000	/* AMD: Node ID MSR */
+				/* 0x00100000 - reserved */
+#define	CPUID_AMD_ECX_TBM	0x00200000	/* AMD: trailing bit manips. */
 #define	CPUID_AMD_ECX_TOPOEXT	0x00400000	/* AMD: Topology Extensions */
 
 /*
@@ -201,6 +210,7 @@ extern "C" {
 #define	CPUID_INTC_EBX_7_0_AVX2		0x00000020	/* AVX2 supported */
 #define	CPUID_INTC_EBX_7_0_SMEP		0x00000080	/* SMEP in CR4 */
 #define	CPUID_INTC_EBX_7_0_BMI2		0x00000100	/* BMI2 instrs */
+#define	CPUID_INTC_EBX_7_0_INVPCID	0x00000400	/* invpcid instr */
 #define	CPUID_INTC_EBX_7_0_MPX		0x00004000	/* Mem. Prot. Ext. */
 #define	CPUID_INTC_EBX_7_0_AVX512F	0x00010000	/* AVX512 foundation */
 #define	CPUID_INTC_EBX_7_0_AVX512DQ	0x00020000	/* AVX512DQ */
@@ -424,6 +434,8 @@ extern "C" {
 #define	X86FSET_UMIP		66
 #define	X86FSET_PKU		67
 #define	X86FSET_OSPKE		68
+#define	X86FSET_PCID		69
+#define	X86FSET_INVPCID		70
 
 /*
  * Intel Deep C-State invariant TSC in leaf 0x80000007.
@@ -682,7 +694,7 @@ extern "C" {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 
-#define	NUM_X86_FEATURES	69
+#define	NUM_X86_FEATURES	71
 extern uchar_t x86_featureset[];
 
 extern void free_x86_featureset(void *featureset);
@@ -715,6 +727,9 @@ struct cpuid_regs {
 	uint32_t	cp_ecx;
 	uint32_t	cp_edx;
 };
+
+extern int x86_use_pcid;
+extern int x86_use_invpcid;
 
 /*
  * Utility functions to get/set extended control registers (XCR)
@@ -860,6 +875,8 @@ extern void determine_platform(void);
 #endif
 extern int get_hwenv(void);
 extern int is_controldom(void);
+
+extern void enable_pcid(void);
 
 extern void xsave_setup_msr(struct cpu *);
 

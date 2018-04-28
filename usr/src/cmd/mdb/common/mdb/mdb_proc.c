@@ -25,7 +25,7 @@
  */
 /*
  * Copyright (c) 2014 by Delphix. All rights reserved.
- * Copyright 2015 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
@@ -4696,7 +4696,6 @@ static const mdb_tgt_ops_t proc_ops = {
 	pt_run,					/* t_run */
 	pt_step,				/* t_step */
 	pt_step_out,				/* t_step_out */
-	(int (*)()) mdb_tgt_notsup,		/* t_step_branch */
 	pt_next,				/* t_next */
 	pt_continue,				/* t_cont */
 	pt_signal,				/* t_signal */
