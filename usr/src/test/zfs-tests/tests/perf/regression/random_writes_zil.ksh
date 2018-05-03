@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2015, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2015, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -78,5 +78,5 @@ export collect_scripts=(
 )
 
 log_note "ZIL specific random write workload with $PERF_RUNTYPE settings"
-do_fio_run random_writes.fio $TRUE $FALSE
+do_fio_run random_writes.fio true false
 log_pass "Measure IO stats during ZIL specific random write workload"
