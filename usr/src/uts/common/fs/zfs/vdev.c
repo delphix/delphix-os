@@ -48,8 +48,8 @@
 #include <sys/arc.h>
 #include <sys/zil.h>
 #include <sys/dsl_scan.h>
-#include <sys/vdev_initialize.h>
 #include <sys/abd.h>
+#include <sys/vdev_initialize.h>
 
 /*
  * Virtual device management.

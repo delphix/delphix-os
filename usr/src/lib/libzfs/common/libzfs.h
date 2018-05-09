@@ -129,16 +129,16 @@ typedef enum zfs_error {
 	EZFS_DIFF,		/* general failure of zfs diff */
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
-	EZFS_TOOMANY,		/* argument list too long */
-	EZFS_INITIALIZING,	/* currently initializing */
-	EZFS_NO_INITIALIZE,	/* no active initialize */
+	EZFS_SCRUB_PAUSED,	/* scrub currently paused */
 	EZFS_NO_PENDING,	/* cannot cancel, no operation is pending */
 	EZFS_CHECKPOINT_EXISTS,	/* checkpoint exists */
 	EZFS_DISCARDING_CHECKPOINT,	/* currently discarding a checkpoint */
 	EZFS_NO_CHECKPOINT,	/* pool has no checkpoint */
 	EZFS_DEVRM_IN_PROGRESS,	/* a device is currently being removed */
 	EZFS_VDEV_TOO_BIG,	/* a device is too big to be used */
-	EZFS_SCRUB_PAUSED,	/* scrub currently paused */
+	EZFS_TOOMANY,		/* argument list too long */
+	EZFS_INITIALIZING,	/* currently initializing */
+	EZFS_NO_INITIALIZE,	/* no active initialize */
 	EZFS_UNKNOWN
 } zfs_error_t;
 

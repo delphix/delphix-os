@@ -347,8 +347,8 @@ ztest_func_t ztest_spa_upgrade;
 ztest_func_t ztest_mooch_byteswap;
 ztest_func_t ztest_device_removal;
 ztest_func_t ztest_remap_blocks;
-ztest_func_t ztest_initialize;
 ztest_func_t ztest_spa_checkpoint_create_discard;
+ztest_func_t ztest_initialize;
 
 uint64_t zopt_always = 0ULL * NANOSEC;		/* all the time */
 uint64_t zopt_incessant = 1ULL * NANOSEC / 10;	/* every 1/10 second */

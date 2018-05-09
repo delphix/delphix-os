@@ -189,8 +189,8 @@
 #include <sys/dsl_userhold.h>
 #include <sys/zfeature.h>
 #include <sys/zcp.h>
-#include <sys/vdev_removal.h>
 #include <sys/zio_checksum.h>
+#include <sys/vdev_removal.h>
 #include <sys/vdev_impl.h>
 #include <sys/vdev_initialize.h>
 

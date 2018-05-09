@@ -45,6 +45,7 @@
 #include <sys/vdev_indirect_mapping.h>
 #include <sys/vdev_initialize.h>
 #include <sys/abd.h>
+#include <sys/vdev_initialize.h>
 
 /*
  * This file contains the necessary logic to remove vdevs from a

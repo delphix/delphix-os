@@ -37,11 +37,17 @@
 
 $mapfile_version 2
 
+SYMBOL_VERSION ILLUMOS_0.3 {
+	global:
+
+	lzc_initialize;
+} ILLUMOS_0.2;
+
+
 SYMBOL_VERSION ILLUMOS_0.2 {
 	global:
 
 	lzc_get_nextboot;
-	lzc_initialize;
 	lzc_pool_checkpoint;
 	lzc_pool_checkpoint_discard;
 	lzc_redact;
