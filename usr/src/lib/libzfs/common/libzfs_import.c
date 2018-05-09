@@ -888,6 +888,7 @@ zpool_read_label(int fd, nvlist_t **config)
 
 	free(label);
 	*config = NULL;
+	errno = ENOENT;
 	return (-1);
 }
 

@@ -2342,7 +2342,8 @@ dump_znode(objset_t *os, uint64_t object, void *data, size_t size)
 			(void) snprintf(path, sizeof (path), "on delete queue");
 		} else if (error != 0) {
 			leaked_objects++;
-			(void) snprintf(path, sizeof (path), "leaked");
+			(void) snprintf(path, sizeof (path),
+			    "path not found, possibly leaked");
 		}
 		(void) printf("\tpath	%s\n", path);
 	}
@@ -2712,7 +2713,8 @@ dump_objset(objset_t *os)
 		abort();
 	}
 	if (leaked_objects != 0) {
-		(void) printf("%d leaked objects detected\n", leaked_objects);
+		(void) printf("%d potentially leaked objects detected\n",
+		    leaked_objects);
 		leaked_objects = 0;
 	}
 }
