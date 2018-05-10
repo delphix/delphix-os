@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -364,6 +364,7 @@ spa_remove_init(spa_t *spa)
 		spa->spa_removing_phys.sr_state = DSS_NONE;
 		spa->spa_removing_phys.sr_removing_vdev = -1;
 		spa->spa_removing_phys.sr_prev_indirect_vdev = -1;
+		spa->spa_indirect_vdevs_loaded = B_TRUE;
 		return (0);
 	} else if (error != 0) {
 		return (error);
