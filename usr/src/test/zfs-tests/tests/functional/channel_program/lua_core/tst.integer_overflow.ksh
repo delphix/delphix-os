@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/channel_program/channel_common.kshlib
@@ -24,7 +24,7 @@
 verify_runnable "global"
 
 
-log_must_program testpool - <<-EOF
+log_must_program $TESTPOOL - <<-EOF
 	assert(18446744073709551615 + 1 == (-18446744073709551616))
 EOF
 

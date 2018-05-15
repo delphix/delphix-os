@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright (c) 2016, 2017 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -118,7 +118,7 @@ function log_program
 # Even though the command's arguments are passed correctly
 # to the log_must_program family of wrappers the majority
 # of the time, zcp scripts passed as HERE documents can
-# make things trickier (see comment within the fucntion
+# make things trickier (see comment within the function
 # below) in the ordering of the commands arguments and how
 # they are passed. Thus, with this function we reconstruct
 # them to ensure that they are passed properly.

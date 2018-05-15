@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/channel_program/channel_common.kshlib
@@ -37,14 +37,25 @@ function cleanup
 log_onexit cleanup
 
 log_must zfs create $fs
+log_must zfs create $fs/foo
 create_snapshot $fs $TESTSNAP
 
 log_must_program $TESTPOOL - <<-EOF
 	ans, src = zfs.get_prop("$fs", "snapshot_limit")
-        assert(ans == -1)
-        assert(src == 'default')
+	assert(ans == -1)
+	assert(src == 'default')
 
 	ans, src = zfs.get_prop("$fs", "snapshot_count")
+	assert(ans == nil)
+	assert(src == nil)
+EOF
+
+log_must_program $TESTPOOL - <<-EOF
+	ans, src = zfs.get_prop("$fs", "filesystem_limit")
+	assert(ans == -1)
+	assert(src == 'default')
+
+	ans, src = zfs.get_prop("$fs", "filesystem_count")
 	assert(ans == nil)
 	assert(src == nil)
 EOF
@@ -53,22 +64,10 @@ log_must zfs set snapshot_limit=10 $fs
 
 log_must_program $TESTPOOL - <<-EOF
 	ans, src = zfs.get_prop("$fs", "snapshot_limit")
-        assert(ans == 10)
+	assert(ans == 10)
 	assert(src == '$fs')
 
 	ans, src = zfs.get_prop("$fs", "snapshot_count")
-	assert(ans == 1)
-	assert(src == nil)
-EOF
-
-log_must zfs create $fs/foo
-
-log_must_program $TESTPOOL - <<-EOF
-	ans, src = zfs.get_prop("$fs", "filesystem_limit")
-        assert(ans == -1)
-        assert(src == 'default')
-
-	ans, src = zfs.get_prop("$fs", "filesystem_count")
 	assert(ans == 1)
 	assert(src == nil)
 EOF
@@ -79,7 +78,7 @@ log_must zfs create $fs/bar
 
 log_must_program $TESTPOOL - <<-EOF
 	ans, src = zfs.get_prop("$fs", "filesystem_limit")
-        assert(ans == 8)
+	assert(ans == 8)
 	assert(src == '$fs')
 
 	ans, src = zfs.get_prop("$fs", "filesystem_count")

@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright (c) 2016 by Delphix. All rights reserved.
+# Copyright (c) 2016, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/channel_program/channel_common.kshlib
@@ -30,7 +30,7 @@ set -A args "1.0" \
 
 typeset -i i=0
 while (( i < ${#args[*]} )); do
-	log_mustnot_checkerror_program "malformed number" testpool - <<-EOF
+	log_mustnot_checkerror_program "malformed number" $TESTPOOL - <<-EOF
 		return ${args[i]}
 	EOF
 	((i = i + 1))
