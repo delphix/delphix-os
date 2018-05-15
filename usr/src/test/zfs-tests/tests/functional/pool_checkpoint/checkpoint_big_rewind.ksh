@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/pool_checkpoint/pool_checkpoint.kshlib
@@ -25,11 +25,10 @@
 #	blocks from the checkpoint have been reused.
 #
 # STRATEGY:
-#	1. Create pool
-#	2. Attempt to fragment it
-#	3. Take checkpoint
-#	4. Apply a destructive action and do more random writes
-#	5. Run zdb on both current and checkpointed data and make
+#	1. Import pool that's slightly fragmented
+#	2. Take checkpoint
+#	3. Apply a destructive action and do more random writes
+#	4. Run zdb on both current and checkpointed data and make
 #	   sure that zdb returns with no errors
 #	5. Rewind to checkpoint
 #	6. Run zdb again
@@ -37,13 +36,8 @@
 
 verify_runnable "global"
 
-setup_nested_pools
+setup_nested_pool_state
 log_onexit cleanup_nested_pools
-
-#
-# Populate and fragment pool.
-#
-fragment_before_checkpoint
 
 log_must zpool checkpoint $NESTEDPOOL
 

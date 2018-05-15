@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright (c) 2017 by Delphix. All rights reserved.
+# Copyright (c) 2017, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/tests/functional/pool_checkpoint/pool_checkpoint.kshlib
@@ -25,15 +25,14 @@
 #	pool's config.
 #
 # STRATEGY:
-#	1. Create pool
-#	2. Attempt to fragment it by doing random writes
-#	3. Take checkpoint
-#	4. Do more random writes to "free" checkpointed blocks
-#	5. Start discarding checkpoint
-#	6. Export pool while discarding checkpoint
-#	7. Attempt to rewind (should fail)
-#	8. Import pool and ensure that discard is still running
-#	9. Attempt to run checkpoint commands, or commands that
+#	1. Import pools that's slightly fragmented
+#	2. Take checkpoint
+#	3. Do more random writes to "free" checkpointed blocks
+#	4. Start discarding checkpoint
+#	5. Export pool while discarding checkpoint
+#	6. Attempt to rewind (should fail)
+#	7. Import pool and ensure that discard is still running
+#	8. Attempt to run checkpoint commands, or commands that
 #	   change the pool's config (should fail)
 #
 
@@ -46,7 +45,7 @@ function test_cleanup
 	cleanup_nested_pools
 }
 
-setup_nested_pools
+setup_nested_pool_state
 log_onexit test_cleanup
 
 #
@@ -69,8 +68,6 @@ log_onexit test_cleanup
 #	verify this.
 #
 mdb_ctf_set_int zfs_spa_discard_memory_limit 0t128
-
-fragment_before_checkpoint
 
 log_must zpool checkpoint $NESTEDPOOL
 
