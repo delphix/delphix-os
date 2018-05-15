@@ -297,12 +297,12 @@
         gate-release = 5.1.11.0
 [branch "5.2/release"]
         gate-slack-notify = pushes
-        gate-approvers = gatekeepers-52
+        gate-approvers = gatekeepers
         gate-allowed-issuetypes = 10405
         gate-release = 5.2.4.1
 [branch "5.2/stage"]
         gate-slack-notify = pushes
-        gate-approvers = gatekeepers-52
+        gate-approvers = gatekeepers
         gate-allowed-issuetypes = 10405
         gate-release = 5.2.5.0
 [branch "projects/storvsc"]
