@@ -230,7 +230,6 @@ typedef struct dsl_dataset {
 
 	uint64_t ds_reserved;	/* cached refreservation */
 	uint64_t ds_quota;	/* cached refquota */
-	uint64_t ds_blksize;	/* cached blocksize */
 
 	kmutex_t ds_sendstream_lock;
 	list_t ds_sendstreams;
