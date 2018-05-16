@@ -5276,6 +5276,7 @@ dump_mos_leaks(spa_t *spa)
 	mos_obj_refd(spa->spa_dsl_pool->dp_scan->scn_phys.scn_queue_obj);
 	bpobj_count_refd(&spa->spa_deferred_bpobj);
 	mos_obj_refd(dp->dp_empty_bpobj);
+	bpobj_count_refd(&dp->dp_obsolete_bpobj);
 	bpobj_count_refd(&dp->dp_free_bpobj);
 	mos_obj_refd(spa->spa_l2cache.sav_object);
 	mos_obj_refd(spa->spa_spares.sav_object);
