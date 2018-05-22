@@ -686,8 +686,8 @@ space_map_write_impl(space_map_t *sm, range_tree_t *rt, maptype_t maptype,
 		 *
 		 * [1] The feature is enabled.
 		 * [2] The offset or run is too big for a single-word entry,
-		 * 	or the vdev_id is set (meaning not equal to
-		 * 	SM_NO_VDEVID).
+		 *	or the vdev_id is set (meaning not equal to
+		 *	SM_NO_VDEVID).
 		 *
 		 * Note that for purposes of testing we've added the case that
 		 * we write two-word entries occasionally when the feature is

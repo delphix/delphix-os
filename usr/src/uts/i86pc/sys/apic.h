@@ -22,6 +22,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2017 by Delphix. All rights reserved.
  * Copyright 2017 Joyent, Inc.
+ * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 /*
  * Copyright (c) 2010, Intel Corporation.

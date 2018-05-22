@@ -105,6 +105,9 @@ find_tests = true
 [/opt/zfs-tests/tests/functional/cli_root/zfs_receive]
 find_tests = true
 
+[/opt/zfs-tests/tests/functional/cli_root/zfs_remap]
+find_tests = true
+
 [/opt/zfs-tests/tests/functional/cli_root/zfs_rename]
 find_tests = true
 
