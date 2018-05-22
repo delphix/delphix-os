@@ -6225,13 +6225,13 @@ share_mount_one_cb(zfs_handle_t *zhp, void *arg)
 	ret = share_mount_one(zhp, sms->sm_op, sms->sm_flags, sms->sm_proto,
 	    B_FALSE, sms->sm_options);
 
-	(void) mutex_lock(&sms->sm_lock);
+	mutex_enter(&sms->sm_lock);
 	if (ret != 0)
 		sms->sm_status = ret;
 	sms->sm_done++;
 	if (sms->sm_verbose)
 		report_mount_progress(sms->sm_done, sms->sm_total);
-	(void) mutex_unlock(&sms->sm_lock);
+	mutex_exit(&sms->sm_lock);
 	return (ret);
 }
 
@@ -6355,8 +6355,8 @@ share_mount(int op, int argc, char **argv)
 		share_mount_state.sm_options = options;
 		share_mount_state.sm_proto = protocol;
 		share_mount_state.sm_total = cb.cb_used;
-		(void) mutex_init(&share_mount_state.sm_lock, USYNC_THREAD,
-		    NULL);
+		(void) mutex_init(&share_mount_state.sm_lock,
+		    LOCK_NORMAL | LOCK_ERRORCHECK, NULL);
 		/*
 		 * libshare isn't mt-safe, so only do the operation in parallel
 		 * if we're mounting.

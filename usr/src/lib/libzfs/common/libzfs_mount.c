@@ -84,6 +84,7 @@
 #include <libzfs.h>
 
 #include "libzfs_impl.h"
+#include "libzfs_taskq.h"
 
 #include <libshare.h>
 #include <sys/systeminfo.h>
@@ -1150,7 +1151,7 @@ zfs_iter_cb(zfs_handle_t *zhp, void *data)
 }
 
 /*
- * Sort comparator that compares two mointpoint paths. We sort these paths so
+ * Sort comparator that compares two mountpoint paths. We sort these paths so
  * that subdirectories immediately follow their parents. This means that we
  * effectively treat the '/' character as the lowest value non-nul char. An
  * example sorted list using this comparator would look like:
@@ -1254,7 +1255,7 @@ non_descendant_idx(zfs_handle_t **handles, size_t num_handles, int idx)
 
 typedef struct mnt_param {
 	libzfs_handle_t	*mnt_hdl;
-	utaskq_t	*mnt_tq;
+	zfs_taskq_t	*mnt_tq;
 	zfs_handle_t	**mnt_zhps; /* filesystems to mount */
 	size_t		mnt_num_handles;
 	int		mnt_idx;	/* Index of selected entry to mount */
@@ -1268,7 +1269,7 @@ typedef struct mnt_param {
  */
 static void
 zfs_dispatch_mount(libzfs_handle_t *hdl, zfs_handle_t **handles,
-    size_t num_handles, int idx, zfs_iter_f func, void *data, utaskq_t *tq)
+    size_t num_handles, int idx, zfs_iter_f func, void *data, zfs_taskq_t *tq)
 {
 	mnt_param_t *mnt_param = zfs_alloc(hdl, sizeof (mnt_param_t));
 
@@ -1280,7 +1281,8 @@ zfs_dispatch_mount(libzfs_handle_t *hdl, zfs_handle_t **handles,
 	mnt_param->mnt_func = func;
 	mnt_param->mnt_data = data;
 
-	(void) utaskq_dispatch(tq, zfs_mount_task, (void*)mnt_param, UTQ_SLEEP);
+	(void) zfs_taskq_dispatch(tq, zfs_mount_task, (void*)mnt_param,
+	    ZFS_TQ_SLEEP);
 }
 
 /*
@@ -1413,8 +1415,8 @@ zfs_foreach_mountpoint(libzfs_handle_t *hdl, zfs_handle_t **handles,
 	 * Issue the callback function for each dataset using a parallel
 	 * algorithm that uses a taskq to manage threads.
 	 */
-	utaskq_t *tq = utaskq_create("mount_taskq", mount_tq_nthr, 0,
-	    mount_tq_nthr, mount_tq_nthr, UTASKQ_DYNAMIC | UTASKQ_PREPOPULATE);
+	zfs_taskq_t *tq = zfs_taskq_create("mount_taskq", mount_tq_nthr, 0,
+	    mount_tq_nthr, mount_tq_nthr, ZFS_TASKQ_PREPOPULATE);
 
 	/*
 	 * There may be multiple "top level" mountpoints outside of the pool's
@@ -1427,8 +1429,8 @@ zfs_foreach_mountpoint(libzfs_handle_t *hdl, zfs_handle_t **handles,
 		    tq);
 	}
 
-	utaskq_wait(tq); /* wait for all scheduled mounts to complete */
-	utaskq_destroy(tq);
+	zfs_taskq_wait(tq); /* wait for all scheduled mounts to complete */
+	zfs_taskq_destroy(tq);
 }
 
 /*

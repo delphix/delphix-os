@@ -49,7 +49,8 @@ OBJS_COMMON=			\
 	libzfs_pool.o		\
 	libzfs_sendrecv.o	\
 	libzfs_status.o		\
-	libzfs_util.o
+	libzfs_util.o		\
+	libzfs_taskq.o
 
 OBJECTS= $(OBJS_COMMON) $(OBJS_SHARED)
 

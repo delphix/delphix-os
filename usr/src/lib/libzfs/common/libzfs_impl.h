@@ -75,10 +75,10 @@ struct libzfs_handle {
 	void *libzfs_sharehdl; /* libshare handle */
 	boolean_t libzfs_mnttab_enable;
 	/*
-	 * We need a lock to handle the case where parallel mount threads
-	 * are populating the mnttab cache simultaneously. The lock only
-	 * protects the integrity of of the avl tree, and does not protect
-	 * the contents of the mnttab entries themselves.
+	 * We need a lock to handle the case where parallel mount
+	 * threads are populating the mnttab cache simultaneously. The
+	 * lock only protects the integrity of the avl tree, and does
+	 * not protect the contents of the mnttab entries themselves.
 	 */
 	mutex_t libzfs_mnttab_cache_lock;
 	avl_tree_t libzfs_mnttab_cache;
