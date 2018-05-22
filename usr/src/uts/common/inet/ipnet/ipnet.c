@@ -22,7 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2016, 2018 by Delphix. All rights reserved.
  */
 
 /*
@@ -75,6 +75,8 @@
 #include <net/bpf.h>
 #include <net/bpfdesc.h>
 #include <net/dlt.h>
+
+extern	pri_t	minclsyspri;
 
 static struct module_info ipnet_minfo = {
 	1,		/* mi_idnum */
@@ -229,6 +231,14 @@ static ipnet_kstats_t stats_template = {
 };
 
 /*
+ * Limit the queue depth of the ipnet taskq to avoid running the system
+ * out of memory when the taskq cannot be processed fast enough. When the
+ * taskq depth reaches this limit, new packets will not be captured
+ * by ipnet until the queue depth recedes.
+ */
+uint32_t ipnet_taskq_depth = 10000;
+
+/*
  * Walk the list of physical interfaces on the machine, for each
  * interface create a new ipnetif_t and add any addresses to it. We
  * need to do the walk twice, once for IPv4 and once for IPv6.
@@ -273,12 +283,17 @@ _init(void)
 	    IPNET_MINOR_MIN, MAXMIN32);
 
 	/*
-	 * We call ddi_taskq_create() with nthread == 1 to ensure in-order
+	 * We call taskq_create functions with nthread == 1 to ensure in-order
 	 * delivery of packets to clients.  Note that we need to create the
 	 * taskqs before calling netstack_register() since ipnet_stack_init()
 	 * registers callbacks that use 'em.
+	 *
+	 * We call taskq_create_instance() instead of ddi_taskq_create() for
+	 * ipnet_taskq since we want to control the max number of tasks that
+	 * can be allocated at once. See comment for ipnet_taskq_depth.
 	 */
-	ipnet_taskq = ddi_taskq_create(NULL, "ipnet", 1, TASKQ_DEFAULTPRI, 0);
+	ipnet_taskq = (ddi_taskq_t *)taskq_create_instance("ipnet", 0, 1,
+	    minclsyspri, 1, ipnet_taskq_depth, TASKQ_PREPOPULATE);
 	ipnet_nicevent_taskq = ddi_taskq_create(NULL, "ipnet_nic_event_queue",
 	    1, TASKQ_DEFAULTPRI, 0);
 	if (ipnet_taskq == NULL || ipnet_nicevent_taskq == NULL) {
