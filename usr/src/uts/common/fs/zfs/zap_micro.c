@@ -1085,8 +1085,8 @@ zap_add_impl(zap_t *zap, const char *key,
     int integer_size, uint64_t num_integers,
     const void *val, dmu_tx_t *tx, void *tag)
 {
-	int err = 0;
 	const uint64_t *intval = val;
+	int err = 0;
 
 	zap_name_t *zn = zap_name_alloc(zap, key, 0);
 	if (zn == NULL) {
