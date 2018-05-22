@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.
  */
 
@@ -1016,7 +1016,6 @@ dsl_redaction_list_hold_obj(dsl_pool_t *dp, uint64_t rlobj, void *tag,
 		    &rl->rl_dbuf);
 		if ((winner = dmu_buf_set_user_ie(dbuf, &rl->rl_dbu)) != NULL) {
 			kmem_free(rl, sizeof (*rl));
-			dmu_buf_rele(dbuf, tag);
 			rl = winner;
 		}
 	}
