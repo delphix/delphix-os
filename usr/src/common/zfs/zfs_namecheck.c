@@ -92,7 +92,7 @@ get_dataset_depth(const char *path)
  * Snapshot names must be made up of alphanumeric characters plus the following
  * characters:
  *
- * 	[-_.: ]
+ *	[-_.: ]
  *
  * Returns 0 on success, -1 on error.
  */
@@ -168,12 +168,12 @@ dataset_nestcheck(const char *path)
 /*
  * Entity names must be of the following form:
  *
- * 	[component][/]*[component][@component]
+ *	[component/]*[component][(@|#)component]?
  *
  * Where each component is made up of alphanumeric characters plus the following
  * characters:
  *
- * 	[-_.:%]
+ *	[-_.:%]
  *
  * We allow '%' here as we use that character internally to create unique
  * names for temporary clones (for online recv).
@@ -183,8 +183,7 @@ dataset_nestcheck(const char *path)
 int
 entity_namecheck(const char *path, namecheck_err_t *why, char *what)
 {
-	const char *start, *end;
-	int found_delim;
+	const char *end;
 
 	/*
 	 * Make sure the name is not too long.
@@ -208,8 +207,8 @@ entity_namecheck(const char *path, namecheck_err_t *why, char *what)
 		return (-1);
 	}
 
-	start = path;
-	found_delim = 0;
+	const char *start = path;
+	boolean_t found_delim = B_FALSE;
 	for (;;) {
 		/* Find the end of this component */
 		end = start;
@@ -244,7 +243,7 @@ entity_namecheck(const char *path, namecheck_err_t *why, char *what)
 				return (-1);
 			}
 
-			found_delim = 1;
+			found_delim = B_TRUE;
 		}
 
 		/* Zero-length components are not allowed */
