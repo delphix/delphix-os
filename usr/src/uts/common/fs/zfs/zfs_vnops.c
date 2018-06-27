@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2015 Joyent, Inc.
  * Copyright 2017 Nexenta Systems, Inc.
@@ -604,13 +604,10 @@ offset_t zfs_read_chunk_size = 1024 * 1024; /* Tunable */
 static int
 zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 {
-	znode_t		*zp = VTOZ(vp);
-	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
-	ssize_t		n, nbytes;
-	int		error = 0;
-	rl_t		*rl;
-	xuio_t		*xuio = NULL;
+	int error = 0;
 
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
@@ -655,7 +652,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	/*
 	 * Lock the range against changes.
 	 */
-	rl = zfs_range_lock(zp, uio->uio_loffset, uio->uio_resid, RL_READER);
+	rl_t *rl = zfs_range_lock(zp, uio->uio_loffset, uio->uio_resid,
+	    RL_READER);
 
 	/*
 	 * If we are reading past end-of-file we can skip
@@ -667,7 +665,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
 	ASSERT(uio->uio_loffset < zp->z_size);
-	n = MIN(uio->uio_resid, zp->z_size - uio->uio_loffset);
+	ssize_t n = MIN(uio->uio_resid, zp->z_size - uio->uio_loffset);
+	ssize_t start_resid = uio->uio_resid;
 
 	if ((uio->uio_extflg == UIO_XUIO) &&
 	    (((xuio_t *)uio)->xu_type == UIOTYPE_ZEROCOPY)) {
@@ -675,7 +674,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		int blksz = zp->z_blksz;
 		uint64_t offset = uio->uio_loffset;
 
-		xuio = (xuio_t *)uio;
+		xuio_t *xuio = (xuio_t *)uio;
 		if ((ISP2(blksz))) {
 			nblk = (P2ROUNDUP(offset + n, blksz) - P2ALIGN(offset,
 			    blksz)) / blksz;
@@ -699,7 +698,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
 	while (n > 0) {
-		nbytes = MIN(n, zfs_read_chunk_size -
+		ssize_t nbytes = MIN(n, zfs_read_chunk_size -
 		    P2PHASE(uio->uio_loffset, zfs_read_chunk_size));
 
 		if (vn_has_cached_data(vp)) {
@@ -717,6 +716,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		n -= nbytes;
 	}
+
+	zfsvfs_update_read_kstats(zfsvfs, start_resid - uio->uio_resid);
 out:
 	zfs_range_unlock(rl);
 
@@ -748,43 +749,28 @@ out:
 static int
 zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 {
-	znode_t		*zp = VTOZ(vp);
-	rlim64_t	limit = uio->uio_llimit;
 	ssize_t		start_resid = uio->uio_resid;
-	ssize_t		tx_bytes;
-	uint64_t	end_size;
-	dmu_tx_t	*tx;
-	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
-	zilog_t		*zilog;
-	offset_t	woff;
-	ssize_t		n, nbytes;
-	rl_t		*rl;
-	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
-	arc_buf_t	*abuf;
-	iovec_t		*aiov = NULL;
-	xuio_t		*xuio = NULL;
-	int		i_iov = 0;
-	int		iovcnt = uio->uio_iovcnt;
-	iovec_t		*iovp = uio->uio_iov;
-	int		write_eof;
-	int		count = 0;
-	sa_bulk_attr_t	bulk[4];
-	uint64_t	mtime[2], ctime[2];
 
 	/*
 	 * Fasttrack empty write
 	 */
-	n = start_resid;
+	ssize_t n = start_resid;
 	if (n == 0)
 		return (0);
 
+	rlim64_t limit = uio->uio_llimit;
 	if (limit == RLIM64_INFINITY || limit > MAXOFFSET_T)
 		limit = MAXOFFSET_T;
 
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+	int count = 0;
+	sa_bulk_attr_t bulk[4];
+	uint64_t mtime[2], ctime[2];
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
@@ -814,12 +800,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (SET_ERROR(EPERM));
 	}
 
-	zilog = zfsvfs->z_log;
-
 	/*
 	 * Validate file offset
 	 */
-	woff = ioflag & FAPPEND ? zp->z_size : uio->uio_loffset;
+	offset_t woff = ioflag & FAPPEND ? zp->z_size : uio->uio_loffset;
 	if (woff < 0) {
 		ZFS_EXIT(zfsvfs);
 		return (SET_ERROR(EINVAL));
@@ -835,6 +819,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (error);
 	}
 
+	xuio_t *xuio = NULL;
+	int max_blksz = zfsvfs->z_max_blksz;
+
 	/*
 	 * Pre-fault the pages to ensure slow (eg NFS) pages
 	 * don't hold up txg.
@@ -849,6 +836,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	/*
 	 * If in append mode, set the io offset pointer to eof.
 	 */
+	rl_t *rl;
 	if (ioflag & FAPPEND) {
 		/*
 		 * Obtain an appending range lock to guarantee file append
@@ -884,9 +872,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		n = limit - woff;
 
 	/* Will this write extend the file length? */
-	write_eof = (woff + n > zp->z_size);
+	int write_eof = (woff + n > zp->z_size);
+	uint64_t end_size = MAX(zp->z_size, woff + n);
 
-	end_size = MAX(zp->z_size, woff + n);
+	int i_iov = 0;
+	int iovcnt = uio->uio_iovcnt;
+	iovec_t *iovp = uio->uio_iov;
+	zilog_t *zilog = zfsvfs->z_log;
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
@@ -894,17 +886,16 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * and allows us to do more fine-grained space accounting.
 	 */
 	while (n > 0) {
-		abuf = NULL;
 		woff = uio->uio_loffset;
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
 		    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
-			if (abuf != NULL)
-				dmu_return_arcbuf(abuf);
 			error = SET_ERROR(EDQUOT);
 			break;
 		}
 
-		if (xuio && abuf == NULL) {
+		arc_buf_t *abuf = NULL;
+		iovec_t *aiov = NULL;
+		if (xuio) {
 			ASSERT(i_iov < iovcnt);
 			aiov = &iovp[i_iov];
 			abuf = dmu_xuio_arcbuf(xuio, i_iov);
@@ -915,10 +906,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    ((char *)aiov->iov_base - (char *)abuf->b_data +
 			    aiov->iov_len == arc_buf_size(abuf)));
 			i_iov++;
-		} else if (abuf == NULL && n >= max_blksz &&
-		    woff >= zp->z_size &&
-		    P2PHASE(woff, max_blksz) == 0 &&
-		    zp->z_blksz == max_blksz) {
+		} else if (n >= max_blksz && woff >= zp->z_size &&
+		    P2PHASE(woff, max_blksz) == 0 && zp->z_blksz == max_blksz) {
 			/*
 			 * This write covers a full block.  "Borrow" a buffer
 			 * from the dmu so that we can fill it before we enter
@@ -943,7 +932,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		/*
 		 * Start a transaction.
 		 */
-		tx = dmu_tx_create(zfsvfs->z_os);
+		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
 		zfs_sa_upgrade_txholds(tx, zp);
@@ -984,8 +973,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * XXX - should we really limit each write to z_max_blksz?
 		 * Perhaps we should use SPA_MAXBLOCKSIZE chunks?
 		 */
-		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
+		ssize_t nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 
+		ssize_t tx_bytes;
 		if (abuf == NULL) {
 			tx_bytes = uio->uio_resid;
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
@@ -1106,6 +1096,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, zp->z_id);
 
+	zfsvfs_update_write_kstats(zfsvfs, start_resid - uio->uio_resid);
 	ZFS_EXIT(zfsvfs);
 	return (0);
 }

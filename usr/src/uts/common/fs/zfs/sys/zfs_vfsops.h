@@ -20,12 +20,13 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_VFSOPS_H
 #define	_SYS_FS_ZFS_VFSOPS_H
 
+#include <sys/aggsum.h>
 #include <sys/isa_defs.h>
 #include <sys/types32.h>
 #include <sys/list.h>
@@ -42,6 +43,20 @@ extern "C" {
 
 typedef struct zfsvfs zfsvfs_t;
 struct znode;
+
+typedef struct zfsvfs_aggsum_stats_t {
+	aggsum_t zas_writes;
+	aggsum_t zas_nwritten;
+	aggsum_t zas_reads;
+	aggsum_t zas_nread;
+} zfsvfs_aggsum_stats_t;
+
+typedef struct zfsvfs_kstats {
+	kstat_named_t zk_writes;
+	kstat_named_t zk_nwritten;
+	kstat_named_t zk_reads;
+	kstat_named_t zk_nread;
+} zfsvfs_kstats_t;
 
 struct zfsvfs {
 	vfs_t		*z_vfs;		/* generic fs struct */
@@ -86,6 +101,9 @@ struct zfsvfs {
 	 * filesystem which it mooches from.
 	 */
 	uint64_t	z_mooch_byteswap_map;
+
+	kstat_t		*z_iokstat;	/* kstat of I/O to this zvol */
+	zfsvfs_aggsum_stats_t z_aggsum_stats; /* aggsums used for z_iokstat */
 
 	kmutex_t	z_lock;
 	uint64_t	z_userquota_obj;
@@ -165,6 +183,9 @@ extern int zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os);
 extern void zfsvfs_free(zfsvfs_t *zfsvfs);
 extern int zfs_check_global_label(const char *dsname, const char *hexsl);
 extern objlist_t *zfs_get_deleteq(objset_t *os);
+
+extern void zfsvfs_update_write_kstats(zfsvfs_t *zfsvfs, int64_t nwritten);
+extern void zfsvfs_update_read_kstats(zfsvfs_t *zfsvfs, int64_t nread);
 
 #ifdef	__cplusplus
 }

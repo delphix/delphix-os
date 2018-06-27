@@ -23,6 +23,10 @@
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
+/*
+ * Copyright (c) 2018 by Delphix. All rights reserved.
+ */
+
 #ifndef	_SYS_ZVOL_H
 #define	_SYS_ZVOL_H
 
@@ -66,6 +70,9 @@ extern uint64_t zvol_get_volume_size(void *minor_hdl);
 extern int zvol_get_volume_wce(void *minor_hdl);
 extern void zvol_log_write_minor(void *minor_hdl, dmu_tx_t *tx, offset_t off,
     ssize_t resid, boolean_t sync);
+
+extern void zvol_update_read_kstats(void *minor_hdl, int64_t nread);
+extern void zvol_update_write_kstats(void *minor_hdl, int64_t nwritten);
 
 #endif
 

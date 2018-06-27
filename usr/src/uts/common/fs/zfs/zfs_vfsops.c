@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
@@ -849,6 +849,114 @@ zfs_owner_overquota(zfsvfs_t *zfsvfs, znode_t *zp, boolean_t isgroup)
 	return (zfs_fuid_overquota(zfsvfs, isgroup, fuid));
 }
 
+static zfsvfs_kstats_t empty_zfsvfs_kstats = {
+	{ "writes",	KSTAT_DATA_UINT64 },
+	{ "nwritten",	KSTAT_DATA_UINT64 },
+	{ "reads",	KSTAT_DATA_UINT64 },
+	{ "nread",	KSTAT_DATA_UINT64 },
+};
+
+static int
+zfsvfs_kstats_update(kstat_t *ksp, int rw)
+{
+	zfsvfs_t *zfsvfs = ksp->ks_private;
+	zfsvfs_kstats_t *zs = ksp->ks_data;
+
+	ASSERT3P(zfsvfs->z_iokstat, ==, ksp);
+
+	if (rw == KSTAT_WRITE)
+		return (EACCES);
+
+	zs->zk_writes.value.ui64 =
+	    aggsum_value(&zfsvfs->z_aggsum_stats.zas_writes);
+	zs->zk_nwritten.value.ui64 =
+	    aggsum_value(&zfsvfs->z_aggsum_stats.zas_nwritten);
+	zs->zk_reads.value.ui64 =
+	    aggsum_value(&zfsvfs->z_aggsum_stats.zas_reads);
+	zs->zk_nread.value.ui64 =
+	    aggsum_value(&zfsvfs->z_aggsum_stats.zas_nread);
+
+	return (0);
+}
+
+static void
+zfsvfs_kstats_create(zfsvfs_t *zfsvfs)
+{
+	ASSERT3P(zfsvfs->z_iokstat, ==, NULL);
+
+	/*
+	 * There should not be anything wrong with having kstats for
+	 * snapshots. Since we are not sure how useful they would be
+	 * though nor how much their memory overhead would matter in
+	 * a filesystem with many snapshots, we skip them for now.
+	 */
+	if (zfsvfs->z_issnap)
+		return;
+
+	char kstat_name[KSTAT_STRLEN];
+	(void) snprintf(kstat_name, sizeof (kstat_name),
+	    "%lu", dmu_objset_id(zfsvfs->z_os));
+	kstat_t *iokstat = kstat_create("zfs", 0, kstat_name, "zfsvfs",
+	    KSTAT_TYPE_NAMED,
+	    sizeof (empty_zfsvfs_kstats) / sizeof (kstat_named_t),
+	    KSTAT_FLAG_VIRTUAL);
+	if (iokstat == NULL)
+		return;
+
+	iokstat->ks_data = kmem_alloc(sizeof (empty_zfsvfs_kstats), KM_SLEEP);
+	bcopy(&empty_zfsvfs_kstats, iokstat->ks_data,
+	    sizeof (empty_zfsvfs_kstats));
+	iokstat->ks_update = zfsvfs_kstats_update;
+	iokstat->ks_private = zfsvfs;
+	zfsvfs->z_iokstat = iokstat;
+	kstat_install(zfsvfs->z_iokstat);
+
+	aggsum_init(&zfsvfs->z_aggsum_stats.zas_writes, 0);
+	aggsum_init(&zfsvfs->z_aggsum_stats.zas_nwritten, 0);
+	aggsum_init(&zfsvfs->z_aggsum_stats.zas_reads, 0);
+	aggsum_init(&zfsvfs->z_aggsum_stats.zas_nread, 0);
+}
+
+static void
+zfsvfs_kstats_destroy(zfsvfs_t *zfsvfs)
+{
+	if (zfsvfs->z_iokstat == NULL)
+		return;
+
+	kmem_free(zfsvfs->z_iokstat->ks_data, sizeof (empty_zfsvfs_kstats));
+	kstat_delete(zfsvfs->z_iokstat);
+	zfsvfs->z_iokstat = NULL;
+
+	aggsum_fini(&zfsvfs->z_aggsum_stats.zas_writes);
+	aggsum_fini(&zfsvfs->z_aggsum_stats.zas_nwritten);
+	aggsum_fini(&zfsvfs->z_aggsum_stats.zas_reads);
+	aggsum_fini(&zfsvfs->z_aggsum_stats.zas_nread);
+}
+
+void
+zfsvfs_update_write_kstats(zfsvfs_t *zfsvfs, int64_t nwritten)
+{
+	ASSERT3S(nwritten, >=, 0);
+
+	if (zfsvfs->z_iokstat == NULL)
+		return;
+
+	aggsum_add(&zfsvfs->z_aggsum_stats.zas_writes, 1);
+	aggsum_add(&zfsvfs->z_aggsum_stats.zas_nwritten, nwritten);
+}
+
+void
+zfsvfs_update_read_kstats(zfsvfs_t *zfsvfs, int64_t nread)
+{
+	ASSERT3S(nread, >=, 0);
+
+	if (zfsvfs->z_iokstat == NULL)
+		return;
+
+	aggsum_add(&zfsvfs->z_aggsum_stats.zas_reads, 1);
+	aggsum_add(&zfsvfs->z_aggsum_stats.zas_nread, nread);
+}
+
 /*
  * Associate this zfsvfs with the given objset, which must be owned.
  * This will cache a bunch of on-disk state from the objset in the
@@ -1130,6 +1238,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	rw_destroy(&zfsvfs->z_fuid_lock);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
+	zfsvfs_kstats_destroy(zfsvfs);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
 }
 
@@ -1247,6 +1356,16 @@ out:
 		zfsvfs_free(zfsvfs);
 	} else {
 		atomic_inc_32(&zfs_active_fs_count);
+
+		/*
+		 * Note: Since zfsvfs kstats are created and detroyed
+		 * during mounting/unmounting, the behavior is uniform
+		 * even when datasets are renamed (e.g. kstats of the
+		 * old mount are destroyed and new ones are created for
+		 * the new mount, as renaming unmounts and mounts the
+		 * dataset).
+		 */
+		zfsvfs_kstats_create(zfsvfs);
 	}
 
 	return (error);
@@ -1941,6 +2060,7 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 	if (zfsvfs->z_ctldir != NULL)
 		zfsctl_destroy(zfsvfs);
 
+	zfsvfs_kstats_destroy(zfsvfs);
 	return (0);
 }
 
@@ -1953,7 +2073,7 @@ zfs_vget(vfs_t *vfsp, vnode_t **vpp, fid_t *fidp)
 	uint64_t	fid_gen = 0;
 	uint64_t	gen_mask;
 	uint64_t	zp_gen;
-	int 		i, err;
+	int		i, err;
 
 	*vpp = NULL;
 

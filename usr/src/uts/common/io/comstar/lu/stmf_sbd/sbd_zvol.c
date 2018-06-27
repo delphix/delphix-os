@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -393,10 +393,9 @@ sbd_zvol_rele_write_bufs(sbd_lu_t *sl, stmf_data_buf_t *dbuf)
 int
 sbd_zvol_copy_read(sbd_lu_t *sl, uio_t *uio)
 {
-	int		error;
-	rl_t		*rl;
-	uint64_t	len = (uint64_t)uio->uio_resid;
-	uint64_t	offset = (uint64_t)uio->uio_loffset;
+	uint64_t offset = (uint64_t)uio->uio_loffset;
+	uint64_t len = (uint64_t)uio->uio_resid;
+	ssize_t start_resid = uio->uio_resid;
 
 	/* Make sure request is reasonable */
 	if (len > sl->sl_max_xfer_len)
@@ -404,13 +403,15 @@ sbd_zvol_copy_read(sbd_lu_t *sl, uio_t *uio)
 	if (offset + len  > zvol_get_volume_size(sl->sl_zvol_minor_hdl))
 		return (EIO);
 
-	rl = zfs_range_lock(sl->sl_zvol_rl_hdl, offset, len, RL_READER);
-
-	error = dmu_read_uio_dnode(sl->sl_zvol_dn_hdl, uio, len);
-
+	rl_t *rl = zfs_range_lock(sl->sl_zvol_rl_hdl, offset, len, RL_READER);
+	int error = dmu_read_uio_dnode(sl->sl_zvol_dn_hdl, uio, len);
 	zfs_range_unlock(rl);
+
 	if (error == ECKSUM)
 		error = EIO;
+
+	zvol_update_read_kstats(sl->sl_zvol_minor_hdl,
+	    start_resid - uio->uio_resid);
 	return (error);
 }
 
@@ -421,13 +422,11 @@ sbd_zvol_copy_read(sbd_lu_t *sl, uio_t *uio)
 int
 sbd_zvol_copy_write(sbd_lu_t *sl, uio_t *uio, int flags)
 {
-	rl_t		*rl;
-	dmu_tx_t	*tx;
-	int		error, sync;
-	uint64_t	len = (uint64_t)uio->uio_resid;
-	uint64_t	offset = (uint64_t)uio->uio_loffset;
-
 	ASSERT(flags == 0 || flags == ZVIO_COMMIT);
+
+	uint64_t offset = (uint64_t)uio->uio_loffset;
+	uint64_t len = (uint64_t)uio->uio_resid;
+	ssize_t start_resid = uio->uio_resid;
 
 	/* Make sure request is reasonable */
 	if (len > sl->sl_max_xfer_len)
@@ -435,13 +434,12 @@ sbd_zvol_copy_write(sbd_lu_t *sl, uio_t *uio, int flags)
 	if (offset + len  > zvol_get_volume_size(sl->sl_zvol_minor_hdl))
 		return (EIO);
 
-	rl = zfs_range_lock(sl->sl_zvol_rl_hdl, offset, len, RL_WRITER);
+	rl_t *rl = zfs_range_lock(sl->sl_zvol_rl_hdl, offset, len, RL_WRITER);
+	int sync = !zvol_get_volume_wce(sl->sl_zvol_minor_hdl);
 
-	sync = !zvol_get_volume_wce(sl->sl_zvol_minor_hdl);
-
-	tx = dmu_tx_create(sl->sl_zvol_objset_hdl);
+	dmu_tx_t *tx = dmu_tx_create(sl->sl_zvol_objset_hdl);
 	dmu_tx_hold_write(tx, ZVOL_OBJ, offset, (int)uio->uio_resid);
-	error = dmu_tx_assign(tx, TXG_WAIT);
+	int error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
 		dmu_tx_abort(tx);
 	} else {
@@ -453,9 +451,13 @@ sbd_zvol_copy_write(sbd_lu_t *sl, uio_t *uio, int flags)
 		dmu_tx_commit(tx);
 	}
 	zfs_range_unlock(rl);
+
 	if (sync && (flags & ZVIO_COMMIT))
 		zil_commit(sl->sl_zvol_zil_hdl, ZVOL_OBJ);
 	if (error == ECKSUM)
 		error = EIO;
+
+	zvol_update_write_kstats(sl->sl_zvol_minor_hdl,
+	    start_resid - uio->uio_resid);
 	return (error);
 }
