@@ -15,7 +15,7 @@
 #
 
 #
-# Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+# Copyright (c) 2014, 2018 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -26,6 +26,7 @@ log_onexit default_cleanup_noexit
 
 function callback
 {
+	typeset attempts=10
 	log_must zpool export $TESTPOOL
 
 	#
@@ -35,7 +36,15 @@ function callback
 	# non-empty directory.  Therefore, remove the directory
 	# so that the dd process will fail.
 	#
-	log_must rm -rf $TESTDIR
+	while :; do
+		rm -rf $TESTDIR
+
+		[[ ! -d $TESTDIR ]] && break
+		log_note "Directory removal failed. attempts == $attempts"
+
+		$((attempts--))
+		[[ $attempts -eq 0 ]] && log_fail "Too many removal attempts"
+	done
 
 	log_must zpool import $TESTPOOL
 	return 0
