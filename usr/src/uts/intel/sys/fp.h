@@ -20,7 +20,7 @@
  */
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
- * Copyright 2017 Joyent, Inc.
+ * Copyright (c) 2018, Joyent, Inc.
  *
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  */
@@ -140,8 +140,8 @@ extern "C" {
 /*
  * masks and flags for SSE/SSE2 MXCSR
  */
-#define	SSE_IE 	0x00000001	/* invalid operation			*/
-#define	SSE_DE 	0x00000002	/* denormalized operand			*/
+#define	SSE_IE	0x00000001	/* invalid operation			*/
+#define	SSE_DE	0x00000002	/* denormalized operand			*/
 #define	SSE_ZE	0x00000004	/* zero divide				*/
 #define	SSE_OE	0x00000008	/* overflow				*/
 #define	SSE_UE	0x00000010	/* underflow				*/
@@ -156,7 +156,7 @@ extern "C" {
 #define	SSE_RC	0x00006000	/* rounding control			*/
 #define	SSE_RD	0x00002000	/* rounding control: round down		*/
 #define	SSE_RU	0x00004000	/* rounding control: round up		*/
-#define	SSE_FZ	0x00008000	/* flush to zero for masked underflow 	*/
+#define	SSE_FZ	0x00008000	/* flush to zero for masked underflow	*/
 
 #define	SSE_MXCSR_EFLAGS	\
 	(SSE_IE|SSE_DE|SSE_ZE|SSE_OE|SSE_UE|SSE_PE)	/* 0x3f */
@@ -236,13 +236,14 @@ struct fxsave_state {
  * 13.4.2 of the Intel 64 and IA-32 Architectures Software Developer’s Manual,
  * Volume 1 (IASDv1). The extended portion is documented in section 13.4.3.
  *
- * Our size is at least AVX_XSAVE_SIZE (832 bytes), asserted in fpnoextflt().
- * Enabling additional xsave-related CPU features requires an increase in the
- * size. We dynamically allocate the per-lwp xsave area at runtime, based on
- * the size needed for the CPU-specific features. This xsave_state structure
- * simply defines our historical layout for the beginning of the xsave area. The
- * locations and size of new, extended, components is determined dynamically by
- * querying the CPU. See the xsave_info structure in cpuid.c.
+ * Our size is at least AVX_XSAVE_SIZE (832 bytes), which is asserted
+ * statically.  Enabling additional xsave-related CPU features requires an
+ * increase in the size. We dynamically allocate the per-lwp xsave area at
+ * runtime, based on the size needed for the CPU-specific features. This
+ * xsave_state structure simply defines our historical layout for the beginning
+ * of the xsave area. The locations and size of new, extended, components is
+ * determined dynamically by querying the CPU. See the xsave_info structure in
+ * cpuid.c.
  *
  * xsave component usage is tracked using bits in the xs_xstate_bv field. The
  * components are documented in section 13.1 of IASDv1. For easy reference,
@@ -301,7 +302,8 @@ extern uint32_t sse_mxcsr_mask;
 
 extern void fpu_probe(void);
 extern uint_t fpu_initial_probe(void);
-extern int fpu_probe_pentium_fdivbug(void);
+
+extern void fpu_auxv_info(int *, size_t *);
 
 extern void fpnsave_ctxt(void *);
 extern void fpxsave_ctxt(void *);
@@ -312,6 +314,10 @@ extern void xsave_excp_clr_ctxt(void *);
 extern void xsaveopt_excp_clr_ctxt(void *);
 extern void (*fpsave_ctxt)(void *);
 extern void (*xsavep)(struct xsave_state *, uint64_t);
+
+extern void fpxrestore_ctxt(void *);
+extern void xrestore_ctxt(void *);
+extern void (*fprestore_ctxt)(void *);
 
 extern void fxsave_insn(struct fxsave_state *);
 extern void fpsave(struct fnsave_state *);
@@ -333,15 +339,18 @@ extern uint32_t fpgetcwsw(void);
 extern uint32_t fpgetmxcsr(void);
 
 struct regs;
-extern int fpnoextflt(struct regs *);
-extern int fpextovrflt(struct regs *);
 extern int fpexterrflt(struct regs *);
 extern int fpsimderrflt(struct regs *);
 extern void fpsetcw(uint16_t, uint32_t);
+extern void fp_seed(void);
+extern void fp_exec(void);
 struct _klwp;
 extern void fp_lwp_init(struct _klwp *);
 extern void fp_lwp_cleanup(struct _klwp *);
 extern void fp_lwp_dup(struct _klwp *);
+
+extern const struct fxsave_state sse_initial;
+extern const struct xsave_state avx_initial;
 
 #endif	/* _KERNEL */
 
