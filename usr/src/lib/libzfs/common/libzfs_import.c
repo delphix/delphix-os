@@ -33,7 +33,7 @@
  * ZFS label of each device.  If we successfully read the label, then we
  * organize the configuration information in the following hierarchy:
  *
- * 	pool guid -> toplevel vdev guid -> label txg
+ *	pool guid -> toplevel vdev guid -> label txg
  *
  * Duplicate entries matching this same tuple will be discarded.  Once we have
  * examined every device, we pick the best label txg config for each toplevel

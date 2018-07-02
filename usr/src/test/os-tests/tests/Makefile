@@ -11,8 +11,10 @@
 
 #
 # Copyright (c) 2012, 2017 by Delphix. All rights reserved.
-# Copyright 2017 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
 #
+
+SUBDIRS_i386 = i386
 
 SUBDIRS = \
 	file-locking	\
@@ -24,6 +26,7 @@ SUBDIRS = \
 	sockfs		\
 	spoof-ras	\
 	stress		\
-	utaskq
+	utaskq		\
+	$(SUBDIRS_$(MACH))
 
 include $(SRC)/test/Makefile.com

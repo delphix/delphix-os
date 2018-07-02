@@ -189,7 +189,7 @@ main(void)
     /*
      * zfs_fmtdev() can be called only after dv_init
      */
-    if (bdev != NULL && bdev->dd.d_type == DEVT_ZFS) {
+    if (bdev != NULL && bdev->dd.d_dev->dv_type == DEVT_ZFS) {
 	/* set up proper device name string for ZFS */
 	strncpy(boot_devname, zfs_fmtdev(bdev), sizeof (boot_devname));
 	char envbuf[256];
@@ -438,7 +438,7 @@ load(void)
     bootinfo.bi_esymtab = VTOP(p);
     bootinfo.bi_kernelname = VTOP(kname);
 
-    if (bdev->dd.d_type == DEVT_ZFS) {
+    if (bdev->dd.d_dev->dv_type == DEVT_ZFS) {
 	zfsargs.size = sizeof(zfsargs);
 	zfsargs.pool = bdev->d_kind.zfs.pool_guid;
 	zfsargs.root = bdev->d_kind.zfs.root_guid;
@@ -473,12 +473,12 @@ mount_root(char *arg)
     /* we should have new device descriptor, free old and replace it. */
     free(bdev);
     bdev = ddesc;
-    if (bdev->dd.d_type == DEVT_DISK) {
+    if (bdev->dd.d_dev->dv_type == DEVT_DISK) {
 	if (bdev->d_kind.biosdisk.partition == -1)
 	    part = 0xff;
 	else
 	    part = bdev->d_kind.biosdisk.partition;
-	bootdev = MAKEBOOTDEV(dev_maj[bdev->dd.d_type],
+	bootdev = MAKEBOOTDEV(dev_maj[bdev->dd.d_dev->dv_type],
 	    bdev->d_kind.biosdisk.slice + 1,
 	    bdev->dd.d_unit, part);
 	bootinfo.bi_bios_dev = bd_unit2bios(bdev->dd.d_unit);
@@ -703,7 +703,6 @@ probe_partition(void *arg, const char *partname,
 	if (pool_guid != 0 && bdev == NULL) {
 		bdev = malloc(sizeof (struct i386_devdesc));
 		bzero(bdev, sizeof (struct i386_devdesc));
-		bdev->dd.d_type = DEVT_ZFS;
 		bdev->dd.d_dev = &zfs_dev;
 		bdev->d_kind.zfs.pool_guid = pool_guid;
 

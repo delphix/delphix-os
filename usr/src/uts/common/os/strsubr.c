@@ -26,6 +26,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2016, 2017 by Delphix. All rights reserved.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <sys/types.h>
@@ -2463,6 +2464,17 @@ devflg_to_qflag(struct streamtab *stp, uint32_t devflag, uint32_t *qflagp,
 			goto bad;
 		qflag |= _QDIRECT;
 	}
+
+	/*
+	 * Private flag used to indicate that a streams module should only
+	 * be pushed once. The TTY streams modules have this flag since if
+	 * libc believes itself to be an xpg4 process then it will
+	 * automatically and unconditionally push them when a PTS device is
+	 * opened. If an application is not aware of this then without this
+	 * flag we would end up with duplicate modules.
+	 */
+	if (devflag & _D_SINGLE_INSTANCE)
+		qflag |= _QSINGLE_INSTANCE;
 
 	*qflagp = qflag;
 	*sqtypep = sqtype;
