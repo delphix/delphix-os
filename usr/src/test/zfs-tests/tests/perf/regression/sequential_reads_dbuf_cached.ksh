@@ -37,7 +37,6 @@ function cleanup
 	recreate_perf_pool
 }
 
-log_assert "Measure IO stats during sequential read load"
 log_onexit cleanup
 
 recreate_perf_pool

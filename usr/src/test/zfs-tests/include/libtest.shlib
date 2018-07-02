@@ -1270,7 +1270,7 @@ function create_dataset #dataset dataset_options
 
 function destroy_dataset #dataset
 {
-	typeset dataset=${1%%/*}
+	typeset dataset=$1
 	typeset mtpt
 
 	if [[ -z $dataset ]]; then
@@ -1279,9 +1279,9 @@ function destroy_dataset #dataset
 	fi
 
 	if datasetexists "$dataset" ; then
-		mtpt=$(get_prop mountpoint "$pool")
+		mtpt=$(get_prop mountpoint "$dataset")
 		log_must zfs destroy -r $dataset
-		[[ -d $mtpt ]] && log_must $RM -rf $mtpt
+		[[ -d $mtpt ]] && log_must rm -rf $mtpt
 	else
 		log_note "Dataset does not exist. ($dataset)"
 		return 1
