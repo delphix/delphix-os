@@ -562,6 +562,15 @@ Health can be one of
 .Sy ONLINE , DEGRADED , FAULTED , OFFLINE, REMOVED , UNAVAIL .
 .It Sy guid
 A unique identifier for the pool.
+.It Sy load_guid
+A unique identifier for the pool.
+Unlike the
+.Sy guid
+property, this identifier is generated every time we load the pool (e.g. does
+not persist across imports/exports) and never changes while the pool is loaded
+(even if a
+.Sy reguid
+operation takes place).
 .It Sy size
 Total size of the storage pool.
 .It Sy unsupported@ Ns Em feature_guid

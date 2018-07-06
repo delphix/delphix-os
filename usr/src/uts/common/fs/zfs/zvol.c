@@ -525,9 +525,17 @@ zvol_kstats_create(zvol_state_t *zv)
 	if (dmu_objset_is_snapshot(zv->zv_objset))
 		return;
 
+	/*
+	 * see comment in zfsvfs_kstats_create() on why the current
+	 * naming scheme was decided.
+	 */
 	char kstat_name[KSTAT_STRLEN];
-	(void) snprintf(kstat_name, sizeof (kstat_name),
-	    "%lu", dmu_objset_id(zv->zv_objset));
+	int n = snprintf(kstat_name, sizeof (kstat_name), "%llx-%llx",
+	    (unsigned long long)spa_load_guid(dmu_objset_spa(zv->zv_objset)),
+	    (unsigned long long)dmu_objset_id(zv->zv_objset));
+	if (n >= KSTAT_STRLEN)
+		return;
+
 	kstat_t *iokstat = kstat_create("zfs", 0, kstat_name, "zvol",
 	    KSTAT_TYPE_NAMED,
 	    sizeof (empty_zvol_kstats) / sizeof (kstat_named_t),

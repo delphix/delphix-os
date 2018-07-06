@@ -893,9 +893,43 @@ zfsvfs_kstats_create(zfsvfs_t *zfsvfs)
 	if (zfsvfs->z_issnap)
 		return;
 
+	/*
+	 * We are limited by KSTAT_STRLEN for the kstat's name here
+	 * which is a lot less that the string length of a dataset's
+	 * path. Thus, we distinguish handles by their objset IDs
+	 * prepended by the pool's load_guid. Note that both numbers
+	 * are formatted in hex. See breakdown in comment below.
+	 *
+	 * We use the pool's load_guid because it is guaranteed to
+	 * not change as long as the machine is running (unlike the
+	 * current GUID from the pool's config which could change upon
+	 * a reguid).
+	 */
 	char kstat_name[KSTAT_STRLEN];
-	(void) snprintf(kstat_name, sizeof (kstat_name),
-	    "%lu", dmu_objset_id(zfsvfs->z_os));
+	int n = snprintf(kstat_name, sizeof (kstat_name), "%llx-%llx",
+	    (unsigned long long)spa_load_guid(dmu_objset_spa(zfsvfs->z_os)),
+	    (unsigned long long)dmu_objset_id(zfsvfs->z_os));
+
+	/*
+	 * At the time of this writing, KSTAT_STRLEN is 31, the pool GUID
+	 * is 64 bits and object IDs use 48 bits maximum. Separated by a
+	 * dash and formatted in hex the pool guid and the object ID should
+	 * take 29 characters in total:
+	 * - pool GUID (64 bits - 16 chars in hex - 16 total chars)
+	 * - dash      ( 8 bits -  1 char         - 17 total chars)
+	 * - object id (48 bits - 12 chars in hex - 29 total chars)
+	 *
+	 * We place the assertion below to hopefully raise an issue when
+	 * and if one of the above assumptions is wrong in the future. If
+	 * there is still an issue and an assertion is not hit (e.g. we
+	 * don't have DEBUG enabled), we skip creating the kstat as an
+	 * indicator that something is going on and potentially to avoid
+	 * any weird situations like a naming conflict due to truncation.
+	 */
+	ASSERT3U(n, <, KSTAT_STRLEN);
+	if (n >= KSTAT_STRLEN)
+		return;
+
 	kstat_t *iokstat = kstat_create("zfs", 0, kstat_name, "zfsvfs",
 	    KSTAT_TYPE_NAMED,
 	    sizeof (empty_zfsvfs_kstats) / sizeof (kstat_named_t),
