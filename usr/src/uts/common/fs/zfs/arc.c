@@ -3930,8 +3930,6 @@ arc_reduce_target_size(int64_t to_free)
 			arc_c = arc_c_min;
 
 		atomic_add_64(&arc_p, -(arc_p >> arc_shrink_shift));
-		if (asize < arc_c)
-			arc_c = MAX(asize, arc_c_min);
 		if (arc_p > arc_c)
 			arc_p = (arc_c >> 1);
 		ASSERT(arc_c >= arc_c_min);
