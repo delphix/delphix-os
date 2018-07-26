@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Nexenta Systems, Inc.
  */
@@ -1957,11 +1957,14 @@ dump_deadlist(dsl_deadlist_t *dl)
 			bpobj_count_refd(&dl->dl_bpobj);
 	} else {
 		mos_obj_refd(dl->dl_object);
+		mutex_enter(&dl->dl_lock);
+		dsl_deadlist_load_tree(dl);
 		for (dle = avl_first(&dl->dl_tree); dle;
 		    dle = AVL_NEXT(&dl->dl_tree, dle)) {
 			if (dle->dle_bpobj.bpo_object != empty_bpobj)
 				bpobj_count_refd(&dle->dle_bpobj);
 		}
+		mutex_exit(&dl->dl_lock);
 	}
 
 	/* make sure nicenum has enough space */

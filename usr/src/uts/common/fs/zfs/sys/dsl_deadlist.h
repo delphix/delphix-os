@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2015, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_DSL_DEADLIST_H
@@ -46,8 +46,10 @@ typedef struct dsl_deadlist_phys {
 typedef struct dsl_deadlist {
 	objset_t *dl_os;
 	uint64_t dl_object;
-	avl_tree_t dl_tree;
+	avl_tree_t dl_tree; /* contains dsl_deadlist_entry_t */
+	avl_tree_t dl_cache; /* contains dsl_deadlist_cache_entry_t */
 	boolean_t dl_havetree;
+	boolean_t dl_havecache;
 	struct dmu_buf *dl_dbuf;
 	dsl_deadlist_phys_t *dl_phys;
 	kmutex_t dl_lock;
@@ -56,6 +58,15 @@ typedef struct dsl_deadlist {
 	bpobj_t dl_bpobj;
 	boolean_t dl_oldfmt;
 } dsl_deadlist_t;
+
+typedef struct dsl_deadlist_cache_entry {
+	avl_node_t dlce_node;
+	uint64_t dlce_mintxg;
+	uint64_t dlce_bpobj;
+	uint64_t dlce_bytes;
+	uint64_t dlce_comp;
+	uint64_t dlce_uncomp;
+} dsl_deadlist_cache_entry_t;
 
 typedef struct dsl_deadlist_entry {
 	avl_node_t dle_node;
@@ -81,6 +92,8 @@ void dsl_deadlist_merge(dsl_deadlist_t *dl, uint64_t obj, dmu_tx_t *tx);
 void dsl_deadlist_move_bpobj(dsl_deadlist_t *dl, bpobj_t *bpo, uint64_t mintxg,
     dmu_tx_t *tx);
 boolean_t dsl_deadlist_is_open(dsl_deadlist_t *dl);
+void dsl_deadlist_discard_tree(dsl_deadlist_t *dl);
+void dsl_deadlist_load_tree(dsl_deadlist_t *dl);
 
 #ifdef	__cplusplus
 }
