@@ -121,8 +121,7 @@ function start_random_writer # file
 function set_min_bytes # bytes
 {
 	typeset bytes=$1
-	echo "zfs_condense_min_mapping_bytes/W 0t$bytes" | \
-	    mdb -kw
+	mdb_ctf_set_int zfs_condense_min_mapping_bytes 0t$bytes
 }
 
 function test_removal_with_operation # callback [args]

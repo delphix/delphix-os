@@ -27,12 +27,21 @@ default_setup_noexit "$DISKS"
 function cleanup
 {
 	log_must set_min_bytes 131072
+	log_must mdb_ctf_set_int zfs_remove_max_segment 0t$((1024*1024))
 	default_cleanup_noexit
 }
 
 log_onexit cleanup
 
 log_must set_min_bytes 1
+
+#
+# Set the maximum mapping segment size to 1KB, so that we are sure to have
+# lots of mappings.  Without this, we may have only a few huge mappings
+# (especially with "map big chunks" - see vdev_removal_max_span).  Note that
+# we don't want split blocks, which we avoid by using recordsize=512.
+#
+log_must mdb_ctf_set_int zfs_remove_max_segment 0t1024
 
 log_must zfs set recordsize=512 $TESTPOOL/$TESTFS
 
@@ -80,6 +89,7 @@ remaptxg_before=$(zfs get -H -o value remaptxg $TESTPOOL/$TESTFS)
     log_fail "remaptxg ($remaptxg_before) had value before a removal"
 
 mapping_size_before=$(indirect_vdev_mapping_size $TESTPOOL)
+log_note "mapping_size_before=$mapping_size_before"
 log_must zfs remap $TESTPOOL/$TESTFS
 
 # Try to wait for a condense to finish.
@@ -88,6 +98,7 @@ for i in {1..5}; do
 	sync
 done
 mapping_size_after=$(indirect_vdev_mapping_size $TESTPOOL)
+log_note "mapping_size_after=$mapping_size_after"
 
 #
 # After the remap, there should not be very many blocks referenced. The reason
