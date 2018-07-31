@@ -3084,6 +3084,7 @@ metaslab_condense(metaslab_t *msp, dmu_tx_t *tx)
 	spa_t *spa = msp->ms_group->mg_vd->vdev_spa;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
+	ASSERT(MUTEX_HELD(&msp->ms_sync_lock));
 	ASSERT(msp->ms_loaded);
 	ASSERT(msp->ms_sm != NULL);
 
@@ -3170,9 +3171,21 @@ metaslab_condense(metaslab_t *msp, dmu_tx_t *tx)
 	 */
 	msp->ms_condensing = B_TRUE;
 	mutex_exit(&msp->ms_lock);
+	uint64_t object = space_map_object(msp->ms_sm);
 	space_map_truncate(sm,
 	    spa_feature_is_enabled(spa, SPA_FEATURE_LOG_SPACEMAP) ?
 	    zfs_metaslab_sm_blksz_with_log : zfs_metaslab_sm_blksz_no_log, tx);
+
+	/*
+	 * space_map_truncate() may have reallocated the spacemap object.
+	 * If so, update the vdev_ms_array.
+	 */
+	if (space_map_object(msp->ms_sm) != object) {
+		object = space_map_object(msp->ms_sm);
+		dmu_write(spa->spa_meta_objset,
+		    msp->ms_group->mg_vd->vdev_ms_array, sizeof (uint64_t) *
+		    msp->ms_id, sizeof (uint64_t), &object, tx);
+	}
 
 	/*
 	 * Note:
@@ -3396,7 +3409,6 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 	objset_t *mos = spa_meta_objset(spa);
 	range_tree_t *alloctree = msp->ms_allocating[txg & TXG_MASK];
 	dmu_tx_t *tx;
-	uint64_t object = space_map_object(msp->ms_sm);
 
 	ASSERT(!vd->vdev_ishole);
 
@@ -3447,13 +3459,14 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 	spa_generate_syncing_log_sm(spa, tx);
 
 	if (msp->ms_sm == NULL) {
-		uint64_t new_object;
-
-		new_object = space_map_alloc(mos,
+		uint64_t new_object = space_map_alloc(mos,
 		    spa_feature_is_enabled(spa, SPA_FEATURE_LOG_SPACEMAP) ?
 		    zfs_metaslab_sm_blksz_with_log :
 		    zfs_metaslab_sm_blksz_no_log, tx);
 		VERIFY3U(new_object, !=, 0);
+
+		dmu_write(mos, vd->vdev_ms_array, sizeof (uint64_t) *
+		    msp->ms_id, sizeof (uint64_t), &new_object, tx);
 
 		VERIFY0(space_map_open(&msp->ms_sm, mos, new_object,
 		    msp->ms_start, msp->ms_size, vd->vdev_ashift));
@@ -3659,11 +3672,15 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 
 	mutex_exit(&msp->ms_lock);
 
-	if (object != space_map_object(msp->ms_sm)) {
-		object = space_map_object(msp->ms_sm);
-		dmu_write(mos, vd->vdev_ms_array, sizeof (uint64_t) *
-		    msp->ms_id, sizeof (uint64_t), &object, tx);
-	}
+	/*
+	 * Verify that the space map object ID has been recorded in the
+	 * vdev_ms_array.
+	 */
+	uint64_t object;
+	VERIFY0(dmu_read(mos, vd->vdev_ms_array,
+	    msp->ms_id * sizeof (uint64_t), sizeof (uint64_t), &object, 0));
+	VERIFY3U(object, ==, space_map_object(msp->ms_sm));
+
 	mutex_exit(&msp->ms_sync_lock);
 	dmu_tx_commit(tx);
 }
