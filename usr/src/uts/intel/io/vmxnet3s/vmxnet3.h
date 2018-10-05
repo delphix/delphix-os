@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  */
 
 #ifndef	_VMXNET3_H_
@@ -184,13 +184,13 @@ void	vmxnet3_free_dma_mem(vmxnet3_dmabuf_t *dma);
 int	vmxnet3_getprop(vmxnet3_softc_t *dp, char *name, int min, int max,
 	    int def);
 
-int	vmxnet3_txqueue_init(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq);
+int	vmxnet3_txqueue_init(vmxnet3_softc_t *dp);
 mblk_t	*vmxnet3_tx(void *data, mblk_t *mps);
-boolean_t vmxnet3_tx_complete(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq);
-void	vmxnet3_txqueue_fini(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq);
+boolean_t vmxnet3_tx_complete(vmxnet3_softc_t *dp);
+void	vmxnet3_txqueue_fini(vmxnet3_softc_t *dp);
 
 int	vmxnet3_rxqueue_init(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
-mblk_t	*vmxnet3_rx_intr(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
+mblk_t	*vmxnet3_rx_intr(vmxnet3_softc_t *dp);
 void	vmxnet3_rxqueue_fini(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
 void	vmxnet3_log(int level, vmxnet3_softc_t *dp, char *fmt, ...);
 

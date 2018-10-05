@@ -13,7 +13,7 @@
  * and limitations under the License.
  */
 /*
- * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
@@ -334,8 +334,9 @@ vmxnet3_rx_hwcksum(vmxnet3_softc_t *dp, mblk_t *mp,
  *	A list of messages to pass to the MAC subystem.
  */
 mblk_t *
-vmxnet3_rx_intr(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq)
+vmxnet3_rx_intr(vmxnet3_softc_t *dp)
 {
+	vmxnet3_rxqueue_t *rxq = &dp->rxQueue;
 	vmxnet3_compring_t *compRing = &rxq->compRing;
 	vmxnet3_cmdring_t *cmdRing = &rxq->cmdRing;
 	Vmxnet3_RxQueueCtrl *rxqCtrl = rxq->sharedCtrl;
@@ -343,6 +344,7 @@ vmxnet3_rx_intr(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq)
 	mblk_t *mplist = NULL, **mplistTail = &mplist;
 
 	ASSERT(mutex_owned(&dp->intrLock));
+	ASSERT(dp->devEnabled);
 
 	compDesc = VMXNET3_GET_DESC(compRing, compRing->next2comp);
 	while (compDesc->rcd.gen == compRing->gen) {

@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
@@ -359,7 +359,7 @@ vmxnet3_prepare_txqueue(vmxnet3_softc_t *dp)
 	    sizeof (vmxnet3_metatx_t), KM_SLEEP);
 	ASSERT(txq->metaRing);
 
-	if ((err = vmxnet3_txqueue_init(dp, txq)) != 0) {
+	if ((err = vmxnet3_txqueue_init(dp)) != 0) {
 		goto error_mpring;
 	}
 
@@ -432,10 +432,11 @@ vmxnet3_destroy_txqueue(vmxnet3_softc_t *dp)
 {
 	vmxnet3_txqueue_t *txq = &dp->txQueue;
 
+	ASSERT(!dp->devEnabled);
 	ASSERT(txq->metaRing);
 	ASSERT(txq->cmdRing.dma.buf && txq->compRing.dma.buf);
 
-	vmxnet3_txqueue_fini(dp, txq);
+	vmxnet3_txqueue_fini(dp);
 
 	kmem_free(txq->metaRing, txq->cmdRing.size * sizeof (vmxnet3_metatx_t));
 
@@ -635,11 +636,13 @@ vmxnet3_stop(void *data)
 	 * These events should always check dp->devEnabled before poking dp.
 	 */
 	mutex_enter(&dp->intrLock);
+	mutex_enter(&dp->txLock);
 	mutex_enter(&dp->rxPoolLock);
 	VMXNET3_BAR0_PUT32(dp, VMXNET3_REG_IMR, 1);
 	dp->devEnabled = B_FALSE;
 	VMXNET3_BAR1_PUT32(dp, VMXNET3_REG_CMD, VMXNET3_CMD_QUIESCE_DEV);
 	mutex_exit(&dp->rxPoolLock);
+	mutex_exit(&dp->txLock);
 	mutex_exit(&dp->intrLock);
 
 	ddi_dma_free_handle(&dp->txDmaHandle);
@@ -1153,8 +1156,8 @@ vmxnet3_intr(caddr_t data1, caddr_t data2)
 		}
 
 		linkStateChanged = vmxnet3_intr_events(dp);
-		mustUpdateTx = vmxnet3_tx_complete(dp, &dp->txQueue);
-		mps = vmxnet3_rx_intr(dp, &dp->rxQueue);
+		mustUpdateTx = vmxnet3_tx_complete(dp);
+		mps = vmxnet3_rx_intr(dp);
 
 		mutex_exit(&dp->intrLock);
 		VMXNET3_BAR0_PUT32(dp, VMXNET3_REG_IMR, 0);
