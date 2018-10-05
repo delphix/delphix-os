@@ -38,7 +38,7 @@ typedef struct vmxnet3_offload_t {
  */
 /* ARGSUSED */
 int
-vmxnet3_txqueue_init(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq)
+vmxnet3_txqueue_init(vmxnet3_softc_t *dp)
 {
 	return (0);
 }
@@ -47,13 +47,12 @@ vmxnet3_txqueue_init(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq)
  * Finish a TxQueue by freeing all pending Tx.
  */
 void
-vmxnet3_txqueue_fini(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq)
+vmxnet3_txqueue_fini(vmxnet3_softc_t *dp)
 {
-	unsigned int i;
-
 	ASSERT(!dp->devEnabled);
 
-	for (i = 0; i < txq->cmdRing.size; i++) {
+	vmxnet3_txqueue_t *txq = &dp->txQueue;
+	for (unsigned int i = 0; i < txq->cmdRing.size; i++) {
 		mblk_t *mp = txq->metaRing[i].mp;
 		if (mp) {
 			freemsg(mp);
@@ -189,25 +188,32 @@ vmxnet3_tx_prepare_offload(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol,
  *	VMXNET3_TX_OK if everything went well.
  *	VMXNET3_TX_RINGFULL if the ring is nearly full.
  *	VMXNET3_TX_PULLUP if the msg is overfragmented.
- *	VMXNET3_TX_FAILURE if there was a DMA or offload error.
+ *	VMXNET3_TX_FAILURE if there was a DMA, offload error,
+ *		or the device is temporarily disabled.
  *
  * Side effects:
  *	The ring is filled if VMXNET3_TX_OK is returned.
  */
 static vmxnet3_txstatus
-vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq,
-    vmxnet3_offload_t *ol, mblk_t *mp)
+vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol, mblk_t *mp)
 {
 	int ret = VMXNET3_TX_OK;
 	unsigned int frags = 0, totLen = 0;
-	vmxnet3_cmdring_t *cmdRing = &txq->cmdRing;
-	Vmxnet3_TxQueueCtrl *txqCtrl = txq->sharedCtrl;
 	Vmxnet3_GenericDesc *txDesc;
 	uint16_t sopIdx, eopIdx;
 	uint8_t sopGen, curGen;
 	mblk_t *mblk;
 
 	mutex_enter(&dp->txLock);
+
+	if (!dp->devEnabled) {
+		mutex_exit(&dp->txLock);
+		return (VMXNET3_TX_FAILURE);
+	}
+
+	vmxnet3_txqueue_t *txq = &dp->txQueue;
+	vmxnet3_cmdring_t *cmdRing = &txq->cmdRing;
+	Vmxnet3_TxQueueCtrl *txqCtrl = txq->sharedCtrl;
 
 	sopIdx = eopIdx = cmdRing->next2fill;
 	sopGen = cmdRing->gen;
@@ -364,9 +370,6 @@ mblk_t *
 vmxnet3_tx(void *data, mblk_t *mps)
 {
 	vmxnet3_softc_t *dp = data;
-	vmxnet3_txqueue_t *txq = &dp->txQueue;
-	vmxnet3_cmdring_t *cmdRing = &txq->cmdRing;
-	Vmxnet3_TxQueueCtrl *txqCtrl = txq->sharedCtrl;
 	vmxnet3_txstatus status = VMXNET3_TX_OK;
 	mblk_t *mp;
 
@@ -425,7 +428,7 @@ vmxnet3_tx(void *data, mblk_t *mps)
 		 * Try to map the message in the Tx ring.
 		 * This call might fail for non-fatal reasons.
 		 */
-		status = vmxnet3_tx_one(dp, txq, &ol, mp);
+		status = vmxnet3_tx_one(dp, &ol, mp);
 		if (status == VMXNET3_TX_PULLUP) {
 			/*
 			 * Try one more time after flattening
@@ -456,7 +459,7 @@ vmxnet3_tx(void *data, mblk_t *mps)
 					continue;
 				}
 
-				status = vmxnet3_tx_one(dp, txq, &ol, mp);
+				status = vmxnet3_tx_one(dp, &ol, mp);
 			}
 		}
 		if (status != VMXNET3_TX_OK && status != VMXNET3_TX_RINGFULL) {
@@ -476,9 +479,16 @@ vmxnet3_tx(void *data, mblk_t *mps)
 
 	/* Notify the device */
 	mutex_enter(&dp->txLock);
-	if (txqCtrl->txNumDeferred >= txqCtrl->txThreshold) {
-		txqCtrl->txNumDeferred = 0;
-		VMXNET3_BAR0_PUT32(dp, VMXNET3_REG_TXPROD, cmdRing->next2fill);
+	if (dp->devEnabled) {
+		vmxnet3_txqueue_t *txq = &dp->txQueue;
+		vmxnet3_cmdring_t *cmdRing = &txq->cmdRing;
+		Vmxnet3_TxQueueCtrl *txqCtrl = txq->sharedCtrl;
+
+		if (txqCtrl->txNumDeferred >= txqCtrl->txThreshold) {
+			txqCtrl->txNumDeferred = 0;
+			VMXNET3_BAR0_PUT32(dp,
+			    VMXNET3_REG_TXPROD, cmdRing->next2fill);
+		}
 	}
 	mutex_exit(&dp->txLock);
 
@@ -492,15 +502,19 @@ vmxnet3_tx(void *data, mblk_t *mps)
  *	B_TRUE if Tx must be updated or B_FALSE if no action is required.
  */
 boolean_t
-vmxnet3_tx_complete(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq)
+vmxnet3_tx_complete(vmxnet3_softc_t *dp)
 {
+	ASSERT(mutex_owned(&dp->intrLock));
+	ASSERT(dp->devEnabled);
+
+	mutex_enter(&dp->txLock);
+
+	vmxnet3_txqueue_t *txq = &dp->txQueue;
 	vmxnet3_cmdring_t *cmdRing = &txq->cmdRing;
 	vmxnet3_compring_t *compRing = &txq->compRing;
 	Vmxnet3_GenericDesc *compDesc;
 	boolean_t completedTx = B_FALSE;
 	boolean_t ret = B_FALSE;
-
-	mutex_enter(&dp->txLock);
 
 	compDesc = VMXNET3_GET_DESC(compRing, compRing->next2comp);
 	while (compDesc->tcd.gen == compRing->gen) {
