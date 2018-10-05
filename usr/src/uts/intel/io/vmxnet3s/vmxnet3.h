@@ -149,6 +149,7 @@ typedef struct vmxnet3_softc_t {
 	kmutex_t	rxPoolLock;
 	vmxnet3_rxpool_t rxPool;
 	uint32_t	rxMode;
+	kmutex_t	rxmLock;
 	boolean_t	alloc_ok;
 
 	vmxnet3_dmabuf_t mfTable;

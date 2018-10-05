@@ -471,6 +471,8 @@ vmxnet3_refresh_rxfilter(vmxnet3_softc_t *dp)
 {
 	Vmxnet3_DriverShared *ds = VMXNET3_DS(dp);
 
+	ASSERT(mutex_owned(&dp->rxmLock));
+
 	ds->devRead.rxFilterConf.rxMode = dp->rxMode;
 	VMXNET3_BAR1_PUT32(dp, VMXNET3_REG_CMD, VMXNET3_CMD_UPDATE_RX_MODE);
 }
@@ -592,8 +594,10 @@ vmxnet3_start(void *data)
 	/*
 	 * Update the RX filters, must be done after ACTIVATE_DEV
 	 */
-	dp->rxMode = VMXNET3_RXM_UCAST | VMXNET3_RXM_BCAST;
+	mutex_enter(&dp->rxmLock);
+	dp->rxMode |= VMXNET3_RXM_UCAST | VMXNET3_RXM_BCAST;
 	vmxnet3_refresh_rxfilter(dp);
+	mutex_exit(&dp->rxmLock);
 
 	/*
 	 * Get the link state now because no events will be generated
@@ -661,6 +665,7 @@ vmxnet3_setpromisc(void *data, boolean_t promisc)
 {
 	vmxnet3_softc_t *dp = data;
 
+	mutex_enter(&dp->rxmLock);
 	VMXNET3_DEBUG(dp, 2, "setpromisc(%s)\n", promisc ? "TRUE" : "FALSE");
 
 	if (promisc) {
@@ -670,6 +675,7 @@ vmxnet3_setpromisc(void *data, boolean_t promisc)
 	}
 
 	vmxnet3_refresh_rxfilter(dp);
+	mutex_exit(&dp->rxmLock);
 
 	return (0);
 }
@@ -749,6 +755,7 @@ vmxnet3_multicst(void *data, boolean_t add, const uint8_t *macaddr)
 	 * Now handle 2 corner cases: if we're creating the first filter or
 	 * removing the last one, we have to update rxMode accordingly.
 	 */
+	mutex_enter(&dp->rxmLock);
 	if (add && newMfTable.bufLen == 6) {
 		ASSERT(!(dp->rxMode & VMXNET3_RXM_MCAST));
 		dp->rxMode |= VMXNET3_RXM_MCAST;
@@ -760,6 +767,7 @@ vmxnet3_multicst(void *data, boolean_t add, const uint8_t *macaddr)
 		dp->rxMode &= ~VMXNET3_RXM_MCAST;
 		vmxnet3_refresh_rxfilter(dp);
 	}
+	mutex_exit(&dp->rxmLock);
 
 	/*
 	 * Now replace the old MF table with the new one
@@ -1435,6 +1443,7 @@ vmxnet3_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mutex_init(&dp->intrLock, NULL, MUTEX_DRIVER, DDI_INTR_PRI(uret));
 	mutex_init(&dp->txLock, NULL, MUTEX_DRIVER, DDI_INTR_PRI(uret));
 	mutex_init(&dp->rxPoolLock, NULL, MUTEX_DRIVER, DDI_INTR_PRI(uret));
+	mutex_init(&dp->rxmLock, NULL, MUTEX_DRIVER, DDI_INTR_PRI(uret));
 
 	if (ddi_intr_add_handler(dp->intrHandle, vmxnet3_intr,
 	    dp, NULL) != DDI_SUCCESS) {
@@ -1544,6 +1553,7 @@ vmxnet3_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		vmxnet3_free_dma_mem(&dp->mfTable);
 	}
 
+	mutex_destroy(&dp->rxmLock);
 	mutex_destroy(&dp->rxPoolLock);
 	mutex_destroy(&dp->txLock);
 	mutex_destroy(&dp->intrLock);
