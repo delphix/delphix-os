@@ -14,10 +14,11 @@
  */
 
 /*
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
+#include <netinet/udp.h>
 
 typedef enum vmxnet3_txstatus {
 	VMXNET3_TX_OK,
@@ -66,11 +67,11 @@ vmxnet3_txqueue_fini(vmxnet3_softc_t *dp, vmxnet3_txqueue_t *txq)
  * Returns:
  *	0 if everything went well.
  *	+n if n bytes need to be pulled up.
- *	-1 in case of error (not used).
+ *	-1 in case of error.
  */
 static int
 vmxnet3_tx_prepare_offload(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol,
-    mblk_t *mp)
+    int *headers_len, mblk_t *mp)
 {
 	int ret = 0;
 	uint32_t start, stuff, value, flags, lso_flag, mss;
@@ -84,57 +85,97 @@ vmxnet3_tx_prepare_offload(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol,
 	mac_lso_get(mp, &mss, &lso_flag);
 
 	if (flags || lso_flag) {
-		struct ether_vlan_header *eth = (void *) mp->b_rptr;
-		uint8_t ethLen;
+		struct ether_vlan_header *etvh = (void *) mp->b_rptr;
+		struct ether_header *eth = (void *) mp->b_rptr;
+		uint8_t ethLen, ipLen, l4Len;
+		mblk_t *mblk = mp;
+		uint8_t *ip, *l4;
+		uint16_t l3proto;
+		uint8_t l4proto;
 
-		if (eth->ether_tpid == htons(ETHERTYPE_VLAN)) {
+		if (eth->ether_type == htons(ETHERTYPE_VLAN)) {
 			ethLen = sizeof (struct ether_vlan_header);
+			l3proto = ntohs(etvh->ether_type);
 		} else {
 			ethLen = sizeof (struct ether_header);
+			l3proto = ntohs(eth->ether_type);
 		}
 
 		VMXNET3_DEBUG(dp, 4, "flags=0x%x, ethLen=%u, start=%u, "
 		    "stuff=%u, value=%u\n", flags, ethLen, start, stuff, value);
 
-		if (lso_flag & HW_LSO) {
-			mblk_t *mblk = mp;
-			uint8_t *ip, *tcp;
-			uint8_t ipLen, tcpLen;
+		/*
+		 * Copy e1000g's behavior:
+		 * - Do not assume all the headers are in the same mblk.
+		 * - Assume each header is always within one mblk.
+		 * - Assume the ethernet header is in the first mblk.
+		 */
+		ip = mblk->b_rptr + ethLen;
+		if (ip >= mblk->b_wptr) {
+			mblk = mblk->b_cont;
+			ip = mblk->b_rptr;
+		}
 
-			/*
-			 * Copy e1000g's behavior:
-			 * - Do not assume all the headers are in the same mblk.
-			 * - Assume each header is always within one mblk.
-			 * - Assume the ethernet header is in the first mblk.
-			 */
-			ip = mblk->b_rptr + ethLen;
-			if (ip >= mblk->b_wptr) {
-				mblk = mblk->b_cont;
-				ip = mblk->b_rptr;
-			}
+		if (l3proto == ETHERTYPE_IP) {
 			ipLen = IPH_HDR_LENGTH((ipha_t *)ip);
-			tcp = ip + ipLen;
-			if (tcp >= mblk->b_wptr) {
-				mblk = mblk->b_cont;
-				tcp = mblk->b_rptr;
-			}
-			tcpLen = TCP_HDR_LENGTH((tcph_t *)tcp);
-			/* Careful, '>' instead of '>=' here */
-			if (tcp + tcpLen > mblk->b_wptr) {
-				mblk = mblk->b_cont;
-			}
+			l4proto = ((ipha_t *)ip)->ipha_protocol;
+			l4 = ip + ipLen;
+		} else if (l3proto == ETHERTYPE_IPV6) {
+			ipLen = sizeof (ip6_t);
+			l4proto = ((ip6_t *)ip)->ip6_nxt;
+			l4 = ip + ipLen;
+		} else {
+			VMXNET3_WARN(dp, "Invalid L3 protocol (0x%x) for "
+			    "hardware offload\n", l3proto);
+			return (-1);
+		}
 
+		if (l4 >= mblk->b_wptr) {
+			mblk = mblk->b_cont;
+			l4 = mblk->b_rptr;
+		}
+
+		if (l4proto == IPPROTO_TCP) {
+			l4Len = TCP_HDR_LENGTH((tcph_t *)l4);
+		} else if (l4proto == IPPROTO_UDP) {
+			l4Len = sizeof (struct udphdr);
+		} else {
+			/*
+			 * Note that we should not be doing hardware offload
+			 * if ipv6 has extension headers.
+			 */
+			VMXNET3_WARN(dp, "Invalid L4 protocol (0x%x) for "
+			    "hardware offload\n", l4proto);
+			return (-1);
+		}
+
+		/* Careful, '>' instead of '>=' here */
+		if (l4 + l4Len > mblk->b_wptr) {
+			mblk = mblk->b_cont;
+		}
+
+		*headers_len = ethLen + ipLen + l4Len;
+
+		if (lso_flag & HW_LSO) {
+			ASSERT3U(l4proto, ==, IPPROTO_TCP);
 			ol->om = VMXNET3_OM_TSO;
-			ol->hlen = ethLen + ipLen + tcpLen;
+			ol->hlen = ethLen + ipLen + l4Len;
 			ol->msscof = mss;
-
-			if (mblk != mp) {
-				ret = ol->hlen;
-			}
 		} else if (flags & HCK_PARTIALCKSUM) {
 			ol->om = VMXNET3_OM_CSUM;
 			ol->hlen = start + ethLen;
 			ol->msscof = stuff + ethLen;
+		}
+
+		/*
+		 * If the headers are not all in the same mblk, we must
+		 * pullup the packet so that all the headers end up in the
+		 * same tx descriptor. Failure to do so will either cause the
+		 * hypervisor to drop the packet or to return an error
+		 * requiring a reset of the driver.
+		 */
+		if (mblk != mp) {
+			ret = ol->hlen;
 		}
 	}
 
@@ -333,7 +374,8 @@ vmxnet3_tx(void *data, mblk_t *mps)
 
 	do {
 		vmxnet3_offload_t ol;
-		int pullup;
+		int pullup_bytes;
+		int headers_len = 0;
 
 		mp = mps;
 		mps = mp->b_next;
@@ -351,21 +393,32 @@ vmxnet3_tx(void *data, mblk_t *mps)
 			continue;
 		}
 
-		/*
-		 * Prepare the offload while we're still handling the original
-		 * message -- msgpullup() discards the metadata afterwards.
-		 */
-		pullup = vmxnet3_tx_prepare_offload(dp, &ol, mp);
-		if (pullup) {
-			mblk_t *new_mp = msgpullup(mp, pullup);
+		pullup_bytes =
+		    vmxnet3_tx_prepare_offload(dp, &ol, &headers_len, mp);
+		if (pullup_bytes > 0) {
 			atomic_inc_32(&dp->tx_pullup_needed);
-			freemsg(mp);
-			if (new_mp) {
-				mp = new_mp;
-			} else {
+			if (pullupmsg(mp, pullup_bytes) == 0) {
 				atomic_inc_32(&dp->tx_pullup_failed);
 				continue;
 			}
+			/*
+			 * Check that headers don't cross a page boundary,
+			 * which would cause them to be split into different
+			 * tx descriptors.
+			 */
+			if (headers_len > 0 && ((uintptr_t)mp->b_rptr &
+			    PAGEOFFSET) + headers_len > PAGESIZE) {
+				VMXNET3_WARN(dp, "packet 0x%p dropped as "
+				    "headers cross page boundary (hlen %d)\n",
+				    mp, headers_len);
+				freemsg(mp);
+				atomic_inc_32(&dp->tx_error);
+				continue;
+			}
+		} else if (pullup_bytes < 0) {
+			freemsg(mp);
+			atomic_inc_32(&dp->tx_error);
+			continue;
 		}
 
 		/*
@@ -382,14 +435,28 @@ vmxnet3_tx(void *data, mblk_t *mps)
 				mblk_t *new_mp = msgpullup(mp, -1);
 				atomic_inc_32(&dp->tx_pullup_needed);
 				freemsg(mp);
-				if (new_mp) {
-					mp = new_mp;
-					status = vmxnet3_tx_one(dp, txq, &ol,
-					    mp);
-				} else {
+				mp = new_mp;
+				if (mp == NULL) {
 					atomic_inc_32(&dp->tx_pullup_failed);
 					continue;
 				}
+
+				/*
+				 * Check that headers don't cross a page
+				 * boundary, which would cause them to be split
+				 * into different tx descriptors.
+				 */
+				if (headers_len > 0 && ((uintptr_t)mp->b_rptr &
+				    PAGEOFFSET) + headers_len > PAGESIZE) {
+					VMXNET3_WARN(dp, "packet 0x%p dropped "
+					    "as headers cross page boundary "
+					    "(hlen %d)\n", mp, headers_len);
+					freemsg(mp);
+					atomic_inc_32(&dp->tx_error);
+					continue;
+				}
+
+				status = vmxnet3_tx_one(dp, txq, &ol, mp);
 			}
 		}
 		if (status != VMXNET3_TX_OK && status != VMXNET3_TX_RINGFULL) {
