@@ -157,6 +157,7 @@ typedef struct vmxnet3_softc_t {
 	uint32_t	reset_count;
 	uint32_t	tx_pullup_needed;
 	uint32_t	tx_pullup_failed;
+	uint32_t	tx_headers_cross_boundary;
 	uint32_t	tx_ring_full;
 	uint32_t	tx_error;
 	uint32_t	rx_num_bufs;
