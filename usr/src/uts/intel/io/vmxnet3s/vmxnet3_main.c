@@ -166,7 +166,8 @@ vmxnet3_getstat(void *data, uint_t stat, uint64_t *val)
 		*val = rxStats->pktsRxError;
 		break;
 	case MAC_STAT_NOXMTBUF:
-		*val = txStats->pktsTxDiscard + dp->tx_pullup_failed;
+		*val = txStats->pktsTxDiscard + dp->tx_pullup_failed +
+		    dp->tx_headers_cross_boundary;
 		break;
 	case MAC_STAT_OERRORS:
 		*val = txStats->pktsTxError + dp->tx_error;

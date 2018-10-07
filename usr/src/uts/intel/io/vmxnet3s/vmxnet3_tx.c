@@ -174,7 +174,7 @@ vmxnet3_tx_prepare_offload(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol,
 		 * requiring a reset of the driver.
 		 */
 		if (mblk != mp) {
-			ret = ol->hlen;
+			ret = *headers_len;
 		}
 	}
 
@@ -379,6 +379,7 @@ vmxnet3_tx(void *data, mblk_t *mps)
 		vmxnet3_offload_t ol;
 		int pullup_bytes;
 		int headers_len = 0;
+		boolean_t retried = B_FALSE;
 
 		mp = mps;
 		mps = mp->b_next;
@@ -398,29 +399,59 @@ vmxnet3_tx(void *data, mblk_t *mps)
 
 		pullup_bytes =
 		    vmxnet3_tx_prepare_offload(dp, &ol, &headers_len, mp);
+		/*
+		 * Packet headers need to be in the same mblk when hardware
+		 * offload is enabled. If they are not, we pull those headers
+		 * into a new mblk.
+		 */
 		if (pullup_bytes > 0) {
 			atomic_inc_32(&dp->tx_pullup_needed);
+			/*
+			 * Note, we use the older pullupmsg() instead of
+			 * msgpullup() as the latter always flattens the whole
+			 * message instead of just the requested bytes.
+			 * This can be expensive with large LSO packets.
+			 */
 			if (pullupmsg(mp, pullup_bytes) == 0) {
 				atomic_inc_32(&dp->tx_pullup_failed);
 				continue;
 			}
-			/*
-			 * Check that headers don't cross a page boundary,
-			 * which would cause them to be split into different
-			 * tx descriptors.
-			 */
-			if (headers_len > 0 && ((uintptr_t)mp->b_rptr &
-			    PAGEOFFSET) + headers_len > PAGESIZE) {
-				VMXNET3_WARN(dp, "packet 0x%p dropped as "
-				    "headers cross page boundary (hlen %d)\n",
-				    mp, headers_len);
-				freemsg(mp);
-				atomic_inc_32(&dp->tx_error);
-				continue;
-			}
+			ASSERT3U(MBLKL(mp), >=, headers_len);
 		} else if (pullup_bytes < 0) {
 			freemsg(mp);
 			atomic_inc_32(&dp->tx_error);
+			continue;
+		}
+
+		/*
+		 * Not only do the headers have to be in the same mblk, but
+		 * that mblk must not cross a page boundary, else it will be
+		 * split into multiple tx descriptors. We reallocate the
+		 * packet into a new flat mblk if that's the case.
+		 */
+		if (headers_len > 0 && ((uintptr_t)mp->b_rptr & PAGEOFFSET) +
+		    headers_len > PAGESIZE) {
+			mblk_t *new_mp = msgpullup(mp, -1);
+			atomic_inc_32(&dp->tx_pullup_needed);
+			freemsg(mp);
+			mp = new_mp;
+			if (mp == NULL) {
+				atomic_inc_32(&dp->tx_pullup_failed);
+				continue;
+			}
+		}
+
+retry:
+		/*
+		 * If the headers still cross a page boundary, we give up.
+		 */
+		if (headers_len > 0 && ((uintptr_t)mp->b_rptr & PAGEOFFSET) +
+		    headers_len > PAGESIZE) {
+			VMXNET3_WARN(dp, "packet 0x%p dropped as headers cross "
+			    "page boundary (hlen %d)\n", (void *)mp,
+			    headers_len);
+			freemsg(mp);
+			atomic_inc_32(&dp->tx_headers_cross_boundary);
 			continue;
 		}
 
@@ -429,7 +460,7 @@ vmxnet3_tx(void *data, mblk_t *mps)
 		 * This call might fail for non-fatal reasons.
 		 */
 		status = vmxnet3_tx_one(dp, &ol, mp);
-		if (status == VMXNET3_TX_PULLUP) {
+		if (status == VMXNET3_TX_PULLUP && !retried) {
 			/*
 			 * Try one more time after flattening
 			 * the message with msgpullup().
@@ -443,25 +474,11 @@ vmxnet3_tx(void *data, mblk_t *mps)
 					atomic_inc_32(&dp->tx_pullup_failed);
 					continue;
 				}
-
-				/*
-				 * Check that headers don't cross a page
-				 * boundary, which would cause them to be split
-				 * into different tx descriptors.
-				 */
-				if (headers_len > 0 && ((uintptr_t)mp->b_rptr &
-				    PAGEOFFSET) + headers_len > PAGESIZE) {
-					VMXNET3_WARN(dp, "packet 0x%p dropped "
-					    "as headers cross page boundary "
-					    "(hlen %d)\n", mp, headers_len);
-					freemsg(mp);
-					atomic_inc_32(&dp->tx_error);
-					continue;
-				}
-
-				status = vmxnet3_tx_one(dp, &ol, mp);
+				retried = B_TRUE;
+				goto retry;
 			}
 		}
+
 		if (status != VMXNET3_TX_OK && status != VMXNET3_TX_RINGFULL) {
 			/* Fatal failure, drop it */
 			atomic_inc_32(&dp->tx_error);
