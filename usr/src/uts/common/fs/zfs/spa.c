@@ -2259,15 +2259,7 @@ spa_vdev_err(vdev_t *vdev, vdev_aux_t aux, int err)
 boolean_t
 spa_livelist_delete_check(spa_t *spa)
 {
-	uint64_t deleted_obj;
-	int err;
-	if (!spa_feature_is_enabled(spa, SPA_FEATURE_LIVELIST))
-		return (B_FALSE);
-	err = zap_lookup(spa->spa_meta_objset,
-	    DMU_POOL_DIRECTORY_OBJECT, DMU_POOL_DELETED_CLONES,
-	    sizeof (uint64_t), 1, &deleted_obj);
-	ASSERT((err == 0) || (err == ENOENT));
-	return (err == 0);
+	return (spa->spa_livelists_to_delete != 0);
 }
 
 /* ARGSUSED */
@@ -2350,16 +2342,17 @@ livelist_delete_sync(void *arg, dmu_tx_t *tx)
 	spa_feature_decr(spa, SPA_FEATURE_LIVELIST, tx);
 	VERIFY0(zap_count(mos, zap_obj, &count));
 	if (count == 0) {
-		/* no more clones to delete */
+		/* no more livelists to delete */
 		VERIFY0(zap_remove(mos, DMU_POOL_DIRECTORY_OBJECT,
 		    DMU_POOL_DELETED_CLONES, tx));
 		VERIFY0(zap_destroy(mos, zap_obj, tx));
+		spa->spa_livelists_to_delete = 0;
 		spa_notify_waiters(spa);
 	}
 }
 
 /*
- * Load in the value for the livelist to be remove and open it. Then,
+ * Load in the value for the livelist to be removed and open it. Then,
  * load its first sublist and determine which block pointers should actually
  * be freed. Then, call a synctask which performs the actual frees and updates
  * the pool-wide livelist data.
@@ -2370,14 +2363,13 @@ spa_livelist_delete_cb(void *arg, zthr_t *z)
 {
 	spa_t *spa = arg;
 	int err;
-	uint64_t zap_obj, ll_obj, count;
+	uint64_t ll_obj, count;
 	objset_t *mos = spa->spa_meta_objset;
+	uint64_t zap_obj = spa->spa_livelists_to_delete;
 	/*
 	 * Determine the next livelist to delete. This function should only
 	 * be called if there is at least one deleted clone.
 	 */
-	VERIFY0(zap_lookup(mos, DMU_POOL_DIRECTORY_OBJECT,
-	    DMU_POOL_DELETED_CLONES, sizeof (uint64_t), 1, &zap_obj));
 	VERIFY0(dsl_get_next_livelist_obj(mos, zap_obj, &ll_obj));
 	VERIFY0(zap_count(mos, ll_obj, &count));
 	if (count > 0) {
@@ -3555,6 +3547,18 @@ spa_ld_get_props(spa_t *spa)
 	    &spa->spa_errlog_scrub, B_FALSE);
 	if (error != 0 && error != ENOENT)
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
+
+	/*
+	 * Load the livelist deletion field. If a livelist is queued for
+	 * deletion, indicate that in the spa
+	 */
+	error = spa_dir_prop(spa, DMU_POOL_DELETED_CLONES,
+	    &spa->spa_livelists_to_delete, B_FALSE);
+	if (error == ENOENT) {
+		spa->spa_livelists_to_delete = 0;
+	} else if (error != 0) {
+		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
+	}
 
 	/*
 	 * Load the history object.  If we have an older pool, this
