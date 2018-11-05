@@ -95,11 +95,10 @@ int zfs_commit_timeout_pct = 5;
 int zil_replay_disable = 0;
 
 /*
- * Tunable parameter for debugging or performance analysis.  Setting
- * zfs_nocacheflush will cause corruption on power loss if a volatile
- * out-of-order write cache is enabled.
+ * Disable the DKIOCFLUSHWRITECACHE commands that are normally sent to
+ * the disk(s) by the ZIL after an lwb write has completed.
  */
-boolean_t zfs_nocacheflush = B_FALSE;
+boolean_t zil_nocacheflush = B_FALSE;
 
 /*
  * Limit SLOG write size per commit executed with synchronous priority.
@@ -991,7 +990,7 @@ zil_lwb_add_block(lwb_t *lwb, const blkptr_t *bp)
 	int ndvas = BP_GET_NDVAS(bp);
 	int i;
 
-	if (zfs_nocacheflush)
+	if (zil_nocacheflush)
 		return;
 
 	mutex_enter(&lwb->lwb_vdev_lock);
