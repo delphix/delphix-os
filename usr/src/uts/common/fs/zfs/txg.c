@@ -112,6 +112,19 @@ static void txg_quiesce_thread(void *arg);
 int zfs_txg_timeout = 5;	/* max seconds worth of delta per txg */
 
 /*
+ * Tunes the stack size of the txg_sync_thread.
+ *
+ * The sync thread needs a larger-than-default stack size as it has several
+ * code paths that can result in deep recursive calls (e.g. dsl_scan_visitbp
+ * and bpobj_iterate_impl) and overflow the stack.
+ *
+ * As some of these functions are rewritten to not use recursion over time,
+ * this tunable can be used as a workaround for getting past recurring stack
+ * overflows of this thread.
+ */
+int zfs_txg_sync_thread_stksize = (32 << 10);
+
+/*
  * Prepare the txg subsystem.
  */
 void
@@ -206,13 +219,8 @@ txg_sync_start(dsl_pool_t *dp)
 	tx->tx_quiesce_thread = thread_create(NULL, 0, txg_quiesce_thread,
 	    dp, 0, &p0, TS_RUN, minclsyspri);
 
-	/*
-	 * The sync thread can need a larger-than-default stack size on
-	 * 32-bit x86.  This is due in part to nested pools and
-	 * scrub_visitbp() recursion.
-	 */
-	tx->tx_sync_thread = thread_create(NULL, 32<<10, txg_sync_thread,
-	    dp, 0, &p0, TS_RUN, minclsyspri);
+	tx->tx_sync_thread = thread_create(NULL, zfs_txg_sync_thread_stksize,
+	    txg_sync_thread, dp, 0, &p0, TS_RUN, minclsyspri);
 
 	mutex_exit(&tx->tx_sync_lock);
 }
