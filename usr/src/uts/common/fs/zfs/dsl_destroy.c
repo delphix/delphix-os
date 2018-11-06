@@ -907,6 +907,7 @@ dsl_async_clone_destroy(dsl_dataset_t *ds, dmu_tx_t *tx)
 		VERIFY0(zap_add(mos, DMU_POOL_DIRECTORY_OBJECT,
 		    DMU_POOL_DELETED_CLONES, sizeof (uint64_t), 1,
 		    &(zap_obj), tx));
+		spa->spa_livelists_to_delete = zap_obj;
 	} else {
 		ASSERT0(error);
 	}

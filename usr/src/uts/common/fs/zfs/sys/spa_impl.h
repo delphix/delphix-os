@@ -298,6 +298,7 @@ struct spa {
 
 	zthr_t		*spa_livelist_delete_zthr; /* deleting livelists */
 	zthr_t		*spa_livelist_condense_zthr; /* condensing livelists */
+	uint64_t	spa_livelists_to_delete; /* set of livelists to free */
 	livelist_condense_entry_t	spa_to_condense; /* next to condense */
 
 	space_map_t	*spa_syncing_log_sm;	/* current log space map */

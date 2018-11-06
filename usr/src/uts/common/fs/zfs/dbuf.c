@@ -2912,6 +2912,14 @@ dbuf_hold_impl(dnode_t *dn, uint8_t level, uint64_t blkid,
 {
 	dmu_buf_impl_t *db, *parent = NULL;
 
+	/* If the pool has been created, verify the tx_sync_lock is not held */
+	spa_t *spa = dn->dn_objset->os_spa;
+	dsl_pool_t *dp = spa->spa_dsl_pool;
+	if (dp != NULL) {
+		tx_state_t *tx = &dp->dp_tx;
+		ASSERT(!MUTEX_HELD(&tx->tx_sync_lock));
+	}
+
 	ASSERT(blkid != DMU_BONUS_BLKID);
 	ASSERT(RW_LOCK_HELD(&dn->dn_struct_rwlock));
 	ASSERT3U(dn->dn_nlevels, >, level);
