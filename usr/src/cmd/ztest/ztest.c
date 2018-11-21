@@ -3118,7 +3118,11 @@ grow_vdev(vdev_t *vd, void *arg)
 		return (vd);
 
 	fsize = lseek(fd, 0, SEEK_END);
-	(void) ftruncate(fd, *newsize);
+
+	if (ftruncate(fd, *newsize) == -1) {
+		(void) close(fd);
+		return (vd);
+	}
 
 	if (ztest_opts.zo_verbose >= 6) {
 		(void) printf("%s grew from %lu to %lu bytes\n",
@@ -3337,7 +3341,7 @@ ztest_vdev_LUN_growth(ztest_ds_t *zd, uint64_t id)
 	 * Make sure we were able to grow the vdev.
 	 */
 	if (new_ms_count <= old_ms_count) {
-		fatal(0, "LUN expansion failed: ms_count %llu < %llu\n",
+		fatal(0, "LUN expansion failed: ms_count %llu <= %llu\n",
 		    old_ms_count, new_ms_count);
 	}
 
@@ -3345,7 +3349,7 @@ ztest_vdev_LUN_growth(ztest_ds_t *zd, uint64_t id)
 	 * Make sure we were able to grow the pool.
 	 */
 	if (new_class_space <= old_class_space) {
-		fatal(0, "LUN expansion failed: class_space %llu < %llu\n",
+		fatal(0, "LUN expansion failed: class_space %llu <= %llu\n",
 		    old_class_space, new_class_space);
 	}
 
