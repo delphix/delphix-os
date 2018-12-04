@@ -65,6 +65,13 @@ typedef struct vdev_disk_ldi_cb {
  */
 boolean_t vdev_disk_bypass_devid = B_FALSE;
 
+/*
+ * Tunable parameter for debugging or performance analysis.  Setting
+ * zfs_nocacheflush will cause corruption on power loss if a volatile
+ * out-of-order write cache is enabled.
+ */
+boolean_t zfs_nocacheflush = B_FALSE;
+
 static void
 vdev_disk_alloc(vdev_t *vd)
 {
