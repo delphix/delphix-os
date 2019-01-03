@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_METASLAB_H
@@ -57,6 +57,7 @@ uint64_t metaslab_unflushed_changes_memused(metaslab_t *);
 
 void metaslab_load_wait(metaslab_t *);
 int metaslab_load(metaslab_t *);
+void metaslab_potentially_unload(metaslab_t *, uint64_t);
 void metaslab_unload(metaslab_t *);
 boolean_t metaslab_flush(metaslab_t *, dmu_tx_t *);
 

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Toomas Soome <tsoome@me.com>
@@ -2893,6 +2893,20 @@ vdev_sync_done(vdev_t *vd, uint64_t txg)
 	while ((msp = txg_list_remove(&vd->vdev_ms_list, TXG_CLEAN(txg)))
 	    != NULL) {
 		metaslab_sync_done(msp, txg);
+	}
+
+	/*
+	 * Because this function is only called on dirty vdevs, it's possible
+	 * we won't consider all metaslabs for unloading on every
+	 * txg. However, unless the system is largely idle it is likely that
+	 * we will dirty all vdevs within a few txgs.
+	 */
+	for (int i = 0; i < vd->vdev_ms_count; i++) {
+		msp = vd->vdev_ms[i];
+		mutex_enter(&msp->ms_lock);
+		if (msp->ms_sm != NULL)
+			metaslab_potentially_unload(msp, txg);
+		mutex_exit(&msp->ms_lock);
 	}
 
 	if (reassess)
