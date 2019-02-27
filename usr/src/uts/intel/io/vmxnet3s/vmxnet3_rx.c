@@ -13,7 +13,7 @@
  * and limitations under the License.
  */
 /*
- * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2019 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
@@ -190,12 +190,9 @@ vmxnet3_rx_populate(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq, uint16_t idx,
 	if (pool && (rxBuf = vmxnet3_get_rxpool_buf(dp)) == NULL) {
 		/* The maximum number of pool buffers have been allocated. */
 		atomic_inc_32(&dp->rx_pool_empty);
-		if (!dp->alloc_ok) {
-			atomic_inc_32(&dp->rx_alloc_failed);
-		}
 	}
 
-	if (rxBuf == NULL && (!pool || dp->alloc_ok)) {
+	if (rxBuf == NULL && (!pool || dp->rx_num_bufs < dp->rxNumBufsMax)) {
 		rxBuf = vmxnet3_alloc_rxbuf(dp, canSleep);
 	}
 
@@ -243,6 +240,8 @@ vmxnet3_rxqueue_init(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq)
 
 	dp->rxPool.nBufsLimit = vmxnet3_getprop(dp, "RxBufPoolLimit", 0,
 	    cmdRing->size * 10, cmdRing->size * 2);
+
+	dp->rxNumBufsMax = VMXNET3_RX_NUM_BUFS_MAX(dp);
 
 	do {
 		if ((err = vmxnet3_rx_populate(dp, rxq, cmdRing->next2fill,
@@ -382,6 +381,7 @@ vmxnet3_rx_intr(vmxnet3_softc_t *dp)
 			}
 
 			eop = compDesc->rcd.eop;
+			mblk->b_wptr = mblk->b_rptr + compDesc->rcd.len;
 
 			/*
 			 * Now we have a piece of the packet in the rxdIdx
@@ -391,7 +391,6 @@ vmxnet3_rx_intr(vmxnet3_softc_t *dp)
 			if (vmxnet3_rx_populate(dp, rxq, rxdIdx, B_FALSE,
 			    B_TRUE) == 0) {
 				/* Success, we can chain the mblk with the mp */
-				mblk->b_wptr = mblk->b_rptr + compDesc->rcd.len;
 				*mpTail = mblk;
 				mpTail = &mblk->b_cont;
 				ASSERT(*mpTail == NULL);
@@ -413,12 +412,35 @@ vmxnet3_rx_intr(vmxnet3_softc_t *dp)
 				}
 			} else {
 				/*
-				 * Keep the same buffer, we still need
-				 * to flip the gen bit
+				 * We weren't able to replace the buffer in the
+				 * ring descriptor. In this case, keep the same
+				 * buffer in the ring, but copy the data out of
+				 * it into a new mblk. This is more expensive
+				 * than using a pre-allocated buffer from the
+				 * pool, but is probably less expensive to
+				 * higher-level application workflows than
+				 * dropping a packet, which we would have to do
+				 * if we didn't allocate something here.
+				 */
+				mblk_t *tmp_mblk = copyb(mblk);
+				if (tmp_mblk == NULL) {
+					atomic_inc_32(&dp->rx_alloc_failed);
+					mpValid = B_FALSE;
+				} else {
+					atomic_inc_32(&dp->rx_copy_buf);
+					mblk = tmp_mblk;
+					*mpTail = mblk;
+					mpTail = &mblk->b_cont;
+				}
+
+				/*
+				 * We need to flip the gen bit so that this
+				 * slot can be re-used. This is done by
+				 * vmxnet3_rx_populate() in the case where
+				 * we've replaced the buffer in the descriptor.
 				 */
 				rxDesc = VMXNET3_GET_DESC(cmdRing, rxdIdx);
 				rxDesc->rxd.gen = cmdRing->gen;
-				mpValid = B_FALSE;
 			}
 
 			VMXNET3_INC_RING_IDX(compRing, compRing->next2comp);

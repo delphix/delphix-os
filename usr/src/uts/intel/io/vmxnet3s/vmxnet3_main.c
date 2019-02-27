@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2019 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
@@ -24,13 +24,6 @@
  * enhancements (see README.txt).
  */
 #define	BUILD_NUMBER_NUMERIC	3227872
-
-/*
- * If we run out of rxPool buffers, only allocate if the MTU is <= PAGESIZE
- * so that we don't have to incur the cost of allocating multiple contiguous
- * pages (very slow) in interrupt context.
- */
-#define	VMXNET3_ALLOC_OK(dp)	((dp)->cur_mtu <= PAGESIZE)
 
 /*
  * TODO:
@@ -55,6 +48,22 @@ static void vmxnet3_prop_info(void *, const char *, mac_prop_id_t,
     mac_prop_info_handle_t);
 
 int vmxnet3s_debug = 0;
+/*
+ * See the comment above the definition for VMXNET3_RX_NUM_BUFS_MAX() in
+ * vmxnet3.h for a detailed explanation of how this tunable is used when the
+ * MTU is <= PAGESIZE.
+ *
+ * The value 10 was chosen as a reasonable default in order to limit how much
+ * memory would be consumed by dma handles for a given interface. As an
+ * example, with a receive ring size of 4,096, and and a receive buffer
+ * pool size of 16,384, the total number of receive buffers (and thus dma
+ * handles) that can be allocated at any given time would be
+ * (10 * (4,096 + 16,384)), or 204,800. The handles are allocated using
+ * 2,592 byte buffers from the rootnex_dmahdl kmem cache, which means that
+ * using the values above, we could allocate at most roughly 500MB of kernel
+ * memory for dma handles.
+ */
+uint32_t vmxnet3s_rx_num_bufs_factor = 10;
 
 /* MAC callbacks */
 static mac_callbacks_t vmxnet3_mac_callbacks = {
@@ -845,7 +854,7 @@ vmxnet3_change_mtu(vmxnet3_softc_t *dp, uint32_t new_mtu)
 	}
 
 	dp->cur_mtu = new_mtu;
-	dp->alloc_ok = VMXNET3_ALLOC_OK(dp);
+	dp->rxNumBufsMax = VMXNET3_RX_NUM_BUFS_MAX(dp);
 
 	if ((ret = mac_maxsdu_update(dp->mac, new_mtu)) != 0)
 		VMXNET3_WARN(dp, "Unable to update mac with %d mtu: %d",
@@ -1202,6 +1211,7 @@ vmxnet3_kstat_update(kstat_t *ksp, int rw)
 	statp->tx_pullup_needed.value.ul = dp->tx_pullup_needed;
 	statp->tx_ring_full.value.ul = dp->tx_ring_full;
 	statp->rx_alloc_buf.value.ul = dp->rx_alloc_buf;
+	statp->rx_copy_buf.value.ul = dp->rx_copy_buf;
 	statp->rx_pool_empty.value.ul = dp->rx_pool_empty;
 	statp->rx_num_bufs.value.ul = dp->rx_num_bufs;
 
@@ -1230,6 +1240,8 @@ vmxnet3_kstat_init(vmxnet3_softc_t *dp)
 	kstat_named_init(&statp->tx_ring_full, "tx_ring_full",
 	    KSTAT_DATA_ULONG);
 	kstat_named_init(&statp->rx_alloc_buf, "rx_alloc_buf",
+	    KSTAT_DATA_ULONG);
+	kstat_named_init(&statp->rx_copy_buf, "rx_copy_buf",
 	    KSTAT_DATA_ULONG);
 	kstat_named_init(&statp->rx_pool_empty, "rx_pool_empty",
 	    KSTAT_DATA_ULONG);
@@ -1271,7 +1283,6 @@ vmxnet3_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	dp->instance = ddi_get_instance(dip);
 	dp->cur_mtu = ETHERMTU;
 	dp->allow_jumbo = B_TRUE;
-	dp->alloc_ok = VMXNET3_ALLOC_OK(dp);
 
 	VMXNET3_DEBUG(dp, 1, "attach()\n");
 

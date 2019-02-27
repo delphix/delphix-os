@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2019 by Delphix. All rights reserved.
  */
 
 #ifndef	_VMXNET3_H_
@@ -150,7 +150,7 @@ typedef struct vmxnet3_softc_t {
 	vmxnet3_rxpool_t rxPool;
 	uint32_t	rxMode;
 	kmutex_t	rxmLock;
-	boolean_t	alloc_ok;
+	uint32_t	rxNumBufsMax;
 
 	vmxnet3_dmabuf_t mfTable;
 	kstat_t		*devKstats;
@@ -163,6 +163,7 @@ typedef struct vmxnet3_softc_t {
 	uint32_t	rx_num_bufs;
 	uint32_t	rx_alloc_buf;
 	uint32_t	rx_alloc_failed;
+	uint32_t	rx_copy_buf;
 	uint32_t	rx_pool_empty;
 } vmxnet3_softc_t;
 
@@ -171,6 +172,7 @@ typedef struct vmxnet3_kstats_t {
 	kstat_named_t	tx_pullup_needed;
 	kstat_named_t	tx_ring_full;
 	kstat_named_t	rx_alloc_buf;
+	kstat_named_t	rx_copy_buf;
 	kstat_named_t	rx_pool_empty;
 	kstat_named_t	rx_num_bufs;
 } vmxnet3_kstats_t;
@@ -199,6 +201,7 @@ void	vmxnet3_log(int level, vmxnet3_softc_t *dp, char *fmt, ...);
 extern ddi_device_acc_attr_t vmxnet3_dev_attr;
 
 extern int vmxnet3s_debug;
+extern uint32_t vmxnet3s_rx_num_bufs_factor;
 
 #define	VMXNET3_MODNAME	"vmxnet3s"
 #define	VMXNET3_DRIVER_VERSION_STRING	"1.1.0.0"
@@ -216,6 +219,31 @@ extern int vmxnet3s_debug;
 #else
 #define	VMXNET3_DEBUG(Device, Level, ...)
 #endif
+
+/*
+ * The maximum number of receive buffers that can be allocated for a given
+ * device. The maximum depends on whether or not the MTU is greater than
+ * the size of a page.
+ *
+ * When the MTU is greater than PAGESIZE, allocating memory for dma is
+ * expensive (because vmxnet3s doesn't implement scatter/gather and requires
+ * its dma memory pages to be physically contiguous). For that case, the
+ * maximum is equal to the number of buffers in the receive ring plus the
+ * number of pre-allocated buffers in the receive buffer pool. This effectively
+ * means that after the device is started, receive buffers are never allocated
+ * again.
+ *
+ * For the case where the MTU is <= PAGESIZE, allocation of dma pages is
+ * much cheaper, so we multiply that number by vmxnet3s_rx_num_bufs_factor.
+ *
+ * See vmxnet3_rx_intr() and its call to vmxnet3_rx_populate() to understand
+ * what happens when we receive a packet and have already allocated the
+ * maximum number of receive buffers.
+ */
+#define	VMXNET3_RX_NUM_BUFS_MAX(dp) ((dp->cur_mtu > PAGESIZE) ? \
+	(dp->rxQueue.cmdRing.size + dp->rxPool.nBufsLimit) :		\
+	((dp->rxQueue.cmdRing.size + dp->rxPool.nBufsLimit) * \
+	vmxnet3s_rx_num_bufs_factor))
 
 #define	MACADDR_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 #define	MACADDR_FMT_ARGS(mac) mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
