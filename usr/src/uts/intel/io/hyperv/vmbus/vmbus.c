@@ -38,7 +38,7 @@
  */
 
 /*
- * Copyright (c) 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2017, 2019 by Delphix. All rights reserved.
  */
 
 /*
@@ -989,6 +989,7 @@ vmbus_delete_child(struct vmbus_channel *chan)
 			dev_err(chan->ch_dev, CE_WARN, "Unable to set "
 			    "\"%s(%s)\" property", VMBUS_STATE,
 			    VMBUS_STATE_OFFLINE);
+			mutex_exit(&vmbus_lock);
 			return (DDI_FAILURE);
 		}
 
@@ -996,6 +997,7 @@ vmbus_delete_child(struct vmbus_channel *chan)
 		    DDI_SUCCESS) {
 			dev_err(chan->ch_dev, CE_WARN, "Unable to offline "
 			    "device");
+			mutex_exit(&vmbus_lock);
 			return (DDI_FAILURE);
 		}
 		(void) ndi_devi_free(chan->ch_dev);
