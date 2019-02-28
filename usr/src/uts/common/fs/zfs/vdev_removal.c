@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -103,6 +103,8 @@ int zfs_remove_max_copy_bytes = 64 * 1024 * 1024;
  * mpt processes an I/O larger than 1MB, it needs to do an allocation of
  * 2 physically contiguous pages; if this allocation fails, mpt will drop
  * the I/O and hang the device.)
+ *
+ * See also the accessor function spa_remove_max_segment().
  */
 int zfs_remove_max_segment = 1024 * 1024;
 
@@ -911,8 +913,10 @@ spa_vdev_copy_segment(vdev_t *vd, range_tree_t *segs,
 	vdev_indirect_mapping_entry_t *entry;
 	dva_t dst = { 0 };
 	uint64_t start = range_tree_min(segs);
+	ASSERT0(P2PHASE(start, 1 << spa->spa_min_ashift));
 
 	ASSERT3U(maxalloc, <=, SPA_MAXBLOCKSIZE);
+	ASSERT0(P2PHASE(maxalloc, 1 << spa->spa_min_ashift));
 
 	uint64_t size = range_tree_span(segs);
 	if (range_tree_span(segs) > maxalloc) {
@@ -943,6 +947,7 @@ spa_vdev_copy_segment(vdev_t *vd, range_tree_t *segs,
 		}
 	}
 	ASSERT3U(size, <=, maxalloc);
+	ASSERT0(P2PHASE(size, 1 << spa->spa_min_ashift));
 
 	/*
 	 * We use allocator 0 for this I/O because we don't expect device remap
@@ -983,11 +988,11 @@ spa_vdev_copy_segment(vdev_t *vd, range_tree_t *segs,
 
 	/*
 	 * We can't have any padding of the allocated size, otherwise we will
-	 * misunderstand what's allocated, and the size of the mapping.
-	 * The caller ensures this will be true by passing in a size that is
-	 * aligned to the worst (highest) ashift in the pool.
+	 * misunderstand what's allocated, and the size of the mapping. We
+	 * prevent padding by ensuring that all devices in the pool have the
+	 * same ashift, and the allocation size is a multiple of the ashift.
 	 */
-	ASSERT3U(DVA_GET_ASIZE(&dst), ==, size);
+	VERIFY3U(DVA_GET_ASIZE(&dst), ==, size);
 
 	entry = kmem_zalloc(sizeof (vdev_indirect_mapping_entry_t), KM_SLEEP);
 	DVA_MAPPING_SET_SRC_OFFSET(&entry->vime_mapping, start);
@@ -1322,6 +1327,20 @@ spa_vdev_copy_impl(vdev_t *vd, spa_vdev_removal_t *svr, vdev_copy_arg_t *vca,
 }
 
 /*
+ * The size of each removal mapping is limited by the tunable
+ * zfs_remove_max_segment, but we must adjust this to be a multiple of the
+ * pool's ashift, so that we don't try to split individual sectors regardless
+ * of the tunable value.  (Note that device removal requires that all devices
+ * have the same ashift, so there's no difference between spa_min_ashift and
+ * spa_max_ashift.) The raw tunable should not be used elsewhere.
+ */
+uint64_t
+spa_remove_max_segment(spa_t *spa)
+{
+	return (P2ROUNDUP(zfs_remove_max_segment, 1 << spa->spa_max_ashift));
+}
+
+/*
  * The removal thread operates in open context.  It iterates over all
  * allocated space in the vdev, by loading each metaslab's spacemap.
  * For each contiguous segment of allocated space (capping the segment
@@ -1343,7 +1362,7 @@ spa_vdev_remove_thread(void *arg)
 	spa_t *spa = arg;
 	spa_vdev_removal_t *svr = spa->spa_vdev_removal;
 	vdev_copy_arg_t vca;
-	uint64_t max_alloc = zfs_remove_max_segment;
+	uint64_t max_alloc = spa_remove_max_segment(spa);
 	uint64_t last_txg = 0;
 
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
@@ -1471,7 +1490,7 @@ spa_vdev_remove_thread(void *arg)
 			vd = vdev_lookup_top(spa, svr->svr_vdev_id);
 
 			if (txg != last_txg)
-				max_alloc = zfs_remove_max_segment;
+				max_alloc = spa_remove_max_segment(spa);
 			last_txg = txg;
 
 			spa_vdev_copy_impl(vd, svr, &vca, &max_alloc, tx);
