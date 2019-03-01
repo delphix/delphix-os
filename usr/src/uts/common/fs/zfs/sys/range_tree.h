@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright (c) 2013, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2019 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_RANGE_TREE_H
@@ -80,6 +80,8 @@ void range_tree_fini(void);
 range_tree_t *range_tree_create(range_tree_ops_t *ops, void *arg);
 void range_tree_destroy(range_tree_t *rt);
 boolean_t range_tree_contains(range_tree_t *rt, uint64_t start, uint64_t size);
+boolean_t range_tree_find_in(range_tree_t *rt, uint64_t start, uint64_t size,
+    uint64_t *ostart, uint64_t *osize);
 void range_tree_verify_not_present(range_tree_t *rt,
     uint64_t start, uint64_t size);
 uint64_t range_tree_space(range_tree_t *rt);

@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_METASLAB_IMPL_H
@@ -451,6 +451,15 @@ struct metaslab {
 	 * segment sizes.
 	 */
 	avl_tree_t	ms_allocatable_by_size;
+	/*
+	 * This needs to be a pointer, rather than embedded, because of
+	 * metaslab_verify_unflushed_changes(). In that function, we create a
+	 * copy of the unflushed_frees tree to verify its contents. When we do
+	 * that, we need the old pointer to this tree (which is stored in the
+	 * range tree) to stay up to date. We can't do that if the avl_tree_t
+	 * is embedded in the metaslab_t.
+	 */
+	avl_tree_t	*ms_unflushed_frees_by_size;
 	uint64_t	ms_lbas[MAX_LBAS];
 
 	metaslab_group_t *ms_group;	/* metaslab group		*/
