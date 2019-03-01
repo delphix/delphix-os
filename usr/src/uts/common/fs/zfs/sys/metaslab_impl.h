@@ -36,6 +36,7 @@
 #include <sys/vdev.h>
 #include <sys/txg.h>
 #include <sys/avl.h>
+#include <sys/multilist.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -194,6 +195,12 @@ struct metaslab_class {
 	uint64_t		mc_space;	/* total space (alloc + free) */
 	uint64_t		mc_dspace;	/* total deflated space */
 	uint64_t		mc_histogram[RANGE_TREE_HISTOGRAM_SIZE];
+
+	/*
+	 * List of all loaded metaslabs in the class, sorted in order of most
+	 * recent use.
+	 */
+	multilist_t		*mc_metaslab_txg_list;
 };
 
 /*
@@ -377,6 +384,7 @@ struct metaslab {
 
 	range_tree_t	*ms_allocating[TXG_SIZE];
 	uint64_t	ms_allocated_this_txg;
+	uint64_t	ms_allocating_total;
 	range_tree_t	*ms_allocatable;
 
 	/*
@@ -451,21 +459,17 @@ struct metaslab {
 	 * segment sizes.
 	 */
 	avl_tree_t	ms_allocatable_by_size;
-	/*
-	 * This needs to be a pointer, rather than embedded, because of
-	 * metaslab_verify_unflushed_changes(). In that function, we create a
-	 * copy of the unflushed_frees tree to verify its contents. When we do
-	 * that, we need the old pointer to this tree (which is stored in the
-	 * range tree) to stay up to date. We can't do that if the avl_tree_t
-	 * is embedded in the metaslab_t.
-	 */
-	avl_tree_t	*ms_unflushed_frees_by_size;
+	avl_tree_t	ms_unflushed_frees_by_size;
 	uint64_t	ms_lbas[MAX_LBAS];
 
 	metaslab_group_t *ms_group;	/* metaslab group		*/
 	avl_node_t	ms_group_node;	/* node in metaslab group tree	*/
 	txg_node_t	ms_txg_node;	/* per-txg dirty metaslab links	*/
 	avl_node_t	ms_spa_txg_node; /* node in spa_metaslabs_by_txg */
+	/*
+	 * Node in metaslab class's selected txg list
+	 */
+	multilist_node_t	ms_class_txg_node;
 
 	/*
 	 * Allocs and frees that are committed to the vdev log spacemap but

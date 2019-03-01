@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2016, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2016, 2019 by Delphix. All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -416,7 +416,7 @@ vdev_initialize_ms_mark(metaslab_t *msp)
 }
 
 static void
-vdev_initialize_ms_unmark(metaslab_t *msp)
+vdev_initialize_ms_unmark(metaslab_t *msp, boolean_t unload)
 {
 	ASSERT(!MUTEX_HELD(&msp->ms_lock));
 	metaslab_group_t *mg = msp->ms_group;
@@ -425,6 +425,8 @@ vdev_initialize_ms_unmark(metaslab_t *msp)
 	if (--msp->ms_initializing == 0) {
 		mg->mg_ms_initializing--;
 		cv_broadcast(&mg->mg_ms_initialize_cv);
+		if (unload)
+			metaslab_unload(msp);
 	}
 	mutex_exit(&msp->ms_lock);
 	mutex_exit(&mg->mg_ms_initialize_lock);
@@ -595,6 +597,7 @@ vdev_initialize_thread(void *arg)
 	for (uint64_t i = 0; !vd->vdev_detached &&
 	    i < vd->vdev_top->vdev_ms_count; i++) {
 		metaslab_t *msp = vd->vdev_top->vdev_ms[i];
+		boolean_t unload_when_done = B_FALSE;
 
 		/*
 		 * If we've expanded the top-level vdev or it's our
@@ -607,6 +610,8 @@ vdev_initialize_thread(void *arg)
 
 		vdev_initialize_ms_mark(msp);
 		mutex_enter(&msp->ms_lock);
+		if (!msp->ms_loaded && !msp->ms_loading)
+			unload_when_done = B_TRUE;
 		VERIFY0(metaslab_load(msp));
 
 		range_tree_walk(msp->ms_allocatable, vdev_initialize_range_add,
@@ -615,7 +620,7 @@ vdev_initialize_thread(void *arg)
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 		error = vdev_initialize_ranges(vd, deadbeef);
-		vdev_initialize_ms_unmark(msp);
+		vdev_initialize_ms_unmark(msp, unload_when_done);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 		range_tree_vacate(vd->vdev_initialize_tree, NULL, NULL);

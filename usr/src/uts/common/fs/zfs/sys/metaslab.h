@@ -57,7 +57,6 @@ uint64_t metaslab_unflushed_changes_memused(metaslab_t *);
 
 void metaslab_load_wait(metaslab_t *);
 int metaslab_load(metaslab_t *);
-void metaslab_potentially_unload(metaslab_t *, uint64_t);
 void metaslab_unload(metaslab_t *);
 boolean_t metaslab_flush(metaslab_t *, dmu_tx_t *);
 
@@ -103,7 +102,7 @@ uint64_t metaslab_class_expandable_space(metaslab_class_t *);
 boolean_t metaslab_class_throttle_reserve(metaslab_class_t *, int, int,
     zio_t *, int);
 void metaslab_class_throttle_unreserve(metaslab_class_t *, int, int, zio_t *);
-
+void metaslab_class_evict_old(metaslab_class_t *, uint64_t);
 void metaslab_class_space_update(metaslab_class_t *, int64_t, int64_t,
     int64_t, int64_t);
 uint64_t metaslab_class_get_alloc(metaslab_class_t *);
