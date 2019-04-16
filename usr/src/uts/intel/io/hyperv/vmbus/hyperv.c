@@ -38,7 +38,7 @@
  */
 
 /*
- * Copyright (c) 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2017, 2019 by Delphix. All rights reserved.
  */
 
 /*
@@ -267,8 +267,13 @@ hyperv_identify(void)
 	hyperv_features3 = regs[3]; /* EDX */
 
 	do_cpuid(CPUID_LEAF_HV_IDENTITY, regs);
-	printf("Hyper-V Version: %d.%d.%d [SP%d]\n",
-	    regs[1] >> 16, regs[1] & 0xffff, regs[0], regs[2]);
+	/*
+	 * Hyper-V version numbering is based on Linux source code, in
+	 * function ms_hyperv_init_platform().
+	 */
+	printf("Hyper-V Host Build: %d-%d.%d-%d-%d.%d\n",
+	    regs[0], regs[1] >> 16, regs[1] & 0xffff, regs[2],
+	    regs[3] >> 24, regs[3] & 0xffffff);
 
 	printf("  Features=0x%b\n", hyperv_features,
 	    "\020"
