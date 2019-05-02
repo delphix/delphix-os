@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2018, 2019 by Delphix. All rights reserved.
  */
 
 #include <sys/dmu_objset.h>
@@ -289,6 +289,14 @@ uint64_t zfs_min_metaslabs_to_flush = 1;
  * [see spa_estimate_incoming_log_blocks].
  */
 uint64_t zfs_max_log_walking = 5;
+
+/*
+ * This tunable exists solely for testing purposes. It ensures that the log
+ * spacemaps are not flushed and destroyed during export in order for the
+ * relevant log spacemap import code paths to be tested (effectively simulating
+ * a crash).
+ */
+int zfs_keep_log_spacemaps_at_export = 0;
 
 static uint64_t
 spa_estimate_incoming_log_blocks(spa_t *spa)
@@ -1115,6 +1123,7 @@ spa_ld_log_sm_data(spa_t *spa)
 	 * [1] recalculate their actual allocated space
 	 * [2] recalculate their weights
 	 * [3] sum up the memory usage of their unflushed range trees
+	 * [4] optionally load them, if debug_load is set
 	 */
 	for (metaslab_t *m = avl_first(&spa->spa_metaslabs_by_flushed);
 	    m; m = AVL_NEXT(&spa->spa_metaslabs_by_flushed, m)) {
@@ -1128,6 +1137,10 @@ spa_ld_log_sm_data(spa_t *spa)
 
 		spa->spa_unflushed_stats.sus_memused +=
 		    metaslab_unflushed_changes_memused(m);
+
+		if (metaslab_debug_load && m->ms_sm != NULL) {
+			VERIFY0(metaslab_load(m));
+		}
 		mutex_exit(&m->ms_lock);
 	}
 

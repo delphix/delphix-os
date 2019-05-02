@@ -1367,6 +1367,9 @@ spa_should_flush_logs_on_unload(spa_t *spa)
 	if (spa_state(spa) != POOL_STATE_EXPORTED)
 		return (B_FALSE);
 
+	if (zfs_keep_log_spacemaps_at_export)
+		return (B_FALSE);
+
 #ifdef	DEBUG
 	/*
 	 * At this point we always want to flush as many metaslabs

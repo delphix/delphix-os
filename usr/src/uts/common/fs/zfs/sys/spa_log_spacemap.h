@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2018, 2019 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_SPA_LOG_SPACEMAP_H
@@ -73,5 +73,7 @@ void spa_log_summary_decrement_mscount(spa_t *, uint64_t);
 void spa_log_summary_decrement_blkcount(spa_t *, uint64_t);
 
 boolean_t spa_flush_all_logs_requested(spa_t *);
+
+extern int zfs_keep_log_spacemaps_at_export;
 
 #endif /* _SYS_SPA_LOG_SPACEMAP_H */

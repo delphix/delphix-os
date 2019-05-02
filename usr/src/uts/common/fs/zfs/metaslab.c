@@ -2473,18 +2473,6 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 		vdev_space_update(vd, metaslab_allocated_space(ms), 0, 0);
 	}
 
-	/*
-	 * If metaslab_debug_load is set and we're initializing a metaslab
-	 * that has an allocated space map object then load its space map
-	 * so that can verify frees.
-	 */
-	if (metaslab_debug_load && ms->ms_sm != NULL) {
-		mutex_enter(&ms->ms_lock);
-		VERIFY0(metaslab_load(ms));
-		metaslab_set_selected_txg(ms, txg);
-		mutex_exit(&ms->ms_lock);
-	}
-
 	if (txg != 0) {
 		vdev_dirty(vd, 0, NULL, txg);
 		vdev_dirty(vd, VDD_METASLAB, ms, txg);

@@ -124,6 +124,8 @@ void metaslab_group_alloc_decrement(spa_t *, uint64_t, void *, int, int,
 void metaslab_group_alloc_verify(spa_t *, const blkptr_t *, void *, int);
 void metaslab_recalculate_weight_and_sort(metaslab_t *);
 
+extern int metaslab_debug_load;
+
 #ifdef	__cplusplus
 }
 #endif
