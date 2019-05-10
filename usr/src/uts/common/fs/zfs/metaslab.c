@@ -265,6 +265,12 @@ uint64_t metaslab_trace_max_entries = 5000;
  */
 int zfs_metaslab_mem_limit = 75;
 
+/*
+ * Time (in seconds) to respect ms_max_size when the metaslab is not loaded.
+ * To avoid 64-bit overflow, don't set above UINT32_MAX.
+ */
+uint64_t max_size_cache_sec = 3600; /* 1 hour */
+
 static uint64_t metaslab_weight(metaslab_t *);
 static void metaslab_set_fragmentation(metaslab_t *);
 static void metaslab_free_impl(vdev_t *, uint64_t, uint64_t, boolean_t);
@@ -2286,6 +2292,7 @@ metaslab_load(metaslab_t *msp)
 			ASSERT3U(weight, <=, msp->ms_weight);
 		ASSERT3U(max_size, <=, msp->ms_max_size);
 		hrtime_t load_end = gethrtime();
+		msp->ms_load_time = load_end;
 		if (zfs_flags & ZFS_DEBUG_LOG_SPACEMAP) {
 			zfs_dbgmsg("loading: txg %llu, spa %s, vdev_id %llu, "
 			    "ms_id %llu, smp_length %llu, "
@@ -2328,6 +2335,7 @@ metaslab_unload(metaslab_t *msp)
 
 	range_tree_vacate(msp->ms_allocatable, NULL, NULL);
 	msp->ms_loaded = B_FALSE;
+	msp->ms_unload_time = gethrtime();
 
 	msp->ms_activation_weight = 0;
 	msp->ms_weight &= ~METASLAB_ACTIVE_MASK;
@@ -2925,7 +2933,9 @@ metaslab_should_allocate(metaslab_t *msp, uint64_t asize, boolean_t try_hard)
 	 * the fast check. If it's not, the ms_max_size is a lower bound (once
 	 * set), and we should use the fast check unless we're in try_hard.
 	 */
-	if (msp->ms_loaded || (msp->ms_max_size != 0 && !try_hard))
+	if (msp->ms_loaded ||
+	    (msp->ms_max_size != 0 && !try_hard &&
+	    gethrtime() < msp->ms_unload_time + SEC2NSEC(max_size_cache_sec)))
 		return (msp->ms_max_size >= asize);
 
 	boolean_t should_allocate;

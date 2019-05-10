@@ -439,6 +439,12 @@ struct metaslab {
 	 * stay cached.
 	 */
 	uint64_t	ms_selected_txg;
+	/*
+	 * ms_load/unload_time can be used for performance monitoring
+	 * (e.g. by dtrace or mdb).
+	 */
+	hrtime_t	ms_load_time;	/* time last loaded */
+	hrtime_t	ms_unload_time;	/* time last unloaded */
 
 	uint64_t	ms_alloc_txg;	/* last successful alloc (debug only) */
 	uint64_t	ms_max_size;	/* maximum allocatable size	*/
