@@ -72,6 +72,16 @@ static vdev_ops_t *vdev_ops_table[] = {
 /* maximum scrub/resilver I/O queue per leaf vdev */
 int zfs_scrub_limit = 10;
 
+/*
+ * If there are no dedicated log devices (slogs), each vdev will "donate" a
+ * metaslab to be used by the ZIL.  These are called "embedded slog
+ * metaslabs", and are referenced by vdev_log_mg.  See vdev_metaslab_init().
+ *
+ * zfs_max_embedded_slogs limits the number of vdevs that will have
+ * log metaslabs.  If set to 0, there will be no embedded log metaslabs.
+ */
+int zfs_max_embedded_slogs = 0;
+
 /* default number of metaslabs per top-level vdev */
 int zfs_vdev_default_ms_count = 200;
 
@@ -190,6 +200,21 @@ vdev_getops(const char *type)
 			break;
 
 	return (ops);
+}
+
+/*
+ * Given a vdev and a metaslab class, find which metaslab group we're
+ * interested in. All vdevs may belong to two different metaslab classes.
+ * Dedicated slog devices use only the primary metaslab group, rather than a
+ * separate log group. For embedded slogs, the vdev_log_mg will be non-NULL.
+ */
+metaslab_group_t *
+vdev_get_mg(vdev_t *vd, metaslab_class_t *mc)
+{
+	if (mc == spa_log_class(vd->vdev_spa) && vd->vdev_log_mg != NULL)
+		return (vd->vdev_log_mg);
+	else
+		return (vd->vdev_mg);
 }
 
 /* ARGSUSED */
@@ -552,8 +577,10 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 	 */
 	islog = 0;
 	(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_LOG, &islog);
-	if (islog && spa_version(spa) < SPA_VERSION_SLOGS)
-		return (SET_ERROR(ENOTSUP));
+	if (islog) {
+		if (spa_version(spa) < SPA_VERSION_SLOGS)
+			return (SET_ERROR(ENOTSUP));
+	}
 
 	if (ops == &vdev_hole_ops && spa_version(spa) < SPA_VERSION_HOLES)
 		return (SET_ERROR(ENOTSUP));
@@ -596,6 +623,9 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 
 	vd = vdev_alloc_common(spa, id, guid, ops);
 	vic = &vd->vdev_indirect_config;
+
+	if (islog)
+		spa->spa_log_devices++;
 
 	vd->vdev_islog = islog;
 	vd->vdev_nparity = nparity;
@@ -670,9 +700,11 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 		    alloctype == VDEV_ALLOC_ADD ||
 		    alloctype == VDEV_ALLOC_SPLIT ||
 		    alloctype == VDEV_ALLOC_ROOTPOOL);
+
 		vd->vdev_mg = metaslab_group_create(islog ?
 		    spa_log_class(spa) : spa_normal_class(spa), vd,
 		    spa->spa_alloc_count);
+		vd->vdev_log_mg = NULL;
 	}
 
 	if (vd->vdev_ops->vdev_op_leaf &&
@@ -781,6 +813,11 @@ vdev_free(vdev_t *vd)
 		metaslab_group_destroy(vd->vdev_mg);
 		vd->vdev_mg = NULL;
 	}
+	if (vd->vdev_log_mg != NULL) {
+		ASSERT0(vd->vdev_ms_count);
+		metaslab_group_destroy(vd->vdev_log_mg);
+		vd->vdev_log_mg = NULL;
+	}
 
 	ASSERT0(vd->vdev_stat.vs_space);
 	ASSERT0(vd->vdev_stat.vs_dspace);
@@ -812,6 +849,10 @@ vdev_free(vdev_t *vd)
 		spa_spare_remove(vd);
 	if (vd->vdev_isl2cache)
 		spa_l2cache_remove(vd);
+	if (vd->vdev_islog) {
+		ASSERT(spa->spa_log_devices > 0);
+		spa->spa_log_devices--;
+	}
 
 	txg_list_destroy(&vd->vdev_ms_list);
 	txg_list_destroy(&vd->vdev_dtl_list);
@@ -881,14 +922,20 @@ vdev_top_transfer(vdev_t *svd, vdev_t *tvd)
 
 	if (tvd->vdev_mg)
 		ASSERT3P(tvd->vdev_mg, ==, svd->vdev_mg);
+	if (tvd->vdev_log_mg)
+		ASSERT3P(tvd->vdev_log_mg, ==, svd->vdev_log_mg);
 	tvd->vdev_mg = svd->vdev_mg;
+	tvd->vdev_log_mg = svd->vdev_log_mg;
 	tvd->vdev_ms = svd->vdev_ms;
 
 	svd->vdev_mg = NULL;
+	svd->vdev_log_mg = NULL;
 	svd->vdev_ms = NULL;
 
 	if (tvd->vdev_mg != NULL)
 		tvd->vdev_mg->mg_vd = tvd;
+	if (tvd->vdev_log_mg != NULL)
+		tvd->vdev_log_mg->mg_vd = tvd;
 
 	tvd->vdev_checkpoint_sm = svd->vdev_checkpoint_sm;
 	svd->vdev_checkpoint_sm = NULL;
@@ -1042,11 +1089,45 @@ vdev_remove_parent(vdev_t *cvd)
 	vdev_free(mvd);
 }
 
+static int
+vdev_metaslab_init_one(vdev_t *vd, metaslab_group_t *mg, uint64_t m,
+    uint64_t txg)
+{
+	spa_t *spa = vd->vdev_spa;
+	objset_t *mos = spa->spa_meta_objset;
+	uint64_t object = 0;
+	int error;
+
+	/*
+	 * vdev_ms_array may be 0 if we are creating the "fake"
+	 * metaslabs for an indirect vdev for zdb's leak detection.
+	 * See zdb_leak_init().
+	 */
+	if (txg == 0 && vd->vdev_ms_array != 0) {
+		error = dmu_read(mos, vd->vdev_ms_array,
+		    m * sizeof (uint64_t), sizeof (uint64_t), &object,
+		    DMU_READ_PREFETCH);
+		if (error != 0) {
+			vdev_dbgmsg(vd, "unable to read the metaslab "
+			    "array [error=%d]", error);
+			return (error);
+		}
+	}
+
+	error = metaslab_init(mg, m, object, txg, &(vd->vdev_ms[m]));
+	if (error != 0) {
+		vdev_dbgmsg(vd, "metaslab_init failed [error=%d]",
+		    error);
+		return (error);
+	}
+
+	return (0);
+}
+
 int
 vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 {
 	spa_t *spa = vd->vdev_spa;
-	objset_t *mos = spa->spa_meta_objset;
 	uint64_t m;
 	uint64_t oldc = vd->vdev_ms_count;
 	uint64_t newc = vd->vdev_asize >> vd->vdev_ms_shift;
@@ -1067,48 +1148,75 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 
 	mspp = kmem_zalloc(newc * sizeof (*mspp), KM_SLEEP);
 
-	if (oldc != 0) {
+	if (oldc == 0) {
+		/*
+		 * The first time we initialize any metaslabs for this vdev,
+		 * allocate an embedded log metaslab group unless the pool has
+		 * a dedicated slog or the embedded slog quota is filled.
+		 */
+		ASSERT3P(vd->vdev_log_mg, ==, NULL);
+		if (!spa_has_log_device(spa) &&
+		    (spa_log_class(spa)->mc_groups < zfs_max_embedded_slogs)) {
+			ASSERT(!vd->vdev_islog);
+			vd->vdev_log_mg =
+			    metaslab_group_create(spa_log_class(spa), vd, 1);
+		}
+	} else {
 		bcopy(vd->vdev_ms, mspp, oldc * sizeof (*mspp));
 		kmem_free(vd->vdev_ms, oldc * sizeof (*mspp));
 	}
 
 	vd->vdev_ms = mspp;
 	vd->vdev_ms_count = newc;
+
 	for (m = oldc; m < newc; m++) {
-		uint64_t object = 0;
-
-		/*
-		 * vdev_ms_array may be 0 if we are creating the "fake"
-		 * metaslabs for an indirect vdev for zdb's leak detection.
-		 * See zdb_leak_init().
-		 *
-		 * Another issue to note is that we only read from the DMU
-		 * if the txg is 0 because we want to differentiate between
-		 * being called from vdev_load() (where txg is 0) and
-		 * vdev_expand() (where txg is not 0). vdev_expand() holds
-		 * the spa_config_lock as a writer and if it were to go to
-		 * the DMU it would try to grab the same lock as a reader
-		 * and deadlock.
-		 */
-		if (txg == 0 && vd->vdev_ms_array != 0) {
-			error = dmu_read(mos, vd->vdev_ms_array,
-			    m * sizeof (uint64_t), sizeof (uint64_t), &object,
-			    DMU_READ_PREFETCH);
-			if (error != 0) {
-				vdev_dbgmsg(vd, "unable to read the metaslab "
-				    "array [error=%d]", error);
-				kmem_free(vd->vdev_ms, newc * sizeof (*mspp));
-				vd->vdev_ms = NULL;
-				vd->vdev_ms_count = 0;
-				return (error);
-			}
-		}
-
-		error = metaslab_init(vd->vdev_mg, m, object, txg,
-		    &(vd->vdev_ms[m]));
+		error = vdev_metaslab_init_one(vd, vd->vdev_mg, m, txg);
 		if (error != 0) {
-			vdev_dbgmsg(vd, "metaslab_init failed [error=%d]",
-			    error);
+			kmem_free(vd->vdev_ms, newc * sizeof (*mspp));
+			vd->vdev_ms = NULL;
+			vd->vdev_ms_count = 0;
+			return (error);
+		}
+	}
+
+	/*
+	 * Find the emptiest metaslab on the vdev and mark it for use for
+	 * embedded slog by moving it from the regular to the log metaslab
+	 * group. We might be expanding the vdev, so only allocate it if one
+	 * doesn't already exist.
+	 */
+	if (vd->vdev_log_mg != NULL &&
+	    avl_is_empty(&vd->vdev_log_mg->mg_metaslab_tree)) {
+		uint64_t slog_id = 0;
+		uint64_t smallest = UINT64_MAX;
+
+		for (m = oldc; m < newc; m++) {
+			uint64_t alloc =
+			    space_map_allocated(vd->vdev_ms[m]->ms_sm);
+			if (alloc < smallest) {
+				slog_id = m;
+				smallest = alloc;
+			}
+			/*
+			 * Don't bother checking the rest if we find a totally
+			 * empty metaslab.
+			 */
+			if (smallest == 0)
+				break;
+		}
+		/*
+		 * The metaslab was marked as dirty at the end of
+		 * metaslab_init(). Remove it from the dirty list so that we
+		 * can uninitialize and reinitialize it to the new class.
+		 */
+		if (txg != 0) {
+			(void) txg_list_remove_this(&vd->vdev_ms_list,
+			    vd->vdev_ms[slog_id], txg);
+		}
+		metaslab_fini(vd->vdev_ms[slog_id]);
+		error = vdev_metaslab_init_one(vd, vd->vdev_log_mg, slog_id,
+		    txg);
+		if (error != 0) {
 			kmem_free(vd->vdev_ms, newc * sizeof (*mspp));
 			vd->vdev_ms = NULL;
 			vd->vdev_ms_count = 0;
@@ -1124,8 +1232,11 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 	 * the metaslabs since we want to ensure that no new
 	 * allocations are performed on this device.
 	 */
-	if (oldc == 0 && !vd->vdev_removing)
+	if (oldc == 0 && !vd->vdev_removing) {
 		metaslab_group_activate(vd->vdev_mg);
+		if (vd->vdev_log_mg != NULL)
+			metaslab_group_activate(vd->vdev_log_mg);
+	}
 
 	if (txg == 0)
 		spa_config_exit(spa, SCL_ALLOC, FTAG);
@@ -1161,8 +1272,15 @@ vdev_metaslab_fini(vdev_t *vd)
 	if (vd->vdev_ms != NULL) {
 		metaslab_group_t *mg = vd->vdev_mg;
 		metaslab_group_histogram_verify(mg);
+		if (vd->vdev_log_mg != NULL) {
+			metaslab_group_histogram_verify(vd->vdev_log_mg);
+		}
 
 		metaslab_group_passivate(vd->vdev_mg);
+		if (vd->vdev_log_mg != NULL) {
+			ASSERT(!vd->vdev_islog);
+			metaslab_group_passivate(vd->vdev_log_mg);
+		}
 
 		uint64_t count = vd->vdev_ms_count;
 		for (uint64_t m = 0; m < count; m++) {
@@ -1174,8 +1292,11 @@ vdev_metaslab_fini(vdev_t *vd)
 		vd->vdev_ms = NULL;
 		vd->vdev_ms_count = 0;
 
-		for (int i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i++)
+		for (int i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i++) {
 			ASSERT0(mg->mg_histogram[i]);
+			if (vd->vdev_log_mg != NULL)
+				ASSERT0(vd->vdev_log_mg->mg_histogram[i]);
+		}
 	}
 	ASSERT0(vd->vdev_ms_count);
 }
@@ -2895,8 +3016,11 @@ vdev_sync_done(vdev_t *vd, uint64_t txg)
 		metaslab_sync_done(msp, txg);
 	}
 
-	if (reassess)
+	if (reassess) {
 		metaslab_sync_reassess(vd->vdev_mg);
+		if (vd->vdev_log_mg != NULL)
+			metaslab_sync_reassess(vd->vdev_log_mg);
+	}
 }
 
 void
@@ -3176,6 +3300,7 @@ top:
 			/*
 			 * Prevent any future allocations.
 			 */
+			ASSERT3P(tvd->vdev_log_mg, ==, NULL);
 			metaslab_group_passivate(mg);
 			(void) spa_vdev_state_exit(spa, vd, 0);
 
@@ -3445,6 +3570,12 @@ vdev_get_stats(vdev_t *vd, vdev_stat_t *vs)
 	}
 	if (vd->vdev_aux == NULL && vd == vd->vdev_top &&
 	    vdev_is_concrete(vd)) {
+		/*
+		 * The vdev fragmentation rating doesn't take into account
+		 * the embedded slog metaslab (vdev_log_mg).  Since it's
+		 * only one metaslab, it would have a tiny impact on
+		 * the overall fragmentation.
+		 */
 		vs->vs_fragmentation = vd->vdev_mg->mg_fragmentation;
 	}
 

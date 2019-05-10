@@ -1164,6 +1164,11 @@ vdev_remove_complete(spa_t *spa)
 
 		spa_log_sm_set_blocklimit(spa);
 	}
+	if (vd->vdev_log_mg != NULL) {
+		ASSERT0(vd->vdev_ms_count);
+		metaslab_group_destroy(vd->vdev_log_mg);
+		vd->vdev_log_mg = NULL;
+	}
 	ASSERT0(vd->vdev_stat.vs_space);
 	ASSERT0(vd->vdev_stat.vs_dspace);
 
@@ -1705,6 +1710,9 @@ spa_vdev_remove_cancel(spa_t *spa)
 		spa_config_enter(spa, SCL_ALLOC | SCL_VDEV, FTAG, RW_WRITER);
 		vdev_t *vd = vdev_lookup_top(spa, vdid);
 		metaslab_group_activate(vd->vdev_mg);
+		ASSERT(!vd->vdev_islog);
+		if (vd->vdev_log_mg != NULL)
+			metaslab_group_activate(vd->vdev_log_mg);
 		spa_config_exit(spa, SCL_ALLOC | SCL_VDEV, FTAG);
 	}
 
@@ -1771,6 +1779,7 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 
 	ASSERT(vd->vdev_islog);
 	ASSERT(vd == vd->vdev_top);
+	ASSERT3P(vd->vdev_log_mg, ==, NULL);
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	/*
@@ -1799,6 +1808,7 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 
 	if (error != 0) {
 		metaslab_group_activate(mg);
+		ASSERT3P(vd->vdev_log_mg, ==, NULL);
 		return (error);
 	}
 	ASSERT0(vd->vdev_stat.vs_alloc);
@@ -1990,6 +2000,9 @@ spa_vdev_remove_top(vdev_t *vd, uint64_t *txg)
 	 */
 	metaslab_group_t *mg = vd->vdev_mg;
 	metaslab_group_passivate(mg);
+	ASSERT(!vd->vdev_islog);
+	if (vd->vdev_log_mg != NULL)
+		metaslab_group_passivate(vd->vdev_log_mg);
 
 	/*
 	 * Wait for the youngest allocations and frees to sync,
@@ -2024,6 +2037,9 @@ spa_vdev_remove_top(vdev_t *vd, uint64_t *txg)
 
 	if (error != 0) {
 		metaslab_group_activate(mg);
+		ASSERT(!vd->vdev_islog);
+		if (vd->vdev_log_mg != NULL)
+			metaslab_group_activate(vd->vdev_log_mg);
 		spa_async_request(spa, SPA_ASYNC_INITIALIZE_RESTART);
 		return (error);
 	}

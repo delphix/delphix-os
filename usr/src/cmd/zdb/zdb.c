@@ -4133,7 +4133,6 @@ zdb_leak_fini(spa_t *spa, zdb_cb_t *zcb)
 	vdev_t *rvd = spa->spa_root_vdev;
 	for (unsigned c = 0; c < rvd->vdev_children; c++) {
 		vdev_t *vd = rvd->vdev_child[c];
-		metaslab_group_t *mg = vd->vdev_mg;
 
 		if (zcb->zcb_vd_obsolete_counts[c] != NULL) {
 			leaks |= zdb_check_for_obsolete_leaks(vd, zcb);
@@ -4141,7 +4140,12 @@ zdb_leak_fini(spa_t *spa, zdb_cb_t *zcb)
 
 		for (unsigned m = 0; m < vd->vdev_ms_count; m++) {
 			metaslab_t *msp = vd->vdev_ms[m];
-			ASSERT3P(mg, ==, msp->ms_group);
+			if (!vd->vdev_islog &&
+			    msp->ms_group->mg_class == spa_log_class(spa)) {
+				ASSERT3P(msp->ms_group, ==, vd->vdev_log_mg);
+			} else {
+				ASSERT3P(msp->ms_group, ==, vd->vdev_mg);
+			}
 
 			/*
 			 * ms_allocatable has been overloaded

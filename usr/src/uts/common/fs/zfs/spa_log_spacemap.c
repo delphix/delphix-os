@@ -1147,6 +1147,47 @@ spa_ld_log_sm_data(spa_t *spa)
 	return (0);
 }
 
+static int
+spa_ld_unflushed_txgs(vdev_t *vd)
+{
+	spa_t *spa = vd->vdev_spa;
+	objset_t *mos = spa_meta_objset(spa);
+	int error;
+
+	if (vd->vdev_top_zap == 0)
+		return (0);
+
+	uint64_t object = 0;
+	error = zap_lookup(mos, vd->vdev_top_zap,
+	    VDEV_TOP_ZAP_MS_UNFLUSHED_PHYS_TXGS,
+	    sizeof (uint64_t), 1, &object);
+	if (error == ENOENT)
+		return (0);
+	else if (error != 0)
+		return (error);
+
+	for (uint64_t m = 0; m < vd->vdev_ms_count; m++) {
+		metaslab_t *ms = vd->vdev_ms[m];
+
+		metaslab_unflushed_phys_t entry;
+		uint64_t entry_size = sizeof (entry);
+		uint64_t entry_offset = ms->ms_id * entry_size;
+
+		error = dmu_read(mos, object,
+		    entry_offset, entry_size, &entry, 0);
+		if (error != 0)
+			return (error);
+
+		ms->ms_unflushed_txg = entry.msp_unflushed_txg;
+		if (ms->ms_unflushed_txg != 0) {
+			mutex_enter(&spa->spa_flushed_ms_lock);
+			avl_add(&spa->spa_metaslabs_by_flushed, ms);
+			mutex_exit(&spa->spa_flushed_ms_lock);
+		}
+	}
+	return (0);
+}
+
 /*
  * Read all the log space map entries into their respective
  * metaslab unflushed trees and keep them sorted by TXG in the
@@ -1159,6 +1200,13 @@ spa_ld_log_spacemaps(spa_t *spa)
 	int error;
 
 	spa_log_sm_set_blocklimit(spa);
+
+	for (uint64_t c = 0; c < spa->spa_root_vdev->vdev_children; c++) {
+		vdev_t *vd = spa->spa_root_vdev->vdev_child[c];
+		error = spa_ld_unflushed_txgs(vd);
+		if (error != 0)
+			return (error);
+	}
 
 	error = spa_ld_log_sm_metadata(spa);
 	if (error != 0)

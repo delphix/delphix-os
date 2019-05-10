@@ -409,7 +409,7 @@ metaslab_class_histogram_verify(metaslab_class_t *mc)
 
 	for (int c = 0; c < rvd->vdev_children; c++) {
 		vdev_t *tvd = rvd->vdev_child[c];
-		metaslab_group_t *mg = tvd->vdev_mg;
+		metaslab_group_t *mg = vdev_get_mg(tvd, mc);
 
 		/*
 		 * Skip any holes, uninitialized top-levels, or
@@ -420,12 +420,16 @@ metaslab_class_histogram_verify(metaslab_class_t *mc)
 			continue;
 		}
 
+		IMPLY(mg == mg->mg_vd->vdev_log_mg,
+		    spa_log_class(mg->mg_vd->vdev_spa) == mc);
+
 		for (i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i++)
 			mc_hist[i] += mg->mg_histogram[i];
 	}
 
-	for (i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i++)
+	for (i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i++) {
 		VERIFY3U(mc_hist[i], ==, mc->mc_histogram[i]);
+	}
 
 	kmem_free(mc_hist, sizeof (uint64_t) * RANGE_TREE_HISTOGRAM_SIZE);
 }
@@ -930,9 +934,8 @@ void
 metaslab_group_histogram_verify(metaslab_group_t *mg)
 {
 	uint64_t *mg_hist;
-	vdev_t *vd = mg->mg_vd;
-	uint64_t ashift = vd->vdev_ashift;
-	int i;
+	avl_tree_t *t = &mg->mg_metaslab_tree;
+	uint64_t ashift = mg->mg_vd->vdev_ashift;
 
 	if ((zfs_flags & ZFS_DEBUG_HISTOGRAM_VERIFY) == 0)
 		return;
@@ -943,19 +946,22 @@ metaslab_group_histogram_verify(metaslab_group_t *mg)
 	ASSERT3U(RANGE_TREE_HISTOGRAM_SIZE, >=,
 	    SPACE_MAP_HISTOGRAM_SIZE + ashift);
 
-	for (int m = 0; m < vd->vdev_ms_count; m++) {
-		metaslab_t *msp = vd->vdev_ms[m];
-
+	mutex_enter(&mg->mg_lock);
+	for (metaslab_t *msp = avl_first(t);
+	    msp != NULL; msp = AVL_NEXT(t, msp)) {
 		if (msp->ms_sm == NULL)
 			continue;
 
-		for (i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++)
+		for (int i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++) {
 			mg_hist[i + ashift] +=
 			    msp->ms_sm->sm_phys->smp_histogram[i];
+		}
 	}
 
-	for (i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i ++)
+	for (int i = 0; i < RANGE_TREE_HISTOGRAM_SIZE; i ++)
 		VERIFY3U(mg_hist[i], ==, mg->mg_histogram[i]);
+
+	mutex_exit(&mg->mg_lock);
 
 	kmem_free(mg_hist, sizeof (uint64_t) * RANGE_TREE_HISTOGRAM_SIZE);
 }
@@ -972,6 +978,8 @@ metaslab_group_histogram_add(metaslab_group_t *mg, metaslab_t *msp)
 
 	mutex_enter(&mg->mg_lock);
 	for (int i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++) {
+		IMPLY(mg == mg->mg_vd->vdev_log_mg,
+		    spa_log_class(mg->mg_vd->vdev_spa) == mc);
 		mg->mg_histogram[i + ashift] +=
 		    msp->ms_sm->sm_phys->smp_histogram[i];
 		mc->mc_histogram[i + ashift] +=
@@ -996,6 +1004,8 @@ metaslab_group_histogram_remove(metaslab_group_t *mg, metaslab_t *msp)
 		    msp->ms_sm->sm_phys->smp_histogram[i]);
 		ASSERT3U(mc->mc_histogram[i + ashift], >=,
 		    msp->ms_sm->sm_phys->smp_histogram[i]);
+		IMPLY(mg == mg->mg_vd->vdev_log_mg,
+		    spa_log_class(mg->mg_vd->vdev_spa) == mc);
 
 		mg->mg_histogram[i + ashift] -=
 		    msp->ms_sm->sm_phys->smp_histogram[i];
@@ -1895,40 +1905,6 @@ metaslab_aux_histograms_update_done(metaslab_t *msp, boolean_t defer_allowed)
 	bzero(msp->ms_synchist, sizeof (msp->ms_synchist));
 }
 
-static int
-metaslab_load_flush_data(metaslab_t *ms)
-{
-	vdev_t *vd = ms->ms_group->mg_vd;
-	spa_t *spa = vd->vdev_spa;
-	objset_t *mos = spa_meta_objset(spa);
-	int error;
-
-	if (!spa_feature_is_enabled(spa, SPA_FEATURE_LOG_SPACEMAP))
-		return (0);
-
-	if (vd->vdev_top_zap == 0)
-		return (0);
-
-	uint64_t object = 0;
-	error = zap_lookup(mos, vd->vdev_top_zap,
-	    VDEV_TOP_ZAP_MS_UNFLUSHED_PHYS_TXGS, sizeof (uint64_t), 1, &object);
-	if (error == ENOENT)
-		return (0);
-	else if (error != 0)
-		return (error);
-
-	metaslab_unflushed_phys_t entry;
-	uint64_t entry_size = sizeof (entry);
-	uint64_t entry_offset = ms->ms_id * entry_size;
-
-	error = dmu_read(mos, object, entry_offset, entry_size, &entry, 0);
-	if (error != 0)
-		return (error);
-
-	ms->ms_unflushed_txg = entry.msp_unflushed_txg;
-	return (0);
-}
-
 /*
  * Ensure that the metaslab's weight and fragmentation are consistent
  * with the contents of the histogram (either the range tree's histogram
@@ -2446,36 +2422,6 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 	metaslab_set_fragmentation(ms);
 
 	/*
-	 * We check if we came here from vdev_expand() [e.g this
-	 * is a new metaslab added to the metaslab array]. If yes,
-	 * then the txg should be non-zero and the object should be
-	 * zero. In that case we don't need to read the on-disk
-	 * flushed data of the metaslab as they should be 0 anyway.
-	 */
-	if (txg == 0) {
-		error = metaslab_load_flush_data(ms);
-		if (error != 0) {
-			if (ms->ms_sm != NULL)
-				space_map_close(ms->ms_sm);
-			kmem_free(ms, sizeof (metaslab_t));
-			return (error);
-		}
-
-		if (metaslab_unflushed_txg(ms) != 0) {
-			ASSERT(ms->ms_sm != NULL);
-
-			spa_t *spa = vd->vdev_spa;
-			mutex_enter(&spa->spa_flushed_ms_lock);
-			avl_add(&spa->spa_metaslabs_by_flushed, ms);
-			mutex_exit(&spa->spa_flushed_ms_lock);
-		}
-	} else {
-		ASSERT0(object);
-		ASSERT0(metaslab_unflushed_txg(ms));
-	}
-
-
-	/*
 	 * If we're opening an existing pool (txg == 0) or creating
 	 * a new one (txg == TXG_INITIAL), all space is available now.
 	 * If we're adding space to an existing pool, the new space
@@ -2539,35 +2485,45 @@ metaslab_fini(metaslab_t *msp)
 
 	mutex_enter(&msp->ms_lock);
 	VERIFY(msp->ms_group == NULL);
-	vdev_space_update(mg->mg_vd, -metaslab_allocated_space(msp),
-	    0, -msp->ms_size);
+	/*
+	 * If the range trees haven't been allocated, this metaslab hasn't
+	 * been through metaslab_sync_done() for the first time yet, so its
+	 * space hasn't been accounted for in its vdev and doesn't need to be
+	 * subtracted.
+	 */
+	if (msp->ms_freed != NULL) {
+		vdev_space_update(mg->mg_vd, -metaslab_allocated_space(msp),
+		    0, -msp->ms_size);
+	}
 	space_map_close(msp->ms_sm);
 	msp->ms_sm = NULL;
 
 	metaslab_unload(msp);
+
 	range_tree_destroy(msp->ms_allocatable);
-	range_tree_destroy(msp->ms_freeing);
-	range_tree_destroy(msp->ms_freed);
 
-	ASSERT3U(spa->spa_unflushed_stats.sus_memused, >=,
-	    metaslab_unflushed_changes_memused(msp));
-	spa->spa_unflushed_stats.sus_memused -=
-	    metaslab_unflushed_changes_memused(msp);
-	range_tree_vacate(msp->ms_unflushed_allocs, NULL, NULL);
-	range_tree_destroy(msp->ms_unflushed_allocs);
-	range_tree_vacate(msp->ms_unflushed_frees, NULL, NULL);
-	range_tree_destroy(msp->ms_unflushed_frees);
+	if (msp->ms_freed != NULL) {
+		range_tree_destroy(msp->ms_freeing);
+		range_tree_destroy(msp->ms_freed);
 
-	for (int t = 0; t < TXG_SIZE; t++) {
-		range_tree_destroy(msp->ms_allocating[t]);
-	}
+		ASSERT3U(spa->spa_unflushed_stats.sus_memused, >=,
+		    metaslab_unflushed_changes_memused(msp));
+		spa->spa_unflushed_stats.sus_memused -=
+		    metaslab_unflushed_changes_memused(msp);
+		range_tree_vacate(msp->ms_unflushed_allocs, NULL, NULL);
+		range_tree_destroy(msp->ms_unflushed_allocs);
+		range_tree_destroy(msp->ms_checkpointing);
+		range_tree_vacate(msp->ms_unflushed_frees, NULL, NULL);
+		range_tree_destroy(msp->ms_unflushed_frees);
 
-	for (int t = 0; t < TXG_DEFER_SIZE; t++) {
-		range_tree_destroy(msp->ms_defer[t]);
+		for (int t = 0; t < TXG_SIZE; t++) {
+			range_tree_destroy(msp->ms_allocating[t]);
+		}
+		for (int t = 0; t < TXG_DEFER_SIZE; t++) {
+			range_tree_destroy(msp->ms_defer[t]);
+		}
 	}
 	ASSERT0(msp->ms_deferspace);
-
-	range_tree_destroy(msp->ms_checkpointing);
 
 	for (int t = 0; t < TXG_SIZE; t++)
 		ASSERT(!txg_list_member(&vd->vdev_ms_list, msp, t));
@@ -4845,7 +4801,7 @@ metaslab_alloc_dva(spa_t *spa, metaslab_class_t *mc, uint64_t psize,
 		 * all else fails.
 		 */
 		if (vd != NULL && vd->vdev_mg != NULL) {
-			mg = vd->vdev_mg;
+			mg = vdev_get_mg(vd, mc);
 
 			if (flags & METASLAB_HINTBP_AVOID &&
 			    mg->mg_next != NULL)

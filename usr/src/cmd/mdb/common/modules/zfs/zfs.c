@@ -1677,8 +1677,15 @@ metaslab_group_stats(mdb_vdev_t *vd, int spa_flags)
 	mdb_nicenum(raw_uchanges_mem, uchanges_mem);
 	mdb_printf("%10s\n", uchanges_mem);
 
-	if (spa_flags & SPA_FLAG_HISTOGRAMS)
+	if (spa_flags & SPA_FLAG_HISTOGRAMS) {
+		/*
+		 * The vdev histogram (and fragmention rating) doesn't take
+		 * into account the embedded slog metaslab (vdev_log_mg).
+		 * This presents a clearer picture of the free space
+		 * available to normal allocations.
+		 */
 		dump_histogram(mg.mg_histogram, RANGE_TREE_HISTOGRAM_SIZE, 0);
+	}
 	mdb_dec_indent(4);
 	return (DCMD_OK);
 }
