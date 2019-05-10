@@ -15,7 +15,7 @@
 #
 
 #
-# Copyright (c) 2018 by Delphix. All rights reserved.
+# Copyright (c) 2018, 2019 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -45,6 +45,7 @@ function cleanup
 	# Reset tunable.
 	#
 	mdb_ctf_set_int zfs_remove_max_bytes_pause -0t1
+	mdb_ctf_set_int metaslab_unload_delay_ms 0t60000
 	default_cleanup_noexit
 }
 
@@ -76,6 +77,9 @@ log_must zpool add -f $TESTPOOL $NOTREMOVEDISK
 # it has copied over some data but not all of them (100MB).
 #
 mdb_ctf_set_int zfs_remove_max_bytes_pause 1400000
+
+# workaround for DLPX-63811
+mdb_ctf_set_int metaslab_unload_delay_ms 0
 
 #
 # Start removal.

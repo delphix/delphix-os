@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright (c) 2018 by Delphix. All rights reserved.
+# Copyright (c) 2018, 2019 by Delphix. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -35,6 +35,7 @@ function cleanup
 {
 	kill_if_running $pid
 	log_must mdb_ctf_set_int zfs_remove_max_bytes_pause -0t1
+	log_must mdb_ctf_set_int metaslab_unload_delay_ms 0t60000
 	poolexists $TESTPOOL && destroy_pool $TESTPOOL
 }
 
@@ -48,6 +49,10 @@ log_must dd if=/dev/urandom of="/$TESTPOOL/testfile" bs=1k count=16k
 
 # Start removal, but don't allow it to make any progress
 log_must mdb_ctf_set_int zfs_remove_max_bytes_pause 0t0
+
+# workaround for DLPX-63811
+log_must mdb_ctf_set_int metaslab_unload_delay_ms 0
+
 log_must zpool remove $TESTPOOL $DISK1
 
 log_bkgrnd zpool wait -t remove $TESTPOOL
