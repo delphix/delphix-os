@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
@@ -1510,6 +1510,9 @@ typedef struct mdb_metaslab {
 	uintptr_t ms_unflushed_frees;
 	uintptr_t ms_unflushed_allocs;
 	uintptr_t ms_sm;
+	boolean_t ms_loaded;
+	uint64_t ms_max_size;
+	uint64_t ms_allocated_space;
 } mdb_metaslab_t;
 
 typedef struct mdb_space_map_phys_t {
@@ -1957,8 +1960,9 @@ metaslab_weight(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	if (DCMD_HDRSPEC(flags)) {
-		mdb_printf("%<u>%-6s %9s %9s%</u>\n",
-		    "ACTIVE", "ALGORITHM", "WEIGHT");
+		mdb_printf("%<u>%3s %-6s %9s %4s %5s %11s %9s%</u>\n",
+		    "ID", "ACTIVE", "ALGORITHM", "FRAG",
+		    "ALLOC", "MAXSZ", "WEIGHT");
 	}
 
 	if (weight & METASLAB_WEIGHT_PRIMARY)
@@ -1969,8 +1973,15 @@ metaslab_weight(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		active = 'C';
 	else
 		active = '-';
-	mdb_printf("%6c %8s ", active,
-	    WEIGHT_IS_SPACEBASED(weight) ? "SPACE" : "SEGMENT");
+	mdb_printf("%3u %4c %c %8s %3u%% %4uM (%2u%%) %5lluK ",
+	    ms.ms_id,
+	    active,
+	    ms.ms_loaded ? 'L' : ' ',
+	    WEIGHT_IS_SPACEBASED(weight) ? "SPACE" : "SEGMENT",
+	    (int)ms.ms_fragmentation,
+	    ms.ms_allocated_space >> 20,
+	    100 * ms.ms_allocated_space / ms.ms_size,
+	    ms.ms_max_size >> 10);
 	metaslab_print_weight(weight);
 	mdb_printf("\n");
 
