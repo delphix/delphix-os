@@ -1481,19 +1481,15 @@ spa_print_config(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	    0, NULL));
 }
 
-typedef enum mdb_range_seg_type {
-	MDB_RANGE_SEG32,
-	MDB_RANGE_SEG64,
-	MDB_RANGE_SEG_NUM_TYPES,
-} mdb_range_seg_type_t;
-
 typedef struct mdb_range_tree {
 	struct {
 		uint64_t bt_num_elems;
 		uint64_t bt_num_nodes;
 	} rt_root;
 	uint64_t rt_space;
-	mdb_range_seg_type_t rt_type;
+	range_seg_type_t rt_type;
+	uint8_t		rt_shift;
+	uint64_t	rt_start;
 } mdb_range_tree_t;
 
 typedef struct mdb_metaslab_group {
@@ -2758,7 +2754,7 @@ btree_leftmost_child(uintptr_t addr, mdb_btree_hdr_t *buf)
 			mdb_warn("failed to read at %p\n", addr);
 			return ((uintptr_t)0ULL);
 		}
-		if (buf->bth_core)
+		if (!buf->bth_core)
 			return (addr);
 		mdb_btree_core_t *node = (mdb_btree_core_t *)buf;
 		addr = node->btc_children[0];
@@ -2788,8 +2784,11 @@ btree_walk_step(mdb_walk_state_t *wsp)
 		}
 
 		mdb_btree_leaf_t *leaf = (mdb_btree_leaf_t *)bwd->bwd_node;
-		mdb_printf("%#lr\n", leaf->btl_elems + bwd->bwd_offset *
-		    elem_size);
+		int status = wsp->walk_callback((uintptr_t)(wsp->walk_addr +
+		    offsetof(mdb_btree_leaf_t, btl_elems) + bwd->bwd_offset *
+		    elem_size), bwd->bwd_node, wsp->walk_cbdata);
+		if (status != WALK_NEXT)
+			return (status);
 		bwd->bwd_offset++;
 
 		/* Find the next element, if we're at the end of the leaf. */
@@ -2830,7 +2829,11 @@ btree_walk_step(mdb_walk_state_t *wsp)
 		return (WALK_ERR);
 	}
 	mdb_btree_core_t *node = (mdb_btree_core_t *)bwd->bwd_node;
-	mdb_printf("%#lr\n", node->btc_elems + bwd->bwd_offset * elem_size);
+	int status = wsp->walk_callback((uintptr_t)(wsp->walk_addr +
+	    offsetof(mdb_btree_core_t, btc_elems) + bwd->bwd_offset *
+	    elem_size), bwd->bwd_node, wsp->walk_cbdata);
+	if (status != WALK_NEXT)
+		return (status);
 
 	uintptr_t new_child = node->btc_children[bwd->bwd_offset + 1];
 	wsp->walk_addr = btree_leftmost_child(new_child, bwd->bwd_node);
@@ -4411,23 +4414,44 @@ out:
 	return (rc);
 }
 
-typedef struct mdb_range_seg {
+typedef struct mdb_range_seg64 {
 	uint64_t rs_start;
 	uint64_t rs_end;
-} mdb_range_seg_t;
+} mdb_range_seg64_t;
+
+typedef struct mdb_range_seg32 {
+	uint32_t rs_start;
+	uint32_t rs_end;
+} mdb_range_seg32_t;
 
 /* ARGSUSED */
 static int
 range_tree_cb(uintptr_t addr, const void *unknown, void *arg)
 {
-	mdb_range_seg_t rs;
+	mdb_range_tree_t *rt = (mdb_range_tree_t *)arg;
+	uint64_t start, end;
 
-	if (mdb_ctf_vread(&rs, ZFS_STRUCT "range_seg", "mdb_range_seg_t",
-	    addr, 0) == -1)
-		return (DCMD_ERR);
+	if (rt->rt_type == RANGE_SEG64) {
+		mdb_range_seg64_t rs;
+
+		if (mdb_ctf_vread(&rs, ZFS_STRUCT "range_seg64",
+		    "mdb_range_seg64_t", addr, 0) == -1)
+			return (DCMD_ERR);
+		start = rs.rs_start;
+		end = rs.rs_end;
+	} else {
+		ASSERT3U(rt->rt_type, ==, RANGE_SEG32);
+		mdb_range_seg32_t rs;
+
+		if (mdb_ctf_vread(&rs, ZFS_STRUCT "range_seg32",
+		    "mdb_range_seg32_t", addr, 0) == -1)
+			return (DCMD_ERR);
+		start = ((uint64_t)rs.rs_start << rt->rt_shift) + rt->rt_start;
+		end = ((uint64_t)rs.rs_end << rt->rt_shift) + rt->rt_start;
+	}
 
 	mdb_printf("\t[%llx %llx) (length %llx)\n",
-	    rs.rs_start, rs.rs_end, rs.rs_end - rs.rs_start);
+	    start, end, end - start);
 
 	return (0);
 }
@@ -4438,7 +4462,7 @@ range_tree(uintptr_t addr, uint_t flags, int argc,
     const mdb_arg_t *argv)
 {
 	mdb_range_tree_t rt;
-	uintptr_t avl_addr;
+	uintptr_t btree_addr;
 
 	if (!(flags & DCMD_ADDRSPEC))
 		return (DCMD_USAGE);
@@ -4450,10 +4474,10 @@ range_tree(uintptr_t addr, uint_t flags, int argc,
 	mdb_printf("%p: range tree of %llu entries, %llu bytes\n",
 	    addr, rt.rt_root.bt_num_elems, rt.rt_space);
 
-	avl_addr = addr +
+	btree_addr = addr +
 	    mdb_ctf_offsetof_by_name(ZFS_STRUCT "range_tree", "rt_root");
 
-	if (mdb_pwalk("avl", range_tree_cb, NULL, avl_addr) != 0) {
+	if (mdb_pwalk("btree", range_tree_cb, &rt, btree_addr) != 0) {
 		mdb_warn("can't walk range_tree segments");
 		return (DCMD_ERR);
 	}
