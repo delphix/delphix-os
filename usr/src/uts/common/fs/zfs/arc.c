@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
@@ -4101,7 +4101,7 @@ arc_kmem_reap_soon(void)
 	kmem_cache_t		*prev_data_cache = NULL;
 	extern kmem_cache_t	*zio_buf_cache[];
 	extern kmem_cache_t	*zio_data_buf_cache[];
-	extern kmem_cache_t	*range_seg_cache;
+	extern kmem_cache_t	*btree_leaf_cache;
 	extern kmem_cache_t	*abd_chunk_cache;
 
 #ifdef _KERNEL
@@ -4134,7 +4134,7 @@ arc_kmem_reap_soon(void)
 	kmem_cache_reap_soon(buf_cache);
 	kmem_cache_reap_soon(hdr_full_cache);
 	kmem_cache_reap_soon(hdr_l2only_cache);
-	kmem_cache_reap_soon(range_seg_cache);
+	kmem_cache_reap_soon(btree_leaf_cache);
 
 	if (zio_arena != NULL) {
 		/*

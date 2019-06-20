@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+# Copyright (c) 2011, 2019 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
@@ -823,7 +823,7 @@ SCSI_VHCI_F_TPGS_OBJS +=	tpgs.o
 
 SCSI_VHCI_F_ASYM_SUN_OBJS +=	asym_sun.o
 
-SCSI_VHCI_F_SYM_HDS_OBJS += 	sym_hds.o
+SCSI_VHCI_F_SYM_HDS_OBJS +=	sym_hds.o
 
 SCSI_VHCI_F_TAPE_OBJS +=	tape.o
 
@@ -1163,7 +1163,7 @@ NFS_OBJS +=	nfs_client.o	nfs_common.o	nfs_dump.o \
 		nfs_xdr.o	nfs_sys.o	nfs_strerror.o \
 		nfs3_vfsops.o	nfs3_vnops.o	nfs3_xdr.o \
 		nfs_acl_vnops.o	nfs_acl_xdr.o	nfs4_vfsops.o \
-		nfs4_vnops.o	nfs4_xdr.o 	nfs4_idmap.o \
+		nfs4_vnops.o	nfs4_xdr.o	nfs4_idmap.o \
 		nfs4_shadow.o	nfs4_subr.o \
 		nfs4_attr.o	nfs4_rnode.o	nfs4_client.o \
 		nfs4_acache.o	nfs4_common.o	nfs4_client_state.o \
@@ -1331,7 +1331,7 @@ UDFS_OBJS +=	udf_alloc.o	udf_bmap.o	udf_dir.o	\
 		udf_inode.o	udf_subr.o	udf_vfsops.o	\
 		udf_vnops.o
 
-UFS_OBJS +=	ufs_alloc.o	ufs_bmap.o	ufs_dir.o 	ufs_xattr.o \
+UFS_OBJS +=	ufs_alloc.o	ufs_bmap.o	ufs_dir.o	ufs_xattr.o \
 		ufs_inode.o	ufs_subr.o	ufs_tables.o	ufs_vfsops.o \
 		ufs_vnops.o	quota.o		quotacalls.o	quota_ufs.o \
 		ufs_filio.o	ufs_lockfs.o	ufs_thread.o	ufs_trans.o \
@@ -1392,6 +1392,7 @@ ZFS_COMMON_OBJS +=		\
 	bpobj.o			\
 	bptree.o		\
 	bqueue.o		\
+	btree.o			\
 	cityhash.o		\
 	dbuf.o			\
 	ddt.o			\

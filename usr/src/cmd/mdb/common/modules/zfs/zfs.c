@@ -44,6 +44,7 @@
 #include <sys/zfs_acl.h>
 #include <sys/sa_impl.h>
 #include <sys/multilist.h>
+#include <sys/btree.h>
 
 #ifdef _KERNEL
 #define	ZFS_OBJ_NAME	"zfs"
@@ -1480,13 +1481,19 @@ spa_print_config(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	    0, NULL));
 }
 
-
+typedef enum mdb_range_seg_type {
+	MDB_RANGE_SEG32,
+	MDB_RANGE_SEG64,
+	MDB_RANGE_SEG_NUM_TYPES,
+} mdb_range_seg_type_t;
 
 typedef struct mdb_range_tree {
 	struct {
-		uint64_t avl_numnodes;
+		uint64_t bt_num_elems;
+		uint64_t bt_num_nodes;
 	} rt_root;
 	uint64_t rt_space;
+	mdb_range_seg_type_t rt_type;
 } mdb_range_tree_t;
 
 typedef struct mdb_metaslab_group {
@@ -1587,15 +1594,13 @@ metaslab_stats(mdb_vdev_t *vd, int spa_flags)
 		    ms.ms_unflushed_frees, 0) == -1)
 			return (DCMD_ERR);
 		ufrees = rt.rt_space;
-		raw_uchanges_mem = rt.rt_root.avl_numnodes *
-		    mdb_ctf_sizeof_by_name("range_seg_t");
+		raw_uchanges_mem = rt.rt_root.bt_num_nodes * BTREE_LEAF_SIZE;
 
 		if (mdb_ctf_vread(&rt, "range_tree_t", "mdb_range_tree_t",
 		    ms.ms_unflushed_allocs, 0) == -1)
 			return (DCMD_ERR);
 		uallocs = rt.rt_space;
-		raw_uchanges_mem += rt.rt_root.avl_numnodes *
-		    mdb_ctf_sizeof_by_name("range_seg_t");
+		raw_uchanges_mem += rt.rt_root.bt_num_nodes * BTREE_LEAF_SIZE;
 		mdb_nicenum(raw_uchanges_mem, uchanges_mem);
 
 		raw_free = ms.ms_size;
@@ -1665,14 +1670,12 @@ metaslab_group_stats(mdb_vdev_t *vd, int spa_flags)
 		if (mdb_ctf_vread(&rt, "range_tree_t", "mdb_range_tree_t",
 		    ms.ms_unflushed_frees, 0) == -1)
 			return (DCMD_ERR);
-		raw_uchanges_mem +=
-		    rt.rt_root.avl_numnodes * sizeof (range_seg_t);
+		raw_uchanges_mem += rt.rt_root.bt_num_nodes * BTREE_LEAF_SIZE;
 
 		if (mdb_ctf_vread(&rt, "range_tree_t", "mdb_range_tree_t",
 		    ms.ms_unflushed_allocs, 0) == -1)
 			return (DCMD_ERR);
-		raw_uchanges_mem +=
-		    rt.rt_root.avl_numnodes * sizeof (range_seg_t);
+		raw_uchanges_mem += rt.rt_root.bt_num_nodes * BTREE_LEAF_SIZE;
 	}
 	mdb_nicenum(raw_uchanges_mem, uchanges_mem);
 	mdb_printf("%10s\n", uchanges_mem);
@@ -2710,6 +2713,195 @@ zio_state(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		addr = 0;
 
 	return (mdb_pwalk_dcmd("zio_root", "zio", argc, argv, addr));
+}
+
+
+typedef struct mdb_btree_hdr {
+	uintptr_t		bth_parent;
+	boolean_t		bth_core;
+	/*
+	 * For both leaf and core nodes, represents the number of elements in
+	 * the node. For core nodes, they will have bth_count + 1 children.
+	 */
+	uint32_t		bth_count;
+} mdb_btree_hdr_t;
+
+typedef struct mdb_btree_core {
+	mdb_btree_hdr_t		btc_hdr;
+	uintptr_t		btc_children[BTREE_CORE_ELEMS + 1];
+	uint8_t			btc_elems[];
+} mdb_btree_core_t;
+
+typedef struct mdb_btree_leaf {
+	mdb_btree_hdr_t		btl_hdr;
+	uint8_t			btl_elems[];
+} mdb_btree_leaf_t;
+
+typedef struct mdb_btree {
+	uintptr_t	    bt_root;
+	size_t		bt_elem_size;
+} mdb_btree_t;
+
+typedef struct btree_walk_data {
+	mdb_btree_t bwd_btree;
+	mdb_btree_hdr_t	    *bwd_node;
+	uint64_t	bwd_offset; // In units of bt_node_size
+} btree_walk_data_t;
+
+static uintptr_t
+btree_leftmost_child(uintptr_t addr, mdb_btree_hdr_t *buf)
+{
+	size_t size = offsetof(btree_core_t, btc_children) +
+	    sizeof (uintptr_t);
+	for (;;) {
+		if (mdb_vread(buf, size, addr) == -1) {
+			mdb_warn("failed to read at %p\n", addr);
+			return ((uintptr_t)0ULL);
+		}
+		if (buf->bth_core)
+			return (addr);
+		mdb_btree_core_t *node = (mdb_btree_core_t *)buf;
+		addr = node->btc_children[0];
+	}
+}
+
+static int
+btree_walk_step(mdb_walk_state_t *wsp)
+{
+	btree_walk_data_t *bwd = wsp->walk_data;
+	size_t elem_size = bwd->bwd_btree.bt_elem_size;
+	if (wsp->walk_addr == NULL)
+		return (WALK_DONE);
+
+	if (!bwd->bwd_node->bth_core) {
+		/*
+		 * For the first element in a leaf node, read in the full
+		 * leaf, since we only had part of it read in before.
+		 */
+		if (bwd->bwd_offset == 0) {
+			if (mdb_vread(bwd->bwd_node, BTREE_LEAF_SIZE,
+			    wsp->walk_addr) == -1) {
+				mdb_warn("failed to read at %p\n",
+				    wsp->walk_addr);
+				return (WALK_ERR);
+			}
+		}
+
+		mdb_btree_leaf_t *leaf = (mdb_btree_leaf_t *)bwd->bwd_node;
+		mdb_printf("%#lr\n", leaf->btl_elems + bwd->bwd_offset *
+		    elem_size);
+		bwd->bwd_offset++;
+
+		/* Find the next element, if we're at the end of the leaf. */
+		while (bwd->bwd_offset == bwd->bwd_node->bth_count) {
+			uintptr_t par = bwd->bwd_node->bth_parent;
+			uintptr_t cur = wsp->walk_addr;
+			wsp->walk_addr = par;
+			if (par == 0ULL)
+				return (WALK_NEXT);
+
+			size_t size = sizeof (btree_core_t) + BTREE_CORE_ELEMS *
+			    elem_size;
+			if (mdb_vread(bwd->bwd_node, size, wsp->walk_addr) ==
+			    -1) {
+				mdb_warn("failed to read at %p\n",
+				    wsp->walk_addr);
+				return (WALK_ERR);
+			}
+			mdb_btree_core_t *node =
+			    (mdb_btree_core_t *)bwd->bwd_node;
+			int i;
+			for (i = 0; i <= bwd->bwd_node->bth_count; i++) {
+				if (node->btc_children[i] == cur)
+					break;
+			}
+			if (i > bwd->bwd_node->bth_count) {
+				mdb_warn("btree parent/child mismatch at "
+				    "%#lx\n", cur);
+				return (WALK_ERR);
+			}
+			bwd->bwd_offset = i;
+		}
+		return (WALK_NEXT);
+	}
+
+	if (!bwd->bwd_node->bth_core) {
+		mdb_warn("Invalid btree node at %#lx\n", wsp->walk_addr);
+		return (WALK_ERR);
+	}
+	mdb_btree_core_t *node = (mdb_btree_core_t *)bwd->bwd_node;
+	mdb_printf("%#lr\n", node->btc_elems + bwd->bwd_offset * elem_size);
+
+	uintptr_t new_child = node->btc_children[bwd->bwd_offset + 1];
+	wsp->walk_addr = btree_leftmost_child(new_child, bwd->bwd_node);
+	if (wsp->walk_addr == 0ULL)
+		return (WALK_ERR);
+
+	bwd->bwd_offset = 0;
+	return (WALK_NEXT);
+}
+
+static int
+btree_walk_init(mdb_walk_state_t *wsp)
+{
+	btree_walk_data_t *bwd;
+
+	if (wsp->walk_addr == NULL) {
+		mdb_warn("must supply address of btree_t\n");
+		return (WALK_ERR);
+	}
+
+	bwd = mdb_zalloc(sizeof (btree_walk_data_t), UM_SLEEP);
+	if (mdb_ctf_vread(&bwd->bwd_btree, "btree_t", "mdb_btree_t",
+	    wsp->walk_addr, 0) == -1) {
+		mdb_free(bwd, sizeof (*bwd));
+		return (WALK_ERR);
+	}
+
+	if (bwd->bwd_btree.bt_elem_size == 0) {
+		mdb_warn("invalid or uninitialized btree at %#lx\n",
+		    wsp->walk_addr);
+		mdb_free(bwd, sizeof (*bwd));
+		return (WALK_ERR);
+	}
+
+	size_t size = MAX(BTREE_LEAF_SIZE, sizeof (btree_core_t) +
+	    BTREE_CORE_ELEMS * bwd->bwd_btree.bt_elem_size);
+	bwd->bwd_node = mdb_zalloc(size, UM_SLEEP);
+
+	uintptr_t node = (uintptr_t)bwd->bwd_btree.bt_root;
+	if (node == 0ULL) {
+		wsp->walk_addr = NULL;
+		wsp->walk_data = bwd;
+		return (WALK_NEXT);
+	}
+	node = btree_leftmost_child(node, bwd->bwd_node);
+	if (node == 0ULL) {
+		mdb_free(bwd->bwd_node, size);
+		mdb_free(bwd, sizeof (*bwd));
+		return (WALK_ERR);
+	}
+	bwd->bwd_offset = 0;
+
+	wsp->walk_addr = node;
+	wsp->walk_data = bwd;
+	return (WALK_NEXT);
+}
+
+static void
+btree_walk_fini(mdb_walk_state_t *wsp)
+{
+	btree_walk_data_t *bwd = (btree_walk_data_t *)wsp->walk_data;
+
+	if (bwd == NULL)
+		return;
+
+	size_t size = MAX(BTREE_LEAF_SIZE, sizeof (btree_core_t) +
+	    BTREE_CORE_ELEMS * bwd->bwd_btree.bt_elem_size);
+	if (bwd->bwd_node != NULL)
+		mdb_free(bwd->bwd_node, size);
+
+	mdb_free(bwd, sizeof (*bwd));
 }
 
 typedef struct mdb_multilist {
@@ -4256,7 +4448,7 @@ range_tree(uintptr_t addr, uint_t flags, int argc,
 		return (DCMD_ERR);
 
 	mdb_printf("%p: range tree of %llu entries, %llu bytes\n",
-	    addr, rt.rt_root.avl_numnodes, rt.rt_space);
+	    addr, rt.rt_root.bt_num_elems, rt.rt_space);
 
 	avl_addr = addr +
 	    mdb_ctf_offsetof_by_name(ZFS_STRUCT "range_tree", "rt_root");
@@ -4458,6 +4650,8 @@ static const mdb_walker_t walkers[] = {
 	{ "zfs_acl_node_aces0",
 	    "given a zfs_acl_node_t, walk all ACEs as ace_t",
 	    zfs_acl_node_aces0_walk_init, zfs_aces_walk_step, NULL },
+	{ "btree", "given a btree_t *, walk all entries",
+	    btree_walk_init, btree_walk_step, btree_walk_fini },
 	{ NULL }
 };
 
