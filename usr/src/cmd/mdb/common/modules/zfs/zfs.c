@@ -2783,7 +2783,6 @@ btree_walk_step(mdb_walk_state_t *wsp)
 			}
 		}
 
-		mdb_btree_leaf_t *leaf = (mdb_btree_leaf_t *)bwd->bwd_node;
 		int status = wsp->walk_callback((uintptr_t)(wsp->walk_addr +
 		    offsetof(mdb_btree_leaf_t, btl_elems) + bwd->bwd_offset *
 		    elem_size), bwd->bwd_node, wsp->walk_cbdata);
