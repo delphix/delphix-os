@@ -3298,6 +3298,18 @@ metaslab_activate(metaslab_t *msp, int allocator, uint64_t activation_weight)
 	}
 
 	/*
+	 * If the metaslab has literally 0 space, it will have weight 0. In
+	 * that case, don't bother activating it. This can happen if the
+	 * metaslab had space during find_valid_metaslab, but another thread
+	 * loaded it and used all that space while we were waiting to grab the
+	 * lock.
+	 */
+	if (msp->ms_weight == 0) {
+		ASSERT0(range_tree_space(msp->ms_allocatable));
+		return (SET_ERROR(ENOSPC));
+	}
+
+	/*
 	 * When entering metaslab_load() we may have dropped the
 	 * ms_lock because we were loading this metaslab, or we
 	 * were waiting for another thread to load it for us. In
