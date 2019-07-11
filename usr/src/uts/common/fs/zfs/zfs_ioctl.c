@@ -26,7 +26,7 @@
  * Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014, 2016 Joyent, Inc. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -1719,6 +1719,48 @@ zfs_ioc_pool_scan(zfs_cmd_t *zc)
 	else
 		error = spa_scan(spa, zc->zc_cookie);
 
+	spa_close(spa, FTAG);
+
+	return (error);
+}
+
+/* ARGSUSED */
+static int
+delete_livelist_sync_impl(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
+{
+	dmu_tx_t *tx = arg;
+	dsl_dir_remove_livelist(ds->ds_dir, tx, B_TRUE);
+	return (0);
+}
+
+static void
+delete_livelist_sync(void *arg, dmu_tx_t *tx)
+{
+	spa_t *spa = arg;
+	(void) dmu_objset_find_dp(spa->spa_dsl_pool,
+	    spa->spa_dsl_pool->dp_root_dir_obj, delete_livelist_sync_impl, tx,
+	    DS_FIND_CHILDREN);
+}
+
+/*
+ * This ioctl was added to delete livelists due to DLPX-64829, a bug causing
+ * livelist corruption. It deletes all livelists for a given pool each time it
+ * is run. The appstack will run this once on all pools after upgrading to
+ * these bits. This command isn't needed on 6.0+ because we require users to
+ * upgrade to bits with this code (i.e. 5.3+) first, and we only need to run
+ * this once as the fix for DLPX-64829 will prevent new livelists from being
+ * corrupted in the future.
+ */
+static int
+zfs_ioc_delete_livelist(zfs_cmd_t *zc)
+{
+	spa_t *spa;
+	int error;
+
+	if ((error = spa_open(zc->zc_name, &spa, FTAG)) != 0)
+		return (error);
+	dsl_sync_task(spa_name(spa), NULL, delete_livelist_sync, spa, 0,
+	    ZFS_SPACE_CHECK_DESTROY);
 	spa_close(spa, FTAG);
 
 	return (error);
@@ -6292,6 +6334,8 @@ zfs_ioctl_init(void)
 	    zfs_ioc_vdev_split);
 	zfs_ioctl_register_pool_modify(ZFS_IOC_POOL_REGUID,
 	    zfs_ioc_pool_reguid);
+	zfs_ioctl_register_pool_modify(ZFS_IOC_DELETE_LIVELIST,
+	    zfs_ioc_delete_livelist);
 
 	zfs_ioctl_register_pool_meta(ZFS_IOC_POOL_CONFIGS,
 	    zfs_ioc_pool_configs, zfs_secpolicy_none);

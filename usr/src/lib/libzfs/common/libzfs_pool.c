@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
@@ -1899,6 +1899,20 @@ zpool_import_props(libzfs_handle_t *hdl, nvlist_t *config, const char *newname,
 	}
 
 	return (ret);
+}
+
+
+/* ARGSUSED */
+int
+zpool_delete_livelist(zpool_handle_t *zhp, void *data)
+{
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+	if (zfs_ioctl(hdl, ZFS_IOC_DELETE_LIVELIST, &zc) == 0)
+		return (0);
+	return (zpool_standard_error(hdl, errno, "Can't delete livelist"));
 }
 
 /*

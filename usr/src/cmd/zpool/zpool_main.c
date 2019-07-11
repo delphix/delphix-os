@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2012 by Frederik Wessels. All rights reserved.
  * Copyright (c) 2013 by Prasad Joshi (sTec). All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>.
@@ -102,6 +102,8 @@ static int zpool_do_get(int, char **);
 static int zpool_do_set(int, char **);
 
 static int zpool_do_wait(int, char **);
+
+static int zpool_do_delete_livelist(int, char **);
 
 /*
  * These libumem hooks provide a reasonable set of defaults for the allocator's
@@ -206,6 +208,8 @@ static zpool_command_t command_table[] = {
 	{ "set",	zpool_do_set,		HELP_SET		},
 	{ NULL },
 	{ "wait",	zpool_do_wait,		HELP_WAIT		},
+	/* A short term addition to mitigate DLPX-64829, bogus help message */
+	{ "delete_livelist",	zpool_do_delete_livelist, HELP_WAIT	},
 };
 
 #define	NCOMMAND	(sizeof (command_table) / sizeof (command_table[0]))
@@ -6335,6 +6339,15 @@ wait_status_thread(void *arg)
 
 	zpool_close(zhp);
 	return (void *)(0);
+}
+
+int
+zpool_do_delete_livelist(int argc, char **argv)
+{
+	argc -= optind;
+	argv += optind;
+	return (for_each_pool(argc, argv, B_FALSE, NULL,
+	    zpool_delete_livelist, NULL));
 }
 
 int

@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+# Copyright (c) 2011, 2019 by Delphix. All rights reserved.
 # Copyright 2016 Nexenta Systems, Inc.
 #
 
@@ -247,6 +247,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zpool_reopen;
 	zpool_reset_bootcount;
 	zpool_scan;
+	zpool_delete_livelist;
 	zpool_search_import;
 	zpool_set_nextboot;
 	zpool_set_prop;
