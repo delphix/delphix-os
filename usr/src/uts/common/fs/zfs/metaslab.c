@@ -2918,7 +2918,6 @@ metaslab_space_weight(metaslab_t *msp)
 	uint64_t weight, space;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
-	ASSERT(!vd->vdev_removing);
 
 	/*
 	 * The baseline weight is the metaslab's free space.
@@ -3176,13 +3175,6 @@ metaslab_weight(metaslab_t *msp)
 	uint64_t weight;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
-
-	/*
-	 * If this vdev is in the process of being removed, there is nothing
-	 * for us to do here.
-	 */
-	if (vd->vdev_removing)
-		return (0);
 
 	metaslab_set_fragmentation(msp);
 
