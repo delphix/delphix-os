@@ -1893,7 +1893,7 @@ dump_full_bpobj(bpobj_t *bpo, const char *name, int indent)
 
 
 	if (indent == 0) {
-		(void) bpobj_iterate_nofree(bpo, dump_bpobj_cb, NULL);
+		(void) bpobj_iterate_nofree(bpo, dump_bpobj_cb, NULL, NULL);
 		(void) printf("\n");
 	}
 }
@@ -4045,7 +4045,7 @@ zdb_leak_init(spa_t *spa, zdb_cb_t *zcb)
 	if (bpobj_is_open(&dp->dp_obsolete_bpobj)) {
 		ASSERT(spa_feature_is_enabled(spa, SPA_FEATURE_DEVICE_REMOVAL));
 		(void) bpobj_iterate_nofree(&dp->dp_obsolete_bpobj,
-		    increment_indirect_mapping_cb, zcb);
+		    increment_indirect_mapping_cb, zcb, NULL);
 	}
 
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
@@ -4243,7 +4243,7 @@ livelist_entry_count_blocks_cb(void *args, dsl_deadlist_entry_t *dle)
 	bplist_t blks;
 	bplist_create(&blks);
 	/* determine which blocks have been alloc'd but not freed */
-	VERIFY0(dsl_process_sub_livelist(&dle->dle_bpobj, &blks, NULL));
+	VERIFY0(dsl_process_sub_livelist(&dle->dle_bpobj, &blks, NULL, NULL));
 	/* count those blocks */
 	(void) bplist_iterate(&blks, count_block_cb, zbc, NULL);
 	bplist_destroy(&blks);
@@ -4326,11 +4326,11 @@ dump_block_stats(spa_t *spa)
 	 * If there's a deferred-free bplist, process that first.
 	 */
 	(void) bpobj_iterate_nofree(&spa->spa_deferred_bpobj,
-	    bpobj_count_block_cb, &zcb);
+	    bpobj_count_block_cb, &zcb, NULL);
 
 	if (spa_version(spa) >= SPA_VERSION_DEADLISTS) {
 		(void) bpobj_iterate_nofree(&spa->spa_dsl_pool->dp_free_bpobj,
-		    bpobj_count_block_cb, &zcb);
+		    bpobj_count_block_cb, &zcb, NULL);
 	}
 
 	zdb_claim_removing(spa, &zcb);

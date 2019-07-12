@@ -2388,7 +2388,8 @@ spa_livelist_delete_cb(void *arg, zthr_t *z)
 		dle = dsl_deadlist_first(&ll);
 		ASSERT3P(dle, !=, NULL);
 		bplist_create(&to_free);
-		err = dsl_process_sub_livelist(&dle->dle_bpobj, &to_free, z);
+		err = dsl_process_sub_livelist(&dle->dle_bpobj, &to_free, z,
+		    NULL);
 		if (err == EINTR)
 			goto out;
 		ASSERT(err == 0);
@@ -2533,14 +2534,31 @@ spa_livelist_condense_cb(void *arg, zthr_t *t)
 	spa_t *spa = arg;
 	dsl_deadlist_entry_t *first = spa->spa_to_condense.first;
 	dsl_deadlist_entry_t *next = spa->spa_to_condense.next;
-	uint64_t first_size = first->dle_bpobj.bpo_phys->bpo_num_blkptrs;
-	uint64_t next_size = next->dle_bpobj.bpo_phys->bpo_num_blkptrs;
+	uint64_t first_size, next_size;
 
 	livelist_condense_arg_t *lca =
 	    kmem_alloc(sizeof (livelist_condense_arg_t), KM_SLEEP);
 	bplist_create(&lca->to_keep);
-	err = dsl_process_sub_livelist(&first->dle_bpobj, &lca->to_keep, t);
-	err = dsl_process_sub_livelist(&next->dle_bpobj, &lca->to_keep, t);
+
+	/*
+	 * Process the livelists (matching FREEs and ALLOCs) in open context
+	 * so we have minimal work in syncing context to condense.
+	 *
+	 * We save bpobj sizes (first_size and next_size) to use later in
+	 * syncing context to determine if entries were added to these sublists
+	 * while in open context. This is possible because the clone is still
+	 * active and open for normal writes and we want to make sure the new,
+	 * unprocessed blockpointers are inserted into the livelist normally.
+	 *
+	 * Note that dsl_process_sub_livelist() both stores the size number of
+	 * blockpointers and iterates over them while the bpobj's lock held, so
+	 * the sizes returned to us are consistent which what was actually
+	 * processed.
+	 */
+	err = dsl_process_sub_livelist(&first->dle_bpobj, &lca->to_keep, t,
+	    &first_size);
+	err = dsl_process_sub_livelist(&next->dle_bpobj, &lca->to_keep, t,
+	    &next_size);
 
 	if (err == 0) {
 		while (zfs_livelist_condense_sync_pause &&

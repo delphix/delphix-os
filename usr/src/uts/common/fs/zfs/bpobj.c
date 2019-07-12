@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright (c) 2017 Datto Inc.
  */
@@ -223,7 +223,7 @@ bpobj_is_empty(bpobj_t *bpo)
 
 static int
 bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, int64_t start,
-    dmu_tx_t *tx, boolean_t delete)
+    dmu_tx_t *tx, boolean_t delete, uint64_t *bpobj_size)
 {
 	dmu_object_info_t doi;
 	int epb;
@@ -234,6 +234,9 @@ bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, int64_t start,
 	ASSERT(bpobj_is_open(bpo));
 	mutex_enter(&bpo->bpo_lock);
 	ASSERT3U(start, >=, 0);
+
+	if (bpobj_size != NULL)
+		*bpobj_size = bpo->bpo_phys->bpo_num_blkptrs;
 
 	if (bpobj_is_empty_impl(bpo))
 		goto out;
@@ -343,7 +346,9 @@ bpobj_iterate_impl(bpobj_t *bpo, bpobj_itor_t func, void *arg, int64_t start,
 				break;
 			}
 		}
-		err = bpobj_iterate_impl(&sublist, func, arg, 0, tx, delete);
+		ASSERT3P(bpobj_size, ==, NULL);
+		err = bpobj_iterate_impl(&sublist, func, arg, 0, tx, delete,
+		    NULL);
 		if (delete) {
 			VERIFY3U(0, ==, bpobj_space(&sublist,
 			    &used_after, &comp_after, &uncomp_after));
@@ -395,16 +400,29 @@ out:
 int
 bpobj_iterate(bpobj_t *bpo, bpobj_itor_t func, void *arg, dmu_tx_t *tx)
 {
-	return (bpobj_iterate_impl(bpo, func, arg, 0, tx, B_TRUE));
+	return (bpobj_iterate_impl(bpo, func, arg, 0, tx, B_TRUE, NULL));
 }
 
 /*
  * Iterate the entries.  If func returns nonzero, iteration will stop.
+ *
+ * If there are no subobjs:
+ *
+ * *bpobj_size can be used to return the number of block pointers in the
+ * bpobj.  Note that this may be different from the number of block pointers
+ * that are iterated over, if iteration is terminated early (e.g. by the func
+ * returning nonzero).
+ *
+ * If there are concurrent (or subsequent) modifications to the bpobj then the
+ * returned *bpobj_size can be passed as "start" to bpobj_iterate_from_nofree()
+ * to iterate the newly added entries.
  */
 int
-bpobj_iterate_nofree(bpobj_t *bpo, bpobj_itor_t func, void *arg)
+bpobj_iterate_nofree(bpobj_t *bpo, bpobj_itor_t func, void *arg,
+    uint64_t *bpobj_size)
 {
-	return (bpobj_iterate_impl(bpo, func, arg, 0, NULL, B_FALSE));
+	return (bpobj_iterate_impl(bpo, func, arg, 0, NULL, B_FALSE,
+	    bpobj_size));
 }
 
 /*
@@ -415,7 +433,7 @@ int
 bpobj_iterate_from_nofree(bpobj_t *bpo, bpobj_itor_t func, void *arg,
     int64_t start)
 {
-	return (bpobj_iterate_impl(bpo, func, arg, start, NULL, B_FALSE));
+	return (bpobj_iterate_impl(bpo, func, arg, start, NULL, B_FALSE, NULL));
 }
 
 void
@@ -643,7 +661,7 @@ bpobj_space_range(bpobj_t *bpo, uint64_t mintxg, uint64_t maxtxg,
 	sra.mintxg = mintxg;
 	sra.maxtxg = maxtxg;
 
-	err = bpobj_iterate_nofree(bpo, space_range_cb, &sra);
+	err = bpobj_iterate_nofree(bpo, space_range_cb, &sra, NULL);
 	*usedp = sra.used;
 	*compp = sra.comp;
 	*uncompp = sra.uncomp;

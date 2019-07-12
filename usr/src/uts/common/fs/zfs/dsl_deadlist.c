@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2019 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  */
@@ -989,11 +989,12 @@ dsl_livelist_iterate(void *arg, const blkptr_t *bp, boolean_t free,
 }
 
 /*
- * Accepts a bpobj and an empty bplist. Will populate the bplist
- * with blkptrs that have an ALLOC entry but no FREE
+ * Accepts a bpobj and a bplist. Will insert into the bplist the blkptrs
+ * which have an ALLOC entry but no matching FREE
  */
 int
-dsl_process_sub_livelist(bpobj_t *bpobj, bplist_t *to_free, zthr_t *t)
+dsl_process_sub_livelist(bpobj_t *bpobj, bplist_t *to_free, zthr_t *t,
+    uint64_t *size)
 {
 	int err;
 	avl_tree_t avl;
@@ -1006,7 +1007,7 @@ dsl_process_sub_livelist(bpobj_t *bpobj, bplist_t *to_free, zthr_t *t)
 	    .to_free = to_free,
 	    .t = t
 	};
-	err = bpobj_iterate_nofree(bpobj, dsl_livelist_iterate, &arg);
+	err = bpobj_iterate_nofree(bpobj, dsl_livelist_iterate, &arg, size);
 
 	avl_destroy(&avl);
 	return (err);
