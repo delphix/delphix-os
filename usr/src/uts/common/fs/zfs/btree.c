@@ -1372,7 +1372,7 @@ btree_remove_from_node(btree_t *tree, btree_core_t *node, btree_hdr_t *rm_hdr)
 		bmov(neighbor->btc_children + 1, neighbor->btc_children,
 		    (r_hdr->bth_count + 1) * sizeof (steal_child));
 #ifdef ZFS_DEBUG
-		btree_poison_node_at(tree, r_hdr, l_hdr->bth_count);
+		btree_poison_node_at(tree, r_hdr, r_hdr->bth_count);
 #endif
 		return;
 	}
