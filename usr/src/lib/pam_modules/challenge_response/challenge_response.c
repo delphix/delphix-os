@@ -332,21 +332,35 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 	char *username;
 	struct passwd *user_entry;
 
-	if ((err = pam_get_item(pamh, PAM_USER, (void **)&username)) !=
-	    PAM_SUCCESS) {
-		syslog(LOG_ERR | LOG_AUTH,
-		    "pam_challenge_response: unable to fetch username");
+	/*
+	 * After a failed login, at the next try the PAM_USER item might be
+	 * NULL, so we use pam_get_user instead of pam_get_item to obtain the
+	 * username. If the user item has been cleared, pam_get_user will
+	 * prompt for a new user name.
+	 */
+	if ((err = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) {
+		__pam_log(LOG_AUTH | LOG_ERR,
+		    "pam_challenge_response: get user failed: %s",
+		    pam_strerror(pamh, err));
 		return (err);
 	}
 
+	if (username == NULL || *username == '\0') {
+		__pam_log(LOG_AUTH | LOG_DEBUG,
+		    "pam_challenge_response: PAM_USER NULL or empty");
+		return (PAM_USER_UNKNOWN);
+	}
+
 	if ((user_entry = getpwnam(username)) == NULL) {
-		syslog(LOG_ERR | LOG_AUTH,
+		__pam_log(LOG_AUTH | LOG_DEBUG,
 		    "pam_challenge_response: cannot find username's pw entry");
-		return (err);
+		return (PAM_USER_UNKNOWN);
 	}
 
 	/* Challenge response only applies to OS (non-CLI) users. */
 	if (strchr(username, '@') != NULL || user_entry->pw_uid == CLI_UID) {
+		__pam_log(LOG_AUTH | LOG_DEBUG,
+		    "pam_challenge_response: skipping CLI user");
 		return (PAM_IGNORE);
 	}
 
