@@ -14,7 +14,7 @@
  */
 
 /*
- * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2019 by Delphix. All rights reserved.
  */
 
 #include <vmxnet3.h>
@@ -32,6 +32,17 @@ typedef struct vmxnet3_offload_t {
 	uint16_t hlen;
 	uint16_t msscof;
 } vmxnet3_offload_t;
+
+/*
+ * Deadman timer for the tx ring.
+ * If no tx completions come for vmxnet3_tx_deadman_timeout_ms milliseconds,
+ * then a counter is incremented. When the counter reaches
+ * vmxnet3_tx_deadman_max_count, it resets the interface. We use a counter to
+ * reduce the impact of a sudden jump in the value of the system lbolt timer.
+ * To disable, set vmxnet3_tx_deadman_max_count to 0,
+ */
+clock_t vmxnet3_tx_deadman_timeout_ms = 1000;
+int vmxnet3_tx_deadman_max_count = 3;
 
 /*
  * Initialize a TxQueue. Currently nothing needs to be done.
@@ -203,6 +214,7 @@ vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol, mblk_t *mp)
 	uint16_t sopIdx, eopIdx;
 	uint8_t sopGen, curGen;
 	mblk_t *mblk;
+	boolean_t cmdRingEmpty;
 
 	mutex_enter(&dp->txLock);
 
@@ -218,6 +230,8 @@ vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol, mblk_t *mp)
 	sopIdx = eopIdx = cmdRing->next2fill;
 	sopGen = cmdRing->gen;
 	curGen = !cmdRing->gen;
+
+	cmdRingEmpty = (cmdRing->avail == cmdRing->size);
 
 	for (mblk = mp; mblk != NULL; mblk = mblk->b_cont) {
 		unsigned int len = MBLKL(mblk);
@@ -263,7 +277,7 @@ vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol, mblk_t *mp)
 					goto error;
 				}
 				if (cmdRing->avail - frags <= 1) {
-					dp->txMustResched = B_TRUE;
+					txq->mustResched = B_TRUE;
 					(void) ddi_dma_unbind_handle(
 					    dp->txDmaHandle);
 					ret = VMXNET3_TX_RINGFULL;
@@ -338,6 +352,15 @@ vmxnet3_tx_one(vmxnet3_softc_t *dp, vmxnet3_offload_t *ol, mblk_t *mp)
 		    (totLen - ol->hlen + ol->msscof - 1) / ol->msscof;
 	} else {
 		txqCtrl->txNumDeferred++;
+	}
+
+	/*
+	 * Start deadman timer if we have inserted descriptors into an
+	 * empty ring.
+	 */
+	if (vmxnet3_tx_deadman_max_count != 0 && cmdRingEmpty) {
+		txq->deadmanCounter = 0;
+		txq->compTimestamp = ddi_get_lbolt();
 	}
 
 	VMXNET3_DEBUG(dp, 3, "tx 0x%p on [%u;%u]\n", (void *)mp, sopIdx,
@@ -513,6 +536,29 @@ retry:
 }
 
 /*
+ * If we have detected that the tx ring is not being processed, trigger a
+ * reset.
+ */
+static void
+vmxnet3_tx_deadman(vmxnet3_softc_t *dp)
+{
+	/*
+	 * Stop deadman to prevent it from firing again before the reset
+	 * is processed.
+	 */
+	dp->txQueue.compTimestamp = 0;
+	dp->txQueue.deadmanCounter = 0;
+	VMXNET3_WARN(dp, "tx ring stuck: deadman timeout triggered");
+	if (ddi_taskq_dispatch(dp->resetTask, vmxnet3_reset,
+	    dp, DDI_NOSLEEP) == DDI_SUCCESS) {
+		VMXNET3_WARN(dp, "reset scheduled\n");
+	} else {
+		VMXNET3_WARN(dp,
+		    "reset dispatch failed\n");
+	}
+}
+
+/*
  * Parse a transmit queue and complete packets.
  *
  * Returns:
@@ -532,6 +578,7 @@ vmxnet3_tx_complete(vmxnet3_softc_t *dp)
 	Vmxnet3_GenericDesc *compDesc;
 	boolean_t completedTx = B_FALSE;
 	boolean_t ret = B_FALSE;
+	clock_t timestamp;
 
 	compDesc = VMXNET3_GET_DESC(compRing, compRing->next2comp);
 	while (compDesc->tcd.gen == compRing->gen) {
@@ -564,9 +611,45 @@ vmxnet3_tx_complete(vmxnet3_softc_t *dp)
 		compDesc = VMXNET3_GET_DESC(compRing, compRing->next2comp);
 	}
 
-	if (dp->txMustResched && completedTx) {
-		dp->txMustResched = B_FALSE;
+	if (txq->mustResched && completedTx) {
+		txq->mustResched = B_FALSE;
 		ret = B_TRUE;
+	}
+
+	/*
+	 * Update deadman timer. We do this in vmxnet3_tx_complete() instead
+	 * of within a timer callback since we are still receiving rx
+	 * interrupts even when the tx ring is hung and adding it here makes
+	 * the logic simpler and have less impact on performance.
+	 */
+	if (txq->compTimestamp != 0) {
+		if (vmxnet3_tx_deadman_max_count == 0 ||
+		    cmdRing->avail == cmdRing->size) {
+			/*
+			 * If deadman was disabled manually or there are
+			 * no more completions pending, stop timer.
+			 */
+			txq->compTimestamp = 0;
+			txq->deadmanCounter = 0;
+		} else if (completedTx) {
+			/*
+			 * Received completions, refresh timer.
+			 */
+			txq->compTimestamp = ddi_get_lbolt();
+			txq->deadmanCounter = 0;
+		} else {
+			timestamp = ddi_get_lbolt();
+			if (txq->compTimestamp +
+			    MSEC_TO_TICK(vmxnet3_tx_deadman_timeout_ms) <
+			    timestamp) {
+				txq->compTimestamp = timestamp;
+				txq->deadmanCounter++;
+				if (txq->deadmanCounter >=
+				    vmxnet3_tx_deadman_max_count) {
+					vmxnet3_tx_deadman(dp);
+				}
+			}
+		}
 	}
 
 	mutex_exit(&dp->txLock);

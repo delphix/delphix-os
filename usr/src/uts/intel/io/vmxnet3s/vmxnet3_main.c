@@ -312,6 +312,17 @@ vmxnet3_alloc_cmdring(vmxnet3_softc_t *dp, vmxnet3_cmdring_t *cmdRing)
 	return (0);
 }
 
+/* ARGSUSED */
+static void
+vmxnet3_reset_cmdring(vmxnet3_softc_t *dp, vmxnet3_cmdring_t *cmdRing)
+{
+	size_t ringSize = cmdRing->size * sizeof (Vmxnet3_TxDesc);
+	(void) memset(cmdRing->dma.buf, 0, ringSize);
+	cmdRing->avail = cmdRing->size;
+	cmdRing->next2fill = 0;
+	cmdRing->gen = VMXNET3_INIT_GEN;
+}
+
 /*
  * Allocate and initialize the completion ring of a queue.
  *
@@ -334,6 +345,17 @@ vmxnet3_alloc_compring(vmxnet3_softc_t *dp, vmxnet3_compring_t *compRing)
 	return (DDI_SUCCESS);
 }
 
+/* ARGSUSED */
+static void
+vmxnet3_reset_compring(vmxnet3_softc_t *dp, vmxnet3_compring_t *compRing)
+{
+	size_t ringSize = compRing->size * sizeof (Vmxnet3_TxCompDesc);
+
+	(void) memset(compRing->dma.buf, 0, ringSize);
+	compRing->next2comp = 0;
+	compRing->gen = VMXNET3_INIT_GEN;
+}
+
 /*
  * Initialize the tx queue of a vmxnet3 device.
  *
@@ -349,24 +371,34 @@ vmxnet3_prepare_txqueue(vmxnet3_softc_t *dp)
 
 	ASSERT(!(txq->cmdRing.size & VMXNET3_RING_SIZE_MASK));
 	ASSERT(!(txq->compRing.size & VMXNET3_RING_SIZE_MASK));
-	ASSERT(!txq->cmdRing.dma.buf && !txq->compRing.dma.buf);
 
-	if ((err = vmxnet3_alloc_cmdring(dp, &txq->cmdRing)) != 0) {
-		goto error;
+	if (!dp->resetting) {
+		ASSERT(!txq->cmdRing.dma.buf && !txq->compRing.dma.buf);
+
+		if ((err = vmxnet3_alloc_cmdring(dp, &txq->cmdRing)) != 0) {
+			goto error;
+		}
+
+		if ((err = vmxnet3_alloc_compring(dp, &txq->compRing)) != 0) {
+			goto error_cmdring;
+		}
+
+		txq->metaRing = kmem_zalloc(txq->cmdRing.size *
+		    sizeof (vmxnet3_metatx_t), KM_SLEEP);
+	} else {
+		vmxnet3_reset_cmdring(dp, &txq->cmdRing);
+		vmxnet3_reset_compring(dp, &txq->compRing);
+		(void) memset(txq->metaRing, 0, txq->cmdRing.size *
+		    sizeof (vmxnet3_metatx_t));
 	}
+
 	tqdesc->conf.txRingBasePA = txq->cmdRing.dma.bufPA;
 	tqdesc->conf.txRingSize = txq->cmdRing.size;
 	tqdesc->conf.dataRingBasePA = 0;
 	tqdesc->conf.dataRingSize = 0;
-
-	if ((err = vmxnet3_alloc_compring(dp, &txq->compRing)) != 0) {
-		goto error_cmdring;
-	}
 	tqdesc->conf.compRingBasePA = txq->compRing.dma.bufPA;
 	tqdesc->conf.compRingSize = txq->compRing.size;
 
-	txq->metaRing = kmem_zalloc(txq->cmdRing.size *
-	    sizeof (vmxnet3_metatx_t), KM_SLEEP);
 	ASSERT(txq->metaRing);
 
 	if ((err = vmxnet3_txqueue_init(dp)) != 0) {
@@ -399,28 +431,44 @@ vmxnet3_prepare_rxqueue(vmxnet3_softc_t *dp)
 
 	ASSERT(!(rxq->cmdRing.size & VMXNET3_RING_SIZE_MASK));
 	ASSERT(!(rxq->compRing.size & VMXNET3_RING_SIZE_MASK));
-	ASSERT(!rxq->cmdRing.dma.buf && !rxq->compRing.dma.buf);
 
-	if ((err = vmxnet3_alloc_cmdring(dp, &rxq->cmdRing)) != 0) {
-		goto error;
+	if (!dp->resetting) {
+		ASSERT(!rxq->cmdRing.dma.buf && !rxq->compRing.dma.buf);
+		if ((err = vmxnet3_alloc_cmdring(dp, &rxq->cmdRing)) != 0) {
+			goto error;
+		}
+
+		if ((err = vmxnet3_alloc_compring(dp, &rxq->compRing)) != 0) {
+			goto error_cmdring;
+		}
+	} else {
+		vmxnet3_reset_cmdring(dp, &rxq->cmdRing);
+		vmxnet3_reset_compring(dp, &rxq->compRing);
 	}
+
 	rqdesc->conf.rxRingBasePA[0] = rxq->cmdRing.dma.bufPA;
 	rqdesc->conf.rxRingSize[0] = rxq->cmdRing.size;
 	rqdesc->conf.rxRingBasePA[1] = 0;
 	rqdesc->conf.rxRingSize[1] = 0;
-
-	if ((err = vmxnet3_alloc_compring(dp, &rxq->compRing)) != 0) {
-		goto error_cmdring;
-	}
 	rqdesc->conf.compRingBasePA = rxq->compRing.dma.bufPA;
 	rqdesc->conf.compRingSize = rxq->compRing.size;
 
-	rxq->bufRing = kmem_zalloc(rxq->cmdRing.size *
-	    sizeof (vmxnet3_bufdesc_t), KM_SLEEP);
-	ASSERT(rxq->bufRing);
+	if (!dp->resetting) {
+		rxq->bufRing = kmem_zalloc(rxq->cmdRing.size *
+		    sizeof (vmxnet3_bufdesc_t), KM_SLEEP);
+		ASSERT(rxq->bufRing);
 
-	if ((err = vmxnet3_rxqueue_init(dp, rxq)) != 0) {
-		goto error_bufring;
+		if ((err = vmxnet3_rxqueue_init(dp, rxq)) != 0) {
+			goto error_bufring;
+		}
+	} else {
+		/*
+		 * In the reset case, we do not re-allocate the rxBufs, which
+		 * would have been done by vmxnet3_rxqueue_init(). However,
+		 * we need to re-populate the ring with the same rxBufs that
+		 * were there before.
+		 */
+		vmxnet3_rxqueue_reset(dp, rxq);
 	}
 
 	return (0);
@@ -579,11 +627,15 @@ vmxnet3_start(void *data)
 	/*
 	 * Allocate the Tx DMA handle
 	 */
-	if ((dmaerr = ddi_dma_alloc_handle(dp->dip, &vmxnet3_dma_attrs_tx,
-	    DDI_DMA_SLEEP, NULL, &dp->txDmaHandle)) != DDI_SUCCESS) {
-		VMXNET3_WARN(dp, "ddi_dma_alloc_handle() failed: %d", dmaerr);
-		err = vmxnet3_dmaerr2errno(dmaerr);
-		goto error_rx_queue;
+	if (!dp->resetting) {
+		if ((dmaerr = ddi_dma_alloc_handle(dp->dip,
+		    &vmxnet3_dma_attrs_tx,
+		    DDI_DMA_SLEEP, NULL, &dp->txDmaHandle)) != DDI_SUCCESS) {
+			VMXNET3_WARN(dp, "ddi_dma_alloc_handle() failed: %d",
+			    dmaerr);
+			err = vmxnet3_dmaerr2errno(dmaerr);
+			goto error_rx_queue;
+		}
 	}
 
 	/*
@@ -659,11 +711,22 @@ vmxnet3_stop(void *data)
 	mutex_exit(&dp->txLock);
 	mutex_exit(&dp->intrLock);
 
-	ddi_dma_free_handle(&dp->txDmaHandle);
+	if (!dp->resetting) {
+		ddi_dma_free_handle(&dp->txDmaHandle);
 
-	vmxnet3_destroy_rxqueue(dp);
-	vmxnet3_destroy_txqueue(dp);
+		vmxnet3_destroy_rxqueue(dp);
+		vmxnet3_destroy_txqueue(dp);
 
+	} else {
+		/*
+		 * When resetting, we do not want do de-allocate and
+		 * re-allocate the queues because they require large chunks of
+		 * contiguous physical memory that might be hard to come by.
+		 *
+		 * Discard pending packets in tx queue.
+		 */
+		vmxnet3_txqueue_fini(dp);
+	}
 	vmxnet3_destroy_drivershared(dp);
 }
 
@@ -1076,7 +1139,7 @@ vmxnet3_getcapab(void *data, mac_capab_t capab, void *arg)
  * Side effects:
  *	The device is reset.
  */
-static void
+void
 vmxnet3_reset(void *data)
 {
 	int ret;
@@ -1085,11 +1148,14 @@ vmxnet3_reset(void *data)
 
 	VMXNET3_DEBUG(dp, 1, "vmxnet3_reset()\n");
 
+	dp->resetting = B_TRUE;
 	atomic_inc_32(&dp->reset_count);
 	vmxnet3_stop(dp);
 	VMXNET3_BAR1_PUT32(dp, VMXNET3_REG_CMD, VMXNET3_CMD_RESET_DEV);
 	if ((ret = vmxnet3_start(dp)) != 0)
 		VMXNET3_WARN(dp, "failed to reset the device: %d", ret);
+	dp->resetting = B_FALSE;
+	mac_tx_update(dp->mac);
 }
 
 /*
@@ -1127,7 +1193,7 @@ vmxnet3_intr_events(vmxnet3_softc_t *dp)
 				VMXNET3_WARN(dp, "reset scheduled\n");
 			} else {
 				VMXNET3_WARN(dp,
-				    "ddi_taskq_dispatch() failed\n");
+				    "reset dispatch failed\n");
 			}
 		}
 		if (events & VMXNET3_ECR_LINK) {

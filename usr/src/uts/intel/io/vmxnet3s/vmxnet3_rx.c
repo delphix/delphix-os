@@ -272,6 +272,28 @@ error:
 }
 
 /*
+ * Re-populate the ring with the same rxBufs that were there before the reset.
+ */
+/* ARGSUSED */
+void
+vmxnet3_rxqueue_reset(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq)
+{
+	vmxnet3_cmdring_t *cmdRing = &rxq->cmdRing;
+	do {
+		int idx = cmdRing->next2fill;
+		Vmxnet3_GenericDesc *rxDesc = VMXNET3_GET_DESC(cmdRing, idx);
+		vmxnet3_rxbuf_t *rxBuf = rxq->bufRing[idx].rxBuf;
+
+		rxDesc->rxd.addr = rxBuf->dma.bufPA;
+		rxDesc->rxd.len = rxBuf->dma.bufLen;
+		/* rxDesc->rxd.btype = 0; */
+		membar_producer();
+		rxDesc->rxd.gen = cmdRing->gen;
+		VMXNET3_INC_RING_IDX(cmdRing, cmdRing->next2fill);
+	} while (cmdRing->next2fill);
+}
+
+/*
  * Finish a RxQueue by freeing all the related rxBufs.
  */
 void

@@ -88,6 +88,9 @@ typedef struct vmxnet3_txqueue_t {
 	vmxnet3_compring_t compRing;
 	vmxnet3_metatx_t *metaRing;
 	Vmxnet3_TxQueueCtrl *sharedCtrl;
+	boolean_t mustResched;
+	clock_t compTimestamp;
+	int deadmanCounter;
 } vmxnet3_txqueue_t;
 
 typedef struct vmxnet3_rxbuf_t {
@@ -139,11 +142,11 @@ typedef struct vmxnet3_softc_t {
 	int		intrCap;
 	ddi_intr_handle_t intrHandle;
 	ddi_taskq_t	*resetTask;
+	boolean_t	resetting;
 
 	kmutex_t	txLock;
 	vmxnet3_txqueue_t txQueue;
 	ddi_dma_handle_t txDmaHandle;
-	boolean_t	txMustResched;
 
 	vmxnet3_rxqueue_t rxQueue;
 	kmutex_t	rxPoolLock;
@@ -194,8 +197,11 @@ boolean_t vmxnet3_tx_complete(vmxnet3_softc_t *dp);
 void	vmxnet3_txqueue_fini(vmxnet3_softc_t *dp);
 
 int	vmxnet3_rxqueue_init(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
+void	vmxnet3_rxqueue_reset(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
 mblk_t	*vmxnet3_rx_intr(vmxnet3_softc_t *dp);
 void	vmxnet3_rxqueue_fini(vmxnet3_softc_t *dp, vmxnet3_rxqueue_t *rxq);
+
+void	vmxnet3_reset(void *data);
 void	vmxnet3_log(int level, vmxnet3_softc_t *dp, char *fmt, ...);
 
 extern ddi_device_acc_attr_t vmxnet3_dev_attr;
